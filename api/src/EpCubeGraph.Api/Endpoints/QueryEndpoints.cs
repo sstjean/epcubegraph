@@ -75,25 +75,27 @@ public static class QueryEndpoints
     }
 
     private static async Task<IResult> HandleSeries(
-        string? match,
+        HttpContext httpContext,
         string? start,
         string? end,
         IVictoriaMetricsClient client,
         CancellationToken ct)
     {
-        // VictoriaMetrics expects match[] parameter, but ASP.NET binds as "match"
-        var error = Validate.Required(match, "match[]");
-        if (error is not null)
-            return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
+        // Prometheus API uses match[] which supports repeated values.
+        // ASP.NET Core cannot bind "match[]" as a parameter name, so we read from query directly.
+        var matchValues = httpContext.Request.Query["match[]"].ToArray();
+        if (matchValues.Length == 0)
+            return Results.BadRequest(new ErrorResponse("error", "bad_data", "Parameter 'match[]' is required."));
 
-        error = Validate.Timestamp(start, "start")
+        var error = Validate.Timestamp(start, "start")
             ?? Validate.Timestamp(end, "end");
         if (error is not null)
             return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
 
         try
         {
-            var result = await client.SeriesAsync(match!, start, end, ct);
+            // Use first match value — VictoriaMetrics SeriesAsync accepts a single match string
+            var result = await client.SeriesAsync(matchValues[0]!, start, end, ct);
             return Results.Ok(result);
         }
         catch (HttpRequestException ex)
