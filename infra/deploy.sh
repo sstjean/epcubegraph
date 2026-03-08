@@ -95,7 +95,8 @@ build_and_push_api() {
 
   acr_name=$(tf_output -raw acr_name)
   acr_login_server=$(tf_output -raw acr_login_server)
-  image_tag=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo "latest")
+  image_tag=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null) \
+    || die "Cannot determine git commit SHA. Refusing to build without a deterministic tag."
   api_image="${acr_login_server}/epcubegraph-api:${image_tag}"
 
   info "Logging in to ACR: ${acr_name}..."
@@ -104,13 +105,11 @@ build_and_push_api() {
   info "Building API image: ${api_image}..."
   docker build \
     --tag "$api_image" \
-    --tag "${acr_login_server}/epcubegraph-api:latest" \
     --file "$REPO_ROOT/api/Dockerfile" \
     "$REPO_ROOT/api"
 
   info "Pushing API image..."
   docker push "$api_image"
-  docker push "${acr_login_server}/epcubegraph-api:latest"
 
   ok "API image pushed: ${api_image}"
 
