@@ -187,7 +187,7 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
-        name  = "VictoriaMetrics__Url"
+        name = "VictoriaMetrics__Url"
         # Query VictoriaMetrics directly on port 8428 within the Container Apps
         # environment. This bypasses vmauth (which enforces bearer-token auth
         # for external remote-write traffic). Internal traffic between apps in
