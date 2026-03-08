@@ -19,10 +19,10 @@
 
 **Purpose**: Project initialization, directory structure, .NET solution scaffolding
 
-- [ ] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{echonet-exporter,vmagent}, infra/
-- [ ] T002 Initialize .NET solution: create api/EpCubeGraph.sln, api/src/EpCubeGraph.Api/EpCubeGraph.Api.csproj (.NET 8, web SDK), add NuGet packages: Microsoft.Identity.Web, Swashbuckle.AspNetCore, prometheus-net.AspNetCore (8.2.1)
-- [ ] T003 [P] Initialize test project: create api/tests/EpCubeGraph.Api.Tests/EpCubeGraph.Api.Tests.csproj with xunit, coverlet.collector, Microsoft.AspNetCore.Mvc.Testing, Testcontainers, add project reference to API project
-- [ ] T004 [P] Create api/.editorconfig with C# coding conventions and api/Directory.Build.props with TreatWarningsAsErrors and nullable enabled
+- [x] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{echonet-exporter,vmagent}, infra/
+- [x] T002 Initialize .NET solution: create api/EpCubeGraph.sln, api/src/EpCubeGraph.Api/EpCubeGraph.Api.csproj (.NET 10, web SDK), add NuGet packages: Microsoft.Identity.Web, Swashbuckle.AspNetCore, prometheus-net.AspNetCore (8.2.1)
+- [x] T003 [P] Initialize test project: create api/tests/EpCubeGraph.Api.Tests/EpCubeGraph.Api.Tests.csproj with xunit, coverlet.collector, Microsoft.AspNetCore.Mvc.Testing, Testcontainers, add project reference to API project
+- [x] T004 [P] Create api/.editorconfig with C# coding conventions and api/Directory.Build.props with TreatWarningsAsErrors and nullable enabled
 
 ---
 
@@ -32,11 +32,11 @@
 
 **CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Create appsettings.json with AzureAd (Instance, TenantId, ClientId, Audience) and VictoriaMetrics (Url) sections in api/src/EpCubeGraph.Api/appsettings.json
-- [ ] T006 [P] Configure Microsoft.Identity.Web authentication and authorization middleware in api/src/EpCubeGraph.Api/Program.cs (AddMicrosoftIdentityWebApiAuthentication, AddAuthorization with RequireScope("user_impersonation") as DefaultPolicy, UseAuthentication, UseAuthorization)
-- [ ] T007 [P] Define IVictoriaMetricsClient interface with QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync methods in api/src/EpCubeGraph.Api/Services/IVictoriaMetricsClient.cs
-- [ ] T008 [P] Create VictoriaMetricsFixture using Testcontainers for .NET (pulls victoriametrics/victoria-metrics image, configures -retentionPeriod=5y, -dedup.minScrapeInterval=1m) in api/tests/EpCubeGraph.Api.Tests/Fixtures/VictoriaMetricsFixture.cs
-- [ ] T009 Configure global error handling, JSON serialization (camelCase), Swagger/OpenAPI, and logging in api/src/EpCubeGraph.Api/Program.cs
+- [x] T005 Create appsettings.json with AzureAd (Instance, TenantId, ClientId, Audience) and VictoriaMetrics (Url) sections in api/src/EpCubeGraph.Api/appsettings.json
+- [x] T006 [P] Configure Microsoft.Identity.Web authentication and authorization middleware in api/src/EpCubeGraph.Api/Program.cs (AddMicrosoftIdentityWebApiAuthentication, AddAuthorization with RequireScope("user_impersonation") as DefaultPolicy, UseAuthentication, UseAuthorization)
+- [x] T007 [P] Define IVictoriaMetricsClient interface with QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync methods in api/src/EpCubeGraph.Api/Services/IVictoriaMetricsClient.cs
+- [x] T008 [P] Create VictoriaMetricsFixture using Testcontainers for .NET (pulls victoriametrics/victoria-metrics image, configures -retentionPeriod=5y, -dedup.minScrapeInterval=1m) in api/tests/EpCubeGraph.Api.Tests/Fixtures/VictoriaMetricsFixture.cs
+- [x] T009 Configure global error handling, JSON serialization (camelCase), Swagger/OpenAPI, and logging in api/src/EpCubeGraph.Api/Program.cs
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
@@ -52,10 +52,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T010 [P] [US3] Create echonet-exporter multi-arch Dockerfile with docker buildx, Go cross-compilation (CGO_ENABLED=0), alpine:3.19 base, ca-certificates + tzdata in local/echonet-exporter/Dockerfile
-- [ ] T011 [P] [US3] Create vmagent scrape configuration targeting echonet-exporter:9191 with 60s scrape interval, 30s timeout in local/vmagent/scrape.yml
-- [ ] T012 [P] [US3] Create .env.example with EPCUBE_BATTERY_IP, EPCUBE_SOLAR_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
-- [ ] T013 [US3] Create docker-compose.yml orchestrating echonet-exporter and vmagent: env_file for .env, vmagent with -remoteWrite.bearerToken, -remoteWrite.tmpDataPath, -remoteWrite.maxDiskUsagePerURL=1GB, persistent volume for vmagent WAL, restart: unless-stopped on both, scrape.yml mounted read-only in local/docker-compose.yml
+- [x] T010 [P] [US3] Create echonet-exporter multi-arch Dockerfile with docker buildx, Go cross-compilation (CGO_ENABLED=0), alpine:3.19 base, ca-certificates + tzdata in local/echonet-exporter/Dockerfile
+- [x] T011 [P] [US3] Create vmagent scrape configuration targeting echonet-exporter:9191 with 60s scrape interval, 30s timeout in local/vmagent/scrape.yml
+- [x] T012 [P] [US3] Create .env.example with EPCUBE_BATTERY_IP, EPCUBE_SOLAR_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
+- [x] T013 [US3] Create docker-compose.yml orchestrating echonet-exporter and vmagent: env_file for .env, vmagent with -remoteWrite.bearerToken, -remoteWrite.tmpDataPath, -remoteWrite.maxDiskUsagePerURL=1GB, persistent volume for vmagent WAL, restart: unless-stopped on both, scrape.yml mounted read-only in local/docker-compose.yml
 
 **Checkpoint**: `docker compose build` succeeds, `docker compose config` validates. Local stack is independently deployable.
 
@@ -71,10 +71,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T014 [P] [US1] Create Key Vault Bicep module for bearer token secret storage with managed identity access policy in infra/keyvault.bicep
-- [ ] T015 [P] [US1] Create deployment parameters file with resource group, location, Key Vault name, Container Apps environment settings in infra/parameters.json
-- [ ] T016 [US1] Create main Bicep template: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/main.bicep
-- [ ] T017 [US1] Add Entra ID app registration and managed identity role assignments to infra/main.bicep for API authentication (FR-010)
+- [x] T014 [P] [US1] Create Key Vault Bicep module for bearer token secret storage with managed identity access policy in infra/keyvault.bicep
+- [x] T015 [P] [US1] Create deployment parameters file with resource group, location, Key Vault name, Container Apps environment settings in infra/parameters.json
+- [x] T016 [US1] Create main Bicep template: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/main.bicep
+- [x] T017 [US1] Add Entra ID app registration and managed identity role assignments to infra/main.bicep for API authentication (FR-010)
 
 **Checkpoint**: `az deployment group what-if` validates. VictoriaMetrics + vmauth accept authenticated remote-write requests.
 
@@ -90,44 +90,44 @@
 
 ### Tests for User Story 2 (TDD — write tests FIRST, confirm they FAIL)
 
-- [ ] T018 [P] [US2] Write VictoriaMetricsClient unit tests (QueryAsync, QueryRangeAsync, SeriesAsync, error handling, timeout) mocking HttpMessageHandler in api/tests/EpCubeGraph.Api.Tests/Unit/VictoriaMetricsClientTests.cs
-- [ ] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=export/negative=import) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
-- [ ] T020 [P] [US2] Write DeviceInfo record tests (serialization, optional fields, DeviceClass values) in api/tests/EpCubeGraph.Api.Tests/Unit/DeviceInfoTests.cs
-- [ ] T038 [P] [US2] Write Validate helper unit tests (Required, Timestamp, Duration, SafeName — null=valid, invalid=error, valid=pass) in api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs
+- [x] T018 [P] [US2] Write VictoriaMetricsClient unit tests (QueryAsync, QueryRangeAsync, SeriesAsync, error handling, timeout) mocking HttpMessageHandler in api/tests/EpCubeGraph.Api.Tests/Unit/VictoriaMetricsClientTests.cs
+- [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=export/negative=import) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
+- [x] T020 [P] [US2] Write DeviceInfo record tests (serialization, optional fields, DeviceClass values) in api/tests/EpCubeGraph.Api.Tests/Unit/DeviceInfoTests.cs
+- [x] T038 [P] [US2] Write Validate helper unit tests (Required, Timestamp, Duration, SafeName — null=valid, invalid=error, valid=pass) in api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs
 
 ### Models for User Story 2
 
-- [ ] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"device_class", Ip→"ip", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
-- [ ] T022 [P] [US2] Create HealthResponse record (Status, VictoriaMetrics) in api/src/EpCubeGraph.Api/Models/HealthResponse.cs
-- [ ] T023 [P] [US2] Create DeviceMetricsResponse record (Device, Metrics list) in api/src/EpCubeGraph.Api/Models/DeviceMetricsResponse.cs
-- [ ] T024 [P] [US2] Create DeviceListResponse record (Devices list) in api/src/EpCubeGraph.Api/Models/DeviceListResponse.cs
-- [ ] T039 [P] [US2] Create ErrorResponse record (Status, ErrorType, Error) with [JsonPropertyName] annotations in api/src/EpCubeGraph.Api/Models/ErrorResponse.cs
+- [x] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"device_class", Ip→"ip", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
+- [x] T022 [P] [US2] Create HealthResponse record (Status, VictoriaMetrics) in api/src/EpCubeGraph.Api/Models/HealthResponse.cs
+- [x] T023 [P] [US2] Create DeviceMetricsResponse record (Device, Metrics list) in api/src/EpCubeGraph.Api/Models/DeviceMetricsResponse.cs
+- [x] T024 [P] [US2] Create DeviceListResponse record (Devices list) in api/src/EpCubeGraph.Api/Models/DeviceListResponse.cs
+- [x] T039 [P] [US2] Create ErrorResponse record (Status, ErrorType, Error) with [JsonPropertyName] annotations in api/src/EpCubeGraph.Api/Models/ErrorResponse.cs
 
 ### Validation for User Story 2
 
-- [ ] T040 [P] [US2] Create Validate static helper class: Required(string? value, string paramName), Timestamp(string? value, string paramName), Duration(string? value, string paramName), SafeName(string? value, string paramName) — each returns null on valid, TypedResults.BadRequest<ErrorResponse> on invalid in api/src/EpCubeGraph.Api/Validate.cs
+- [x] T040 [P] [US2] Create Validate static helper class: Required(string? value, string paramName), Timestamp(string? value, string paramName), Duration(string? value, string paramName), SafeName(string? value, string paramName) — each returns null on valid, TypedResults.BadRequest<ErrorResponse> on invalid in api/src/EpCubeGraph.Api/Validate.cs
 
 ### Services for User Story 2
 
-- [ ] T025 [US2] Implement VictoriaMetricsClient using HttpClient with IHttpClientFactory DI registration: QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync in api/src/EpCubeGraph.Api/Services/VictoriaMetricsClient.cs
-- [ ] T026 [US2] Implement GridCalculator: constructs PromQL expression (echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
+- [x] T025 [US2] Implement VictoriaMetricsClient using HttpClient with IHttpClientFactory DI registration: QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync in api/src/EpCubeGraph.Api/Services/VictoriaMetricsClient.cs
+- [x] T026 [US2] Implement GridCalculator: constructs PromQL expression (echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
 
 ### Endpoints for User Story 2
 
-- [ ] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, checks VictoriaMetrics reachability, returns HealthResponse with 200 or 503) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
-- [ ] T028 [US2] Implement QueryEndpoints: GET /api/v1/query, GET /api/v1/query_range, GET /api/v1/series, GET /api/v1/labels, GET /api/v1/label/{name}/values as authenticated PromQL passthrough to VictoriaMetrics in api/src/EpCubeGraph.Api/Endpoints/QueryEndpoints.cs
-- [ ] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries echonet_device_info + echonet_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
-- [ ] T030 [US2] Implement GridEndpoints: GET /api/v1/grid (optional start, end, step params, delegates to GridCalculator, returns PromQL range result) in api/src/EpCubeGraph.Api/Endpoints/GridEndpoints.cs
+- [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, checks VictoriaMetrics reachability, returns HealthResponse with 200 or 503) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
+- [x] T028 [US2] Implement QueryEndpoints: GET /api/v1/query, GET /api/v1/query_range, GET /api/v1/series, GET /api/v1/labels, GET /api/v1/label/{name}/values as authenticated PromQL passthrough to VictoriaMetrics in api/src/EpCubeGraph.Api/Endpoints/QueryEndpoints.cs
+- [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries echonet_device_info + echonet_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
+- [x] T030 [US2] Implement GridEndpoints: GET /api/v1/grid (optional start, end, step params, delegates to GridCalculator, returns PromQL range result) in api/src/EpCubeGraph.Api/Endpoints/GridEndpoints.cs
 
 ### Wiring and Integration for User Story 2
 
-- [ ] T031 [US2] Register all services (AddHttpClient<IVictoriaMetricsClient, VictoriaMetricsClient>, AddScoped<GridCalculator>) and map all endpoint groups (.MapGroup("/api/v1").RequireAuthorization() for authenticated, AllowAnonymous for health) in api/src/EpCubeGraph.Api/Program.cs
-- [ ] T041 [US2] Wire prometheus-net middleware: UseHttpMetrics(), MapMetrics("/metrics").AllowAnonymous() (outside auth group) for self-monitoring (FR-021) in api/src/EpCubeGraph.Api/Program.cs
-- [ ] T042 [US2] Configure structured JSON logging: builder.Logging.AddJsonConsole(), add ILogger injection and log statements for auth failures (401/403), VictoriaMetrics query errors, and request durations (FR-020) in api/src/EpCubeGraph.Api/Program.cs
-- [ ] T032 [US2] Write VictoriaMetrics integration tests using VictoriaMetricsFixture: insert test data via remote-write, verify QueryRangeAsync returns correct time series, verify empty range returns empty result in api/tests/EpCubeGraph.Api.Tests/Integration/VictoriaMetricsIntegrationTests.cs
-- [ ] T033 [US2] Write API integration tests using WebApplicationFactory: verify authenticated requests return 200, unauthenticated return 401, /health returns 200 without auth, /query with invalid PromQL returns 400 in api/tests/EpCubeGraph.Api.Tests/Integration/ApiIntegrationTests.cs
-- [ ] T043 [US2] Write SC-003 performance test: seed 30 days synthetic data via VictoriaMetricsFixture, assert query_range returns within 2 seconds in api/tests/EpCubeGraph.Api.Tests/Integration/PerformanceTests.cs
-- [ ] T034 [US2] Create API Dockerfile: multi-stage build with mcr.microsoft.com/dotnet/sdk:8.0 (build) and mcr.microsoft.com/dotnet/aspnet:8.0-alpine (runtime), EXPOSE 8080 in api/Dockerfile
+- [x] T031 [US2] Register all services (AddHttpClient<IVictoriaMetricsClient, VictoriaMetricsClient>, AddScoped<GridCalculator>) and map all endpoint groups (.MapGroup("/api/v1").RequireAuthorization() for authenticated, AllowAnonymous for health) in api/src/EpCubeGraph.Api/Program.cs
+- [x] T041 [US2] Wire prometheus-net middleware: UseHttpMetrics(), MapMetrics("/metrics").AllowAnonymous() (outside auth group) for self-monitoring (FR-021) in api/src/EpCubeGraph.Api/Program.cs
+- [x] T042 [US2] Configure structured JSON logging: builder.Logging.AddJsonConsole(), add ILogger injection and log statements for auth failures (401/403), VictoriaMetrics query errors, and request durations (FR-020) in api/src/EpCubeGraph.Api/Program.cs
+- [x] T032 [US2] Write VictoriaMetrics integration tests using VictoriaMetricsFixture: insert test data via remote-write, verify QueryRangeAsync returns correct time series, verify empty range returns empty result in api/tests/EpCubeGraph.Api.Tests/Integration/VictoriaMetricsIntegrationTests.cs
+- [x] T033 [US2] Write API integration tests using WebApplicationFactory: verify authenticated requests return 200, unauthenticated return 401, /health returns 200 without auth, /query with invalid PromQL returns 400 in api/tests/EpCubeGraph.Api.Tests/Integration/ApiIntegrationTests.cs
+- [x] T043 [US2] Write SC-003 performance test: seed 30 days synthetic data via VictoriaMetricsFixture, assert query_range returns within 2 seconds in api/tests/EpCubeGraph.Api.Tests/Integration/PerformanceTests.cs
+- [x] T034 [US2] Create API Dockerfile: multi-stage build with mcr.microsoft.com/dotnet/sdk:10.0 (build) and mcr.microsoft.com/dotnet/aspnet:10.0-alpine (runtime), EXPOSE 8080 in api/Dockerfile
 
 **Checkpoint**: All API endpoints functional, all tests pass with 100% coverage. User Stories 1, 2, and 3 all work independently.
 
@@ -137,10 +137,10 @@
 
 **Purpose**: Coverage enforcement, end-to-end validation, security hardening
 
-- [ ] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
-- [ ] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
-- [ ] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
-- [ ] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), az deployment group validate (infra/), container image build+push with tagged versions (no :latest)
+- [x] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
+- [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
+- [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
+- [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), az deployment group validate (infra/), container image build+push with tagged versions (no :latest)
 
 ---
 

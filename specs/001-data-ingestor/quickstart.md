@@ -6,7 +6,7 @@
 
 ## Prerequisites
 
-- .NET 8 SDK
+- .NET 10 SDK
 - Docker Desktop (or Docker Engine + Docker Compose v2)
 - Azure CLI (`az`) — for infrastructure deployment
 - An Azure subscription with Entra ID tenant
@@ -35,7 +35,7 @@ dotnet build api/EpCubeGraph.sln
 | `Azure.Security.KeyVault.Secrets` | Key Vault access |
 | `Swashbuckle.AspNetCore` | Swagger / OpenAPI docs |
 
-All other dependencies (`HttpClient`, `System.Text.Json`, `IConfiguration`) are built into .NET 8.
+All other dependencies (`HttpClient`, `System.Text.Json`, `IConfiguration`) are built into .NET 10.
 
 ### Test Dependencies (`EpCubeGraph.Api.Tests.csproj`)
 

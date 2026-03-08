@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main, '001-data-ingestor']
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        working-directory: api
+        run: dotnet restore EpCubeGraph.sln
+
+      - name: Build
+        working-directory: api
+        run: dotnet build EpCubeGraph.sln --no-restore --configuration Release
+
+      - name: Unit Tests
+        working-directory: api
+        run: >
+          dotnet test EpCubeGraph.sln
+          --no-build
+          --configuration Release
+          --filter "FullyQualifiedName~Unit"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults
+
+      - name: Integration Tests
+        working-directory: api
+        run: >
+          dotnet test EpCubeGraph.sln
+          --no-build
+          --configuration Release
+          --filter "FullyQualifiedName~Integration"
+          --results-directory ./TestResults
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: api/TestResults/**/coverage.cobertura.xml
+
+  docker-local:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker Compose Build (local stack)
+        working-directory: local
+        run: docker compose build
+
+  docker-api:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API Container Image
+        working-directory: api
+        run: |
+          docker build \
+            --tag epcubegraph-api:${{ github.sha }} \
+            --tag epcubegraph-api:ci \
+            .
+
+  validate-infra:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Bicep
+        uses: azure/CLI@v2
+        with:
+          inlineScript: |
+            az bicep build --file infra/main.bicep

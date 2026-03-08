@@ -1,0 +1,38 @@
+# EP Cube Graph — Local Ingestion Stack
+# Orchestrates echonet-exporter (metrics collector) and vmagent (remote-write forwarder)
+#
+# Usage:
+#   cp .env.example .env  # Edit with your device IPs and remote-write credentials
+#   docker compose up -d
+
+services:
+  echonet-exporter:
+    build:
+      context: ./echonet-exporter
+      dockerfile: Dockerfile
+    environment:
+      - EPCUBE_BATTERY_IP=${EPCUBE_BATTERY_IP}
+      - EPCUBE_SOLAR_IP=${EPCUBE_SOLAR_IP}
+    ports:
+      - "9191:9191"
+    restart: unless-stopped
+
+  vmagent:
+    image: victoriametrics/vmagent:v1.106.1
+    command:
+      - "-promscrape.config=/etc/vmagent/scrape.yml"
+      - "-remoteWrite.url=${REMOTE_WRITE_URL}"
+      - "-remoteWrite.bearerToken=${REMOTE_WRITE_TOKEN}"
+      - "-remoteWrite.tmpDataPath=/vmagent-data"
+      - "-remoteWrite.maxDiskUsagePerURL=1GB"
+    env_file: .env
+    volumes:
+      - ./vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro
+      - vmagent-data:/vmagent-data
+    depends_on:
+      - echonet-exporter
+    restart: unless-stopped
+
+volumes:
+  vmagent-data:
+    driver: local

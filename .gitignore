@@ -1,0 +1,47 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+
+# NuGet
+packages/
+*.nupkg
+
+# Build outputs
+dist/
+build/
+publish/
+out/
+
+# Coverage
+coverage/
+coveragereport/
+**/coverage.cobertura.xml
+**/TestResults/
+
+# IDE
+.vs/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+*.env.local
+appsettings.Development.json
+
+# Docker
+docker-compose.override.yml
+
+# Temporary
+*.tmp
+*.log

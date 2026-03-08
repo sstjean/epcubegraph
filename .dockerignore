@@ -1,0 +1,42 @@
+# Git
+.git/
+.gitignore
+
+# IDE
+.vs/
+.vscode/
+.idea/
+
+# Specs and docs
+specs/
+.specify/
+.github/
+*.md
+
+# .NET build outputs
+**/bin/
+**/obj/
+**/out/
+**/publish/
+
+# Test results
+**/TestResults/
+**/coverage*/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Docker
+**/Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Logs
+*.log
+*.log.*
+
+# macOS
+.DS_Store
+Thumbs.db

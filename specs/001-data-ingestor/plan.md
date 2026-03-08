@@ -15,7 +15,7 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 
 ## Technical Context
 
-**Language/Version**: C# / .NET 8
+**Language/Version**: C# / .NET 10
 **Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Azure.Identity, Azure.Security.KeyVault.Secrets
 **Storage**: VictoriaMetrics single-node on Azure Container Apps (Prometheus remote-write ingestion, PromQL queries)
 **Testing**: xUnit, coverlet (coverage), Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory), Testcontainers for .NET (integration tests with VictoriaMetrics)

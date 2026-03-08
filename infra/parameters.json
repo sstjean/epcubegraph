@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "environmentName": {
+      "value": "epcubegraph"
+    },
+    "keyVaultName": {
+      "value": "epcubegraph-kv"
+    },
+    "victoriaMetricsImage": {
+      "value": "victoriametrics/victoria-metrics:v1.106.1"
+    },
+    "vmauthImage": {
+      "value": "victoriametrics/vmauth:v1.106.1"
+    },
+    "apiImage": {
+      "value": ""
+    },
+    "entraIdTenantId": {
+      "value": ""
+    },
+    "entraIdClientId": {
+      "value": ""
+    }
+  }
+}
