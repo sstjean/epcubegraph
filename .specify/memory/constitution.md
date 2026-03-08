@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.6.0 → 1.6.1
+  Version change: 1.6.1 → 1.6.2
   Modified sections:
-    - DevOps — added Local Deployment Automation rule
+    - DevOps — added CI Coverage Gate rule (NON-NEGOTIABLE)
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -13,8 +13,7 @@
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Dependent specs:
-    - specs/001-data-ingestor/plan.md             ⚠ pending — DevOps: Local
-      gate must be added to Constitution Check table
+    - specs/001-data-ingestor/plan.md             ✅ no changes needed
   Follow-up TODOs: none
 -->
 
@@ -198,6 +197,13 @@ and protecting data across all client platforms.
   deploy every change that reaches the main branch. The
   pipeline MUST enforce the full test suite gate (Principle
   III) before deployment proceeds.
+- **CI Coverage Gate (NON-NEGOTIABLE)**: The CI pipeline MUST
+  enforce 100% combined code coverage (unit + integration) as
+  a hard gate. The pipeline MUST fail the build if coverage
+  falls below 100%. This gate MUST NOT be bypassed, made
+  informational, or reduced to a warning under any
+  circumstance. Lowering the threshold requires a constitution
+  amendment (MAJOR version bump).
 - **Environment Parity**: Development, staging (if present),
   and production environments MUST be provisioned from the
   same infrastructure-as-code templates, differing only in
@@ -236,4 +242,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.6.1 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-08
+**Version**: 1.6.2 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-08

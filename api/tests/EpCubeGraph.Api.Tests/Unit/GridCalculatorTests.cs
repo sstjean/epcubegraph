@@ -69,6 +69,82 @@ public class GridCalculatorTests
         Assert.Contains("battery_charge_discharge", expr);
     }
 
+    // ── Edge Cases ──
+
+    [Fact]
+    public async Task CalculateAsync_WithOnlyStart_UsesDefaultEndAndStep()
+    {
+        var mockClient = new MockVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await calculator.CalculateAsync(start: "1000");
+
+        Assert.Equal("1000", mockClient.LastStart);
+        Assert.NotNull(mockClient.LastEnd); // defaulted
+        Assert.Equal("1m", mockClient.LastStep);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_WithOnlyEnd_UsesDefaultStartAndStep()
+    {
+        var mockClient = new MockVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await calculator.CalculateAsync(end: "2000");
+
+        Assert.NotNull(mockClient.LastStart); // defaulted
+        Assert.Equal("2000", mockClient.LastEnd);
+        Assert.Equal("1m", mockClient.LastStep);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_WithOnlyStep_UsesDefaultStartAndEnd()
+    {
+        var mockClient = new MockVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await calculator.CalculateAsync(step: "5m");
+
+        Assert.NotNull(mockClient.LastStart); // defaulted
+        Assert.NotNull(mockClient.LastEnd); // defaulted
+        Assert.Equal("5m", mockClient.LastStep);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_DefaultStart_Is24HoursBeforeDefaultEnd()
+    {
+        var mockClient = new MockVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await calculator.CalculateAsync();
+
+        var start = long.Parse(mockClient.LastStart!);
+        var end = long.Parse(mockClient.LastEnd!);
+        var diffHours = (end - start) / 3600.0;
+
+        // Should be approximately 24 hours (within a few seconds of test execution time)
+        Assert.InRange(diffHours, 23.99, 24.01);
+    }
+
+    [Fact]
+    public async Task CalculateAsync_PropagatesHttpRequestException()
+    {
+        var mockClient = new ThrowingVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => calculator.CalculateAsync());
+    }
+
+    [Fact]
+    public async Task CalculateAsync_PropagatesCancellation()
+    {
+        var mockClient = new CancellingVictoriaMetricsClient();
+        var calculator = new GridCalculator(mockClient);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => calculator.CalculateAsync(ct: new CancellationToken(true)));
+    }
+
     private sealed class MockVictoriaMetricsClient : IVictoriaMetricsClient
     {
         public string? LastQuery { get; private set; }
@@ -104,6 +180,57 @@ public class GridCalculatorTests
         {
             var json = """{"status":"success","data":{"resultType":"matrix","result":[]}}""";
             return System.Text.Json.JsonDocument.Parse(json).RootElement.Clone();
+        }
+    }
+
+    private sealed class ThrowingVictoriaMetricsClient : IVictoriaMetricsClient
+    {
+        public Task<System.Text.Json.JsonElement> QueryAsync(string query, string? time = null, CancellationToken ct = default)
+            => throw new HttpRequestException("VM unavailable");
+
+        public Task<System.Text.Json.JsonElement> QueryRangeAsync(string query, string start, string end, string step, CancellationToken ct = default)
+            => throw new HttpRequestException("VM unavailable");
+
+        public Task<System.Text.Json.JsonElement> SeriesAsync(string match, string? start = null, string? end = null, CancellationToken ct = default)
+            => throw new HttpRequestException("VM unavailable");
+
+        public Task<System.Text.Json.JsonElement> LabelsAsync(CancellationToken ct = default)
+            => throw new HttpRequestException("VM unavailable");
+
+        public Task<System.Text.Json.JsonElement> LabelValuesAsync(string labelName, CancellationToken ct = default)
+            => throw new HttpRequestException("VM unavailable");
+    }
+
+    private sealed class CancellingVictoriaMetricsClient : IVictoriaMetricsClient
+    {
+        public Task<System.Text.Json.JsonElement> QueryAsync(string query, string? time = null, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(default(System.Text.Json.JsonElement));
+        }
+
+        public Task<System.Text.Json.JsonElement> QueryRangeAsync(string query, string start, string end, string step, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(default(System.Text.Json.JsonElement));
+        }
+
+        public Task<System.Text.Json.JsonElement> SeriesAsync(string match, string? start = null, string? end = null, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(default(System.Text.Json.JsonElement));
+        }
+
+        public Task<System.Text.Json.JsonElement> LabelsAsync(CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(default(System.Text.Json.JsonElement));
+        }
+
+        public Task<System.Text.Json.JsonElement> LabelValuesAsync(string labelName, CancellationToken ct = default)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(default(System.Text.Json.JsonElement));
         }
     }
 }

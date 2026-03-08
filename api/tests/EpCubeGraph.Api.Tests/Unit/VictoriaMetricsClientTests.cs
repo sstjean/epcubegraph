@@ -85,6 +85,44 @@ public class VictoriaMetricsClientTests
     }
 
     [Fact]
+    public async Task SeriesAsync_WithStart_IncludesStartParameter()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up", start: "1709683200");
+
+        Assert.Contains("start=1709683200", handler.LastRequestUri?.Query);
+    }
+
+    [Fact]
+    public async Task SeriesAsync_WithEnd_IncludesEndParameter()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up", end: "1709769600");
+
+        Assert.Contains("end=1709769600", handler.LastRequestUri?.Query);
+    }
+
+    [Fact]
+    public async Task SeriesAsync_WithStartAndEnd_IncludesBothParameters()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up", start: "1000", end: "2000");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        Assert.Contains("start=1000", query);
+        Assert.Contains("end=2000", query);
+    }
+
+    [Fact]
     public async Task LabelsAsync_ReturnsLabelNames()
     {
         var json = """{"status":"success","data":["__name__","device","ip"]}""";
@@ -125,6 +163,186 @@ public class VictoriaMetricsClientTests
 
         await Assert.ThrowsAsync<TaskCanceledException>(() =>
             client.QueryAsync("up", ct: new CancellationToken(true)));
+    }
+
+    // ── Edge Cases: Error Status Codes ──
+
+    [Fact]
+    public async Task QueryAsync_ThrowsHttpRequestException_On400()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.BadRequest, """{"error":"bad request"}""");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_ThrowsHttpRequestException_On401()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.Unauthorized, "Unauthorized");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_ThrowsHttpRequestException_On403()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.Forbidden, "Forbidden");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_ThrowsHttpRequestException_On404()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.NotFound, "Not Found");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_ThrowsHttpRequestException_On503()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.ServiceUnavailable, "Service Unavailable");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.QueryAsync("up"));
+    }
+
+    // ── Edge Cases: URL Encoding ──
+
+    [Fact]
+    public async Task QueryAsync_UrlEncodesSpecialCharacters()
+    {
+        var json = """{"status":"success","data":{"resultType":"vector","result":[]}}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.QueryAsync("rate(http_requests_total{job=\"api\"}[5m])");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        // Equals sign and square brackets should be URL-encoded
+        Assert.Contains("%3D", query); // = encoded
+        Assert.Contains("%5B", query); // [ encoded
+        Assert.Contains("%5D", query); // ] encoded
+    }
+
+    [Fact]
+    public async Task LabelValuesAsync_UrlEncodesLabelName()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.LabelValuesAsync("__name__");
+
+        var path = handler.LastRequestUri?.AbsolutePath ?? "";
+        Assert.Contains("__name__", path);
+    }
+
+    [Fact]
+    public async Task SeriesAsync_UrlEncodesMatchParam()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("{__name__=~\"echonet_.*\"}");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        // The match param should be URL-encoded
+        Assert.DoesNotContain("{__name__", query);
+    }
+
+    [Fact]
+    public async Task QueryRangeAsync_UrlEncodesAllParams()
+    {
+        var json = """{"status":"success","data":{"resultType":"matrix","result":[]}}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.QueryRangeAsync("up{job=\"test\"}", "2026-03-07T00:00:00Z", "2026-03-08T00:00:00Z", "1m");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        // Curly braces from PromQL should be encoded
+        Assert.DoesNotContain("{", query);
+    }
+
+    // ── Edge Cases: SeriesAsync without start ──
+
+    [Fact]
+    public async Task SeriesAsync_WithoutStartButWithEnd_OmitsStart()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up", start: null, end: "2000");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        Assert.DoesNotContain("start=", query);
+        Assert.Contains("end=2000", query);
+    }
+
+    [Fact]
+    public async Task SeriesAsync_WithStartButWithoutEnd_OmitsEnd()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up", start: "1000", end: null);
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        Assert.Contains("start=1000", query);
+        Assert.DoesNotContain("end=", query);
+    }
+
+    [Fact]
+    public async Task SeriesAsync_WithoutStartAndEnd_OmitsBoth()
+    {
+        var json = """{"status":"success","data":[]}""";
+        var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
+        var client = CreateClient(handler);
+
+        await client.SeriesAsync("up");
+
+        var query = handler.LastRequestUri?.Query ?? "";
+        Assert.DoesNotContain("start=", query);
+        Assert.DoesNotContain("end=", query);
+    }
+
+    // ── Edge Cases: Empty/Malformed Responses ──
+
+    [Fact]
+    public async Task QueryAsync_ThrowsOnEmptyResponse()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.OK, "");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAnyAsync<JsonException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_ThrowsOnMalformedJson()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.OK, "{invalid json");
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAnyAsync<JsonException>(() => client.QueryAsync("up"));
+    }
+
+    [Fact]
+    public async Task QueryAsync_HandlesMinimalJson()
+    {
+        var handler = CreateMockHandler(HttpStatusCode.OK, "{}");
+        var client = CreateClient(handler);
+
+        var result = await client.QueryAsync("up");
+        Assert.Equal(JsonValueKind.Object, result.ValueKind);
     }
 
     // ── Mock Handlers ──

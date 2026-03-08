@@ -40,6 +40,7 @@ jobs:
           --filter "FullyQualifiedName~Unit"
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
+          --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings
 
       - name: Integration Tests
         working-directory: api
@@ -50,6 +51,7 @@ jobs:
           --filter "FullyQualifiedName~Integration"
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
+          --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings
 
       - name: Enforce coverage threshold
         working-directory: api
