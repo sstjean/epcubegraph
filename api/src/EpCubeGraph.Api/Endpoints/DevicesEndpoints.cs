@@ -18,9 +18,21 @@ public static class DevicesEndpoints
         IVictoriaMetricsClient client,
         CancellationToken ct)
     {
-        // Get device info labels from the echonet_device_info metric
-        var infoResult = await client.SeriesAsync("echonet_device_info", ct: ct);
-        var scrapeResult = await client.QueryAsync("echonet_scrape_success", ct: ct);
+        JsonElement infoResult;
+        JsonElement scrapeResult;
+
+        try
+        {
+            // Get device info labels from the echonet_device_info metric
+            infoResult = await client.SeriesAsync("echonet_device_info", ct: ct);
+            scrapeResult = await client.QueryAsync("echonet_scrape_success", ct: ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            return Results.Json(
+                new ErrorResponse("error", "execution", ex.Message),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
 
         // Build set of online devices from scrape_success
         var onlineDevices = new HashSet<string>();
@@ -77,7 +89,17 @@ public static class DevicesEndpoints
             return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
 
         // Find all series that have this device label
-        var result = await client.SeriesAsync($"{{device=\"{device}\"}}", ct: ct);
+        JsonElement result;
+        try
+        {
+            result = await client.SeriesAsync($"{{device=\"{device}\"}}", ct: ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            return Results.Json(
+                new ErrorResponse("error", "execution", ex.Message),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
 
         var metrics = new List<string>();
         if (result.TryGetProperty("data", out var data))
