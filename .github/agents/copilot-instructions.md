@@ -1,34 +1,49 @@
+````chatagent
 # epcubegraph Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-07
+Auto-generated from all feature plans. Last updated: 2025-06-23
 
 ## Active Technologies
-- C# / .NET 8 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation), HttpClient (VictoriaMetrics queries, built-in), Azure.Identity, Azure.Security.KeyVault.Secrets (001-data-ingestor)
-- VictoriaMetrics single-node on Azure Container Apps (Prometheus remote-write ingestion, PromQL queries) (001-data-ingestor)
-- C# / .NET 8 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Azure.Identity, Azure.Security.KeyVault.Secrets (001-data-ingestor)
-
-- Python 3.12 + FastAPI, uvicorn, httpx (VictoriaMetrics queries), python-jose (JWT validation), azure-identity, azure-keyvault-secrets (001-data-ingestor)
+- C# / .NET 10 + ASP.NET Core Minimal API (api/)
+- Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement)
+- HttpClient (VictoriaMetrics PromQL queries, built-in)
+- Azure.Identity, Azure.Security.KeyVault.Secrets
+- VictoriaMetrics single-node + vmauth on Azure Container Apps
+- Terraform (azurerm ~>4.0, azuread ~>3.0) for infrastructure (infra/)
+- Docker Compose for local ingestion stack (local/)
 
 ## Project Structure
 
 ```text
-src/
-tests/
+api/                    # .NET 10 API (src/ + tests/)
+  src/EpCubeGraph.Api/  # Minimal API with PromQL passthrough + device endpoints
+  tests/                # xUnit tests (Unit/ + Integration/ with Testcontainers)
+infra/                  # Terraform IaC (Container Apps, Key Vault, ACR, Entra ID)
+local/                  # Docker Compose stack (echonet-exporter + vmagent)
+specs/                  # Feature specifications
+scripts/                # Setup and validation scripts
 ```
 
 ## Commands
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
+```bash
+cd api && dotnet build EpCubeGraph.sln             # Build
+cd api && dotnet test EpCubeGraph.sln               # Run all tests
+cd infra && terraform init && terraform plan        # Validate infrastructure
+cd local && docker compose up -d                  # Start local ingestion
+```
 
 ## Code Style
 
-Python 3.12: Follow standard conventions
+- C# 13 / .NET 10: Minimal API pattern, file-scoped namespaces, nullable reference types enabled
+- 100% line coverage enforced (constitution mandate)
+- TDD required: tests before implementation
+- No `:latest` container tags in production
 
 ## Recent Changes
-- 001-data-ingestor: Added C# / .NET 8 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Azure.Identity, Azure.Security.KeyVault.Secrets
-- 001-data-ingestor: Added C# / .NET 8 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation), HttpClient (VictoriaMetrics queries, built-in), Azure.Identity, Azure.Security.KeyVault.Secrets
-
-- 001-data-ingestor: Added Python 3.12 + FastAPI, uvicorn, httpx (VictoriaMetrics queries), python-jose (JWT validation), azure-identity, azure-keyvault-secrets
+- 001-data-ingestor: C# / .NET 10 Minimal API with PromQL passthrough endpoints, device discovery, VictoriaMetrics time-series backend, Terraform IaC on Azure Container Apps
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
+
+````
