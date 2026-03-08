@@ -48,7 +48,32 @@ jobs:
           --no-build
           --configuration Release
           --filter "FullyQualifiedName~Integration"
+          --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
+
+      - name: Enforce coverage threshold
+        working-directory: api
+        run: |
+          # Parse all Cobertura reports and verify line coverage >= 100%
+          THRESHOLD=100
+          REPORTS=$(find ./TestResults -name 'coverage.cobertura.xml' 2>/dev/null)
+          if [ -z "$REPORTS" ]; then
+            echo "::error::No coverage reports found"
+            exit 1
+          fi
+          # Extract line-rate from each report (0.0 - 1.0 scale)
+          FAILED=0
+          for report in $REPORTS; do
+            LINE_RATE=$(grep -o 'line-rate="[^"]*"' "$report" | head -1 | grep -o '[0-9.]*')
+            PERCENT=$(echo "$LINE_RATE * 100" | bc -l | cut -d. -f1)
+            echo "Coverage: ${PERCENT}% (from $report)"
+            if [ "$PERCENT" -lt "$THRESHOLD" ]; then
+              echo "::error::Coverage ${PERCENT}% is below threshold ${THRESHOLD}%"
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then exit 1; fi
+          echo "✓ All coverage reports meet ${THRESHOLD}% threshold"
 
       - name: Upload coverage
         if: always()
