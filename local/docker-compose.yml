@@ -22,16 +22,23 @@ services:
     command:
       - "-promscrape.config=/etc/vmagent/scrape.yml"
       - "-remoteWrite.url=${REMOTE_WRITE_URL}"
-      - "-remoteWrite.bearerToken=${REMOTE_WRITE_TOKEN}"
+      - "-remoteWrite.bearerTokenFile=/run/secrets/remote_write_token"
       - "-remoteWrite.tmpDataPath=/vmagent-data"
       - "-remoteWrite.maxDiskUsagePerURL=1GB"
     env_file: .env
     volumes:
       - ./vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro
       - vmagent-data:/vmagent-data
+    secrets:
+      - remote_write_token
     depends_on:
       - echonet-exporter
     restart: unless-stopped
+
+secrets:
+  remote_write_token:
+    # Reads REMOTE_WRITE_TOKEN from .env and mounts as /run/secrets/remote_write_token
+    environment: "REMOTE_WRITE_TOKEN"
 
 volumes:
   vmagent-data:
