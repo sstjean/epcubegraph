@@ -1,50 +1,245 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+  Sync Impact Report
+  ==================
+  Version change: 1.6.1 → 1.6.2
+  Modified sections:
+    - DevOps — added CI Coverage Gate rule (NON-NEGOTIABLE)
+  Added sections: none
+  Removed sections: none
+  Templates requiring updates:
+    - .specify/templates/plan-template.md        ✅ no changes needed
+    - .specify/templates/spec-template.md         ✅ no changes needed
+    - .specify/templates/tasks-template.md        ✅ no changes needed
+    - .specify/templates/checklist-template.md    ✅ no changes needed
+    - .specify/templates/constitution-template.md ✅ source template (unchanged)
+  Dependent specs:
+    - specs/001-data-ingestor/plan.md             ✅ no changes needed
+  Follow-up TODOs: none
+-->
+
+# EP Cube Graph Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Simplicity
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+- Every solution MUST prefer the most straightforward approach
+  that satisfies the requirement.
+- New abstractions, layers, or indirection MUST be justified by
+  a concrete, present-day need — not a hypothetical future one.
+- When two designs solve the same problem, the one with fewer
+  moving parts MUST be chosen unless measurable evidence
+  demonstrates the simpler option is insufficient.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+**Rationale**: EP Cube Graph is a personal telemetry and
+graphing application. Unnecessary complexity increases
+maintenance burden without proportional benefit.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### II. YAGNI (You Aren't Gonna Need It)
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+- Features, configuration options, and extension points MUST NOT
+  be built until they are explicitly required by a current user
+  story or specification.
+- Speculative generalization (e.g., plugin systems, multi-tenant
+  support, provider abstractions) is prohibited unless a
+  specification demands it.
+- Code that exists without a covering requirement MUST be
+  removed or justified in a plan document.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+**Rationale**: Premature features create dead code, widen the
+test surface, and obscure the intent of the codebase.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### III. Test-Driven Development (NON-NEGOTIABLE)
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+- All new functionality MUST follow the Red-Green-Refactor
+  cycle: write a failing test, implement the minimum code to
+  pass, then refactor.
+- Tests MUST be written and confirmed to fail before any
+  production code is written for that behaviour.
+- Every user story MUST have at least one acceptance-level test
+  that can be executed independently.
+- Refactoring MUST NOT change externally observable behaviour;
+  the existing test suite MUST continue to pass.
+- **Code Coverage**: Unit tests and acceptance tests MUST
+  achieve 100% code coverage. No production code may exist
+  without a corresponding test that exercises it. Coverage
+  MUST be measured and enforced in the CI gate.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+**Rationale**: TDD produces verifiable, regression-resistant
+code and ensures every feature is exercised by automated tests.
+Mandating 100% coverage eliminates untested paths and prevents
+silent regressions.
+
+## Development Workflow
+
+- **Branching**: Each feature or fix MUST be developed on a
+  dedicated branch named `[###-feature-name]`.
+- **Commits**: Commits MUST be atomic and describe the "what"
+  and "why". One logical change per commit.
+- **Code Review**: All changes MUST be reviewed (self-review
+  acceptable for a solo project) against this constitution's
+  principles before merge.
+- **CI Gate**: The full test suite MUST pass before any branch
+  is merged. No test failures are permitted in the main branch.
+- **Documentation**: User-facing behaviour changes MUST be
+  reflected in relevant docs or specs before merge.
+
+## Performance Standards
+
+- **Telemetry Ingestion**: The system MUST ingest telemetry data
+  from EP Cube gateway devices without data loss under normal
+  operating conditions.
+- **Graph Rendering**: Charts and graphs MUST render within 2
+  seconds for up to 30 days of historical data on the target
+  hardware.
+- **Storage Efficiency**: Log storage MUST use a format that
+  supports efficient time-range queries without requiring full
+  dataset scans for common access patterns.
+- **Responsiveness**: The application MUST remain responsive
+  (UI updates within 500 ms) while background data collection
+  is active.
+
+## Platform Constraints
+
+- **Server-Side Hosting**: All server-side components MUST be
+  deployed to and hosted on Microsoft Azure.
+- **Azure Services**: Infrastructure choices (compute, storage,
+  messaging, etc.) MUST use Azure-native services unless a
+  specification documents a justified exception.
+- **Portability**: Application code SHOULD avoid tight coupling
+  to Azure-specific SDKs where a standard interface exists
+  (e.g., prefer standard HTTP clients over Azure-only helpers),
+  but operational deployment MUST target Azure.
+- **Web Application**: A web application MUST be provided as a
+  client interface for accessing telemetry data and graphs.
+- **iPhone Application**: A native iPhone (iOS) application
+  MUST be provided as a mobile client interface.
+- **Client–Server Contract**: Both client applications MUST
+  communicate with the server-side components through a shared,
+  versioned API contract. Direct database access from clients
+  is prohibited.
+- **Local Data Ingestion Containerization**: All local data
+  ingestion services (e.g., echonet-exporter, vmagent) MUST
+  be packaged and deployed as Docker containers. Container
+  images MUST be reproducible from a Dockerfile in the
+  repository. Bare-metal or manual installation of ingestion
+  components is prohibited.
+
+**Rationale**: Standardising on Azure simplifies infrastructure
+management, billing, and operational tooling for a single-owner
+project. Providing both web and iOS clients ensures access from
+any device.
+
+## Security
+
+- **Transport Encryption**: All communication between client
+  applications (web and iPhone) and the server MUST use TLS 1.2
+  or higher. Plain-text HTTP endpoints MUST NOT be exposed.
+- **Authentication**: Every API request from a client MUST be
+  authenticated. Anonymous access to server-side endpoints is
+  prohibited unless explicitly scoped in a specification.
+- **Authorization**: The server MUST enforce authorization
+  checks on every request. Clients MUST NOT be trusted to
+  self-authorize.
+- **Secrets Management**: API keys, tokens, and credentials
+  MUST NOT be stored in source code or client bundles. Secrets
+  MUST be managed through Azure Key Vault or an equivalent
+  secure store.
+- **Token Handling**: Authentication tokens MUST have a bounded
+  lifetime and MUST be refreshed or reissued before expiry.
+  Long-lived static tokens are prohibited.
+- **Input Validation**: The server MUST validate and sanitise
+  all input received from clients. Client-side validation alone
+  is insufficient.
+- **Zero-Trust Architecture**: The implementation MUST follow
+  zero-trust principles:
+  - **Never Trust, Always Verify**: Every request MUST be
+    authenticated and authorized regardless of its origin,
+    including requests from internal services and components.
+  - **Least Privilege**: Each component, service, and user
+    MUST be granted only the minimum permissions required for
+    its function. Over-scoped roles are prohibited.
+  - **Assume Breach**: The system MUST be designed so that
+    compromise of any single component does not grant access
+    to the entire system. Segment trust boundaries between
+    services.
+  - **Explicit Verification**: Network location (e.g., being
+    on the same VNET or subnet) MUST NOT be treated as proof
+    of trust. Identity-based verification is required at every
+    boundary.
+  - **No Implicit Trust Between Tiers**: The server MUST NOT
+    trust client applications, and internal services MUST NOT
+    trust each other without explicit, per-request credential
+    verification.
+
+**Rationale**: The system handles personal energy telemetry
+data. Zero-trust ensures that no component is implicitly
+trusted, limiting blast radius in the event of a compromise
+and protecting data across all client platforms.
+
+## DevOps
+
+- **Infrastructure as Code**: All cloud infrastructure,
+  platform configuration, and environment setup MUST be
+  defined in version-controlled infrastructure-as-code
+  templates (e.g., Bicep, Terraform). Manual creation of
+  cloud resources via portal or CLI ad-hoc commands is
+  prohibited for production environments.
+- **Reproducible Deployments**: Every deployment MUST be
+  reproducible from the repository alone. Given the same
+  commit and configuration, deploying to a fresh environment
+  MUST produce an identical result.
+- **Minimize Manual Steps**: Manual deployment steps MUST be
+  minimized. Any remaining manual step (e.g., one-time secret
+  seeding, DNS delegation) MUST be documented in the
+  quickstart or runbook with exact commands.
+- **CI/CD Pipeline**: A CI/CD pipeline MUST build, test, and
+  deploy every change that reaches the main branch. The
+  pipeline MUST enforce the full test suite gate (Principle
+  III) before deployment proceeds.
+- **CI Coverage Gate (NON-NEGOTIABLE)**: The CI pipeline MUST
+  enforce 100% combined code coverage (unit + integration) as
+  a hard gate. The pipeline MUST fail the build if coverage
+  falls below 100%. This gate MUST NOT be bypassed, made
+  informational, or reduced to a warning under any
+  circumstance. Lowering the threshold requires a constitution
+  amendment (MAJOR version bump).
+- **Environment Parity**: Development, staging (if present),
+  and production environments MUST be provisioned from the
+  same infrastructure-as-code templates, differing only in
+  parameter values.
+- **Rollback Capability**: Every deployment MUST support
+  rollback to the previous version. Container-based
+  deployments MUST use immutable, tagged images — `latest`
+  tags are prohibited in production.
+- **Local Deployment Automation**: Local deployments (e.g.,
+  Docker Compose stacks) MUST include scripted setup that
+  builds, configures, and starts all services with minimal
+  manual interaction. The operator MUST only need to provide
+  environment-specific values (e.g., device IPs, tokens) via
+  a configuration file or environment variables; all other
+  steps MUST be automated.
+
+**Rationale**: Infrastructure as code ensures auditability,
+reproducibility, and eliminates configuration drift. Minimizing
+manual steps reduces human error and makes the system
+recoverable by anyone with repository access.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This constitution supersedes all other development practices.
+  When a conflict arises, the constitution is authoritative.
+- **Amendments**: Any change to this constitution MUST be
+  documented with a version bump, rationale, and updated date.
+  Amendments follow semantic versioning:
+  - MAJOR: Principle removal or backward-incompatible redefinition.
+  - MINOR: New principle or section added, or material expansion.
+  - PATCH: Clarifications, wording fixes, non-semantic refinements.
+- **Compliance Review**: Every plan and implementation MUST
+  include a Constitution Check gate verifying alignment with
+  these principles.
+- **Complexity Justification**: Any deviation from Simplicity or
+  YAGNI MUST be documented in the plan's Complexity Tracking
+  table with a rejected simpler alternative.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.6.2 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-08

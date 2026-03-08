@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{064EEF9A-8D2F-47FB-A1FA-0CD99D6373E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EpCubeGraph.Api", "src\EpCubeGraph.Api\EpCubeGraph.Api.csproj", "{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E36AF4B1-6399-4CD2-BA41-11FF195C44EA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EpCubeGraph.Api.Tests", "tests\EpCubeGraph.Api.Tests\EpCubeGraph.Api.Tests.csproj", "{AB10A144-034C-4301-982B-706E4EBD138B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB10A144-034C-4301-982B-706E4EBD138B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB10A144-034C-4301-982B-706E4EBD138B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB10A144-034C-4301-982B-706E4EBD138B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB10A144-034C-4301-982B-706E4EBD138B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{77EE2BD3-0F8C-4D6C-81C3-7EE01386D73C} = {064EEF9A-8D2F-47FB-A1FA-0CD99D6373E2}
+		{AB10A144-034C-4301-982B-706E4EBD138B} = {E36AF4B1-6399-4CD2-BA41-11FF195C44EA}
+	EndGlobalSection
+EndGlobal
