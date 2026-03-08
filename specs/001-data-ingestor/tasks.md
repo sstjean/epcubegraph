@@ -50,11 +50,13 @@
 
 **FRs covered**: FR-015, FR-016, FR-017, FR-018
 
+**Also covers (indirectly)**: FR-001, FR-002 (echonet-exporter polls both EP Cube 1.0 and 2.0 gateways via ECHONET Lite — ingestion is inherent to deploying and configuring echonet-exporter with gateway IPs), FR-006 (vmagent WAL buffers failed remote-writes and retries automatically; echonet-exporter retries on next scrape cycle)
+
 ### Implementation for User Story 3
 
 - [x] T010 [P] [US3] Create echonet-exporter multi-arch Dockerfile with docker buildx, Go cross-compilation (CGO_ENABLED=0), alpine:3.19 base, ca-certificates + tzdata in local/echonet-exporter/Dockerfile
 - [x] T011 [P] [US3] Create vmagent scrape configuration targeting echonet-exporter:9191 with 60s scrape interval, 30s timeout in local/vmagent/scrape.yml
-- [x] T012 [P] [US3] Create .env.example with EPCUBE_BATTERY_IP, EPCUBE_SOLAR_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
+- [x] T012 [P] [US3] Create .env.example with EPCUBE1_IP, EPCUBE2_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
 - [x] T013 [US3] Create docker-compose.yml orchestrating echonet-exporter and vmagent: env_file for .env, vmagent with -remoteWrite.bearerToken, -remoteWrite.tmpDataPath, -remoteWrite.maxDiskUsagePerURL=1GB, persistent volume for vmagent WAL, restart: unless-stopped on both, scrape.yml mounted read-only in local/docker-compose.yml
 
 **Checkpoint**: `docker compose build` succeeds, `docker compose config` validates. Local stack is independently deployable.
@@ -65,18 +67,20 @@
 
 **Goal**: Deploy VictoriaMetrics + vmauth on Azure Container Apps with bearer-token auth, Key Vault for secrets, 5-year retention, deduplication
 
-**Independent Test**: Deploy Bicep to a resource group. Send a test Prometheus remote-write request with the bearer token and verify VictoriaMetrics stores the data. Verify unauthenticated requests are rejected with 401.
+**Independent Test**: Deploy Terraform to a resource group. Send a test Prometheus remote-write request with the bearer token and verify VictoriaMetrics stores the data. Verify unauthenticated requests are rejected with 401.
 
 **FRs covered**: FR-004, FR-005, FR-007, FR-011, FR-012, FR-013, FR-014
 
+**Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). vmagent attaches timestamps at scrape time using the host clock. No application-level normalization code is required.
+
 ### Implementation for User Story 1
 
-- [x] T014 [P] [US1] Create Key Vault Bicep module for bearer token secret storage with managed identity access policy in infra/keyvault.bicep
-- [x] T015 [P] [US1] Create deployment parameters file with resource group, location, Key Vault name, Container Apps environment settings in infra/parameters.json
-- [x] T016 [US1] Create main Bicep template: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/main.bicep
-- [x] T017 [US1] Add Entra ID app registration and managed identity role assignments to infra/main.bicep for API authentication (FR-010)
+- [x] T014 [P] [US1] Create Key Vault Terraform module for bearer token secret storage with access policy in infra/keyvault.tf
+- [x] T015 [P] [US1] Create deployment variables file with environment name, location, container image settings in infra/variables.tf
+- [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/container-apps.tf
+- [x] T017 [US1] Add Entra ID app registration and managed identity resources in infra/entra.tf for API authentication (FR-010)
 
-**Checkpoint**: `az deployment group what-if` validates. VictoriaMetrics + vmauth accept authenticated remote-write requests.
+**Checkpoint**: `terraform validate` passes. VictoriaMetrics + vmauth accept authenticated remote-write requests.
 
 ---
 
@@ -140,7 +144,7 @@
 - [x] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
 - [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
 - [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
-- [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), az deployment group validate (infra/), container image build+push with tagged versions (no :latest)
+- [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
 
 ---
 
@@ -151,7 +155,7 @@
 - **Setup (Phase 1)**: No dependencies — can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
 - **US3 (Phase 3)**: Depends on Foundational — no code dependencies on other stories (Docker files only)
-- **US1 (Phase 4)**: Depends on Foundational — no code dependencies on other stories (Bicep only)
+- **US1 (Phase 4)**: Depends on Foundational — no code dependencies on other stories (Terraform only)
 - **US2 (Phase 5)**: Depends on Foundational — uses IVictoriaMetricsClient interface and auth from Phase 2
 - **Polish (Phase 6)**: Depends on all user stories being complete
 
@@ -239,7 +243,7 @@ T036 (depends on all above)
 
 1. Setup + Foundational → Foundation ready
 2. US3 → `docker compose build` works → Local stack deployable
-3. US1 → Bicep deploys → VictoriaMetrics receives remote-write
+3. US1 → Terraform deploys → VictoriaMetrics receives remote-write
 4. US2 → API serves queries → Full pipeline operational (MVP!)
 5. Polish → 100% coverage enforced, security verified
 
@@ -249,7 +253,7 @@ With capacity for parallel work:
 
 1. Complete Setup + Foundational together
 2. Once Foundational is done:
-   - Stream A: US3 (Docker) + US1 (Bicep) — no C# involved
+   - Stream A: US3 (Docker) + US1 (Terraform) — no C# involved
    - Stream B: US2 (API) — all C# work
 3. Streams converge at Polish phase
 
@@ -260,6 +264,6 @@ With capacity for parallel work:
 - All file paths are relative to repository root (`/Users/steve/repos/epcubegraph/`)
 - TDD is mandated by constitution v1.6.1 — tests MUST fail before implementation
 - 100% code coverage enforced via coverlet in CI
-- US3 and US1 contain no C# code (Docker + Bicep) so TDD applies only to US2
+- US3 and US1 contain no C# code (Docker + Terraform) so TDD applies only to US2
 - Commit after each task or logical group
 - Stop at any checkpoint to validate the story independently

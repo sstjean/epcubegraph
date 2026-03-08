@@ -74,8 +74,8 @@ Create `local/.env`:
 
 ```bash
 # echonet-exporter device configuration
-EPCUBE_BATTERY_IP=192.168.1.10
-EPCUBE_SOLAR_IP=192.168.1.10
+EPCUBE1_IP=192.168.1.10
+EPCUBE2_IP=192.168.1.11
 
 # Remote-write target (Azure-hosted VictoriaMetrics via vmauth)
 REMOTE_WRITE_URL=https://epcubegraph-vm.<region>.azurecontainerapps.io/api/v1/write
@@ -169,11 +169,21 @@ cd infra
 # Login to Azure
 az login
 
-# Deploy Bicep templates
-az deployment group create \
-  --resource-group epcubegraph-rg \
-  --template-file main.bicep \
-  --parameters parameters.json
+# Initialize Terraform
+terraform init
+
+# Preview changes
+terraform plan
+
+# Apply infrastructure
+terraform apply
+```
+
+Or use the provided deploy script for a two-phase deployment (infra first, then build/push API container and re-apply):
+
+```bash
+cd infra
+./deploy.sh
 ```
 
 This deploys:
@@ -204,8 +214,7 @@ epcubegraph/
 │   ├── tests/
 │   │   └── EpCubeGraph.Api.Tests/
 │   │       ├── Unit/                  # Pure unit tests (mocked HttpClient)
-│   │       ├── Integration/           # Testcontainers + WebApplicationFactory
-│   │       ├── Performance/           # SC-003 latency tests (Testcontainers)
+│   │       ├── Integration/           # Testcontainers + WebApplicationFactory + SC-003 latency
 │   │       └── Fixtures/              # Shared test fixtures
 │   ├── Dockerfile
 │   └── EpCubeGraph.sln
@@ -216,10 +225,17 @@ epcubegraph/
 │   │   └── Dockerfile                # Multi-arch Go build
 │   └── vmagent/
 │       └── scrape.yml                # Prometheus scrape config
-├── infra/                            # Azure infrastructure
-│   ├── main.bicep                    # Container Apps + Key Vault
-│   ├── keyvault.bicep                # Key Vault module
-│   └── parameters.json               # Deployment parameters
+├── infra/                            # Azure infrastructure (Terraform)
+│   ├── main.tf                    # Providers, resource group, managed identity
+│   ├── variables.tf               # Input variables with validation
+│   ├── outputs.tf                 # Deployment outputs (FQDNs, IDs, URLs)
+│   ├── entra.tf                   # Entra ID app registration
+│   ├── acr.tf                     # Azure Container Registry
+│   ├── keyvault.tf                # Key Vault for bearer token
+│   ├── storage.tf                 # Log Analytics + storage
+│   ├── container-apps.tf          # Container Apps environment
+│   ├── deploy.sh                  # Two-phase deployment script
+│   └── terraform.tfvars.example   # Variable values template
 └── specs/                            # Specifications (this folder)
 ```
 

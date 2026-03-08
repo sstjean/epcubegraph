@@ -45,9 +45,9 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 | — | Security: Zero-Trust | ✅ PASS | Every request authenticated regardless of origin. No implicit trust between tiers. Least privilege via managed identities. |
 | — | Security: Secrets | ✅ PASS | Bearer token in Azure Key Vault, injected as Container Apps secret. No secrets in source. |
 | — | Security: Tokens | ⚠ COMPLEXITY | Remote-write uses a pre-shared bearer token (FR-012) — technically a long-lived static token. Constitution prohibits long-lived static tokens. See Complexity Tracking. |
-| — | DevOps: IaC | ✅ PASS | All Azure infrastructure defined in Bicep templates under `infra/`. No manual portal resource creation. |
+| — | DevOps: IaC | ✅ PASS | All Azure infrastructure defined in Terraform under `infra/`. No manual portal resource creation. |
 | — | DevOps: CI/CD | ✅ PASS | CI gate enforces full test suite before merge. Pipeline deploys on main branch merge. |
-| — | DevOps: Reproducible | ✅ PASS | Container images built from Dockerfiles in repo. Azure infra from Bicep with parameters. Same commit → same deployment. |
+| — | DevOps: Reproducible | ✅ PASS | Container images built from Dockerfiles in repo. Azure infra from Terraform with variables. Same commit → same deployment. |
 | — | DevOps: Rollback | ✅ PASS | Container Apps uses tagged container images. No `latest` tag in production. Revision-based rollback supported natively. |
 | — | DevOps: Local | ✅ PASS | `docker compose up -d` builds and starts all local services. Operator only provides `.env` values (device IPs, remote-write URL, token). |
 
@@ -83,7 +83,6 @@ api/
 │   └── EpCubeGraph.Api/
 │       ├── Program.cs               # App entry point, DI, middleware, auth
 │       ├── appsettings.json         # Configuration (base)
-│       ├── appsettings.Development.json
 │       ├── EpCubeGraph.Api.csproj
 │       ├── Models/
 │       │   ├── DeviceInfo.cs         # Device response record
@@ -126,11 +125,19 @@ local/
 └── vmagent/
     └── scrape.yml           # Prometheus scrape config for echonet-exporter
 
-# Azure infrastructure
+# Azure infrastructure (Terraform)
 infra/
-├── main.bicep               # Container Apps environment, VictoriaMetrics, API
-├── keyvault.bicep            # Key Vault for bearer token + managed identity
-└── parameters.json
+├── main.tf                  # Providers, resource group, managed identity
+├── variables.tf             # Input variables with validation
+├── outputs.tf               # Deployment outputs (FQDNs, IDs, URLs)
+├── entra.tf                 # Entra ID app registration + service principal
+├── acr.tf                   # Azure Container Registry + AcrPull role
+├── keyvault.tf              # Key Vault for bearer token secret
+├── storage.tf               # Log Analytics + storage account + file share
+├── container-apps.tf        # Container Apps environment, VictoriaMetrics, vmauth, API
+├── deploy.sh                # Two-phase deployment script
+├── terraform.tfvars.example # Variable values template
+└── .gitignore               # Excludes .terraform/, state files
 ```
 
 **Structure Decision**: Two top-level directories (`api/` and `local/`) reflecting the two deployment targets: Azure Container Apps and LAN Docker host. Infrastructure-as-code in `infra/`. This mirrors the physical architecture (local → Azure) and keeps concerns separated without unnecessary abstraction. The API follows standard .NET solution layout with `src/` and `tests/` under `api/`.
