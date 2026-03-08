@@ -203,6 +203,35 @@ for t in data['tools']:
 done
 
 # ---------------------------------------------------------------------------
+# Check DEPLOY.md
+# ---------------------------------------------------------------------------
+
+header "Checking DEPLOY.md"
+
+if [ -f "$DEPLOY_DOC" ]; then
+  # Required tools needed for deployment should appear in DEPLOY.md
+  for tool in $REQUIRED_TOOLS; do
+    display_name=$(python3 -c "
+import json
+with open('$MANIFEST') as f:
+    data = json.load(f)
+for t in data['tools']:
+    if t['name'] == '$tool':
+        print(t['displayName'])
+        break
+")
+    if grep -qi "$display_name" "$DEPLOY_DOC"; then
+      ok "'$display_name' documented in DEPLOY.md"
+    else
+      # Only warn — DEPLOY.md may only list deployment-specific tools
+      info "'$display_name' ($tool) not found in DEPLOY.md (may be optional)"
+    fi
+  done
+else
+  info "DEPLOY.md not found — skipping"
+fi
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
