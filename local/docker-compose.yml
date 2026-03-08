@@ -11,8 +11,8 @@ services:
       context: ./echonet-exporter
       dockerfile: Dockerfile
     environment:
-      - EPCUBE_BATTERY_IP=${EPCUBE_BATTERY_IP}
-      - EPCUBE_SOLAR_IP=${EPCUBE_SOLAR_IP}
+      - EPCUBE1_IP=${EPCUBE1_IP}
+      - EPCUBE2_IP=${EPCUBE2_IP}
     ports:
       - "9191:9191"
     restart: unless-stopped

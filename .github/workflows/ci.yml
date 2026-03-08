@@ -87,8 +87,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Bicep
-        uses: azure/CLI@v2
-        with:
-          inlineScript: |
-            az bicep build --file infra/main.bicep
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: infra
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: infra
+        run: terraform validate
+
+      - name: Terraform Format Check
+        working-directory: infra
+        run: terraform fmt -check -recursive
+
+  validate-tools:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Tool Manifest Sync
+        run: ./scripts/validate-tool-sync.sh

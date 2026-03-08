@@ -1,0 +1,88 @@
+{
+  "description": "Single source of truth for required development tools. Both setup scripts and DEPLOY.md must stay in sync with this manifest. CI validates consistency automatically.",
+  "tools": [
+    {
+      "name": "git",
+      "displayName": "Git",
+      "minVersion": "2.0",
+      "purpose": "Source control, image tagging",
+      "required": true,
+      "install": {
+        "brew": "git",
+        "winget": "Git.Git"
+      }
+    },
+    {
+      "name": "dotnet",
+      "displayName": ".NET SDK",
+      "minVersion": "10.0",
+      "purpose": "Build the ASP.NET Core API",
+      "required": true,
+      "install": {
+        "brew": "dotnet@10",
+        "winget": "Microsoft.DotNet.SDK.10"
+      }
+    },
+    {
+      "name": "terraform",
+      "displayName": "Terraform",
+      "minVersion": "1.5",
+      "purpose": "Azure infrastructure provisioning",
+      "required": true,
+      "install": {
+        "brew": "hashicorp/tap/terraform",
+        "winget": "Hashicorp.Terraform"
+      }
+    },
+    {
+      "name": "az",
+      "displayName": "Azure CLI",
+      "minVersion": "2.60",
+      "purpose": "Azure authentication, ACR login",
+      "required": true,
+      "install": {
+        "brew": "azure-cli",
+        "winget": "Microsoft.AzureCLI"
+      }
+    },
+    {
+      "name": "docker",
+      "displayName": "Docker Desktop",
+      "minVersion": "24",
+      "purpose": "Container builds (includes Compose v2)",
+      "required": true,
+      "install": {
+        "brew_cask": "docker",
+        "winget": "Docker.DockerDesktop"
+      }
+    },
+    {
+      "name": "code",
+      "displayName": "VS Code",
+      "minVersion": "1.80",
+      "purpose": "IDE",
+      "required": true,
+      "install": {
+        "brew_cask": "visual-studio-code",
+        "winget": "Microsoft.VisualStudioCode"
+      }
+    },
+    {
+      "name": "gh",
+      "displayName": "GitHub CLI",
+      "minVersion": "2.0",
+      "purpose": "Issue tracking (optional)",
+      "required": false,
+      "install": {
+        "brew": "gh",
+        "winget": "GitHub.cli"
+      }
+    }
+  ],
+  "vscodeExtensions": [
+    "ms-dotnettools.csdevkit",
+    "hashicorp.terraform",
+    "ms-azuretools.vscode-docker",
+    "github.copilot"
+  ]
+}
