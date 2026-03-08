@@ -12,8 +12,11 @@ RUN apk add --no-cache git
 
 WORKDIR /src
 
-# Clone echonet-exporter source
-RUN git clone --depth 1 https://github.com/styygeli/echonet-exporter.git .
+# Clone echonet-exporter source pinned to a known-good commit
+# Update this hash when upgrading to a newer version
+ARG ECHONET_EXPORTER_COMMIT=92f5c7add0ae9bc53438dca00a60323868c16725
+RUN git clone https://github.com/styygeli/echonet-exporter.git . \
+    && git checkout ${ECHONET_EXPORTER_COMMIT}
 
 # Download dependencies (cache layer)
 RUN go mod download
