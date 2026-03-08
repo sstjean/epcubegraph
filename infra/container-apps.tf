@@ -34,8 +34,9 @@ resource "azurerm_container_app" "vm" {
   }
 
   secret {
-    name  = "remote-write-token"
-    value = random_password.remote_write_token.result
+    name                = "remote-write-token"
+    key_vault_secret_id = azurerm_key_vault_secret.remote_write_token.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
   }
 
   ingress {
@@ -187,7 +188,11 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "VictoriaMetrics__Url"
-        value = "https://${azurerm_container_app.vm.ingress[0].fqdn}"
+        # Query VictoriaMetrics directly on port 8428 within the Container Apps
+        # environment. This bypasses vmauth (which enforces bearer-token auth
+        # for external remote-write traffic). Internal traffic between apps in
+        # the same environment uses the container app name as hostname.
+        value = "http://${azurerm_container_app.vm.name}:8428"
       }
     }
   }
