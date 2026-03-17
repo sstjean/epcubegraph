@@ -6,6 +6,10 @@ on:
     workflows: [CI]
     types: [completed]
 
+  # TEMPORARY: trigger on push for pre-merge testing (remove after merge to main)
+  push:
+    branches: ['001-data-ingestor']
+
   # Manual trigger for any branch
   workflow_dispatch:
     inputs:
@@ -43,9 +47,10 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       github.event.workflow_run.conclusion == 'success'
     steps:
-      - run: echo "CI passed or manual dispatch — proceeding with deployment"
+      - run: echo "CI passed, push, or manual dispatch — proceeding with deployment"
 
   deploy:
     needs: check-ci
