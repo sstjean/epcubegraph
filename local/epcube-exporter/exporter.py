@@ -46,6 +46,12 @@ from Crypto.Util.Padding import pad
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9200"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
+DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
+
+# Entra ID JWT validation config (only used when auth is enabled)
+AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
+AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
+AZURE_AUDIENCE = os.environ.get("AZURE_AUDIENCE", "")
 
 log = logging.getLogger("epcube-exporter")
 logging.basicConfig(
@@ -564,6 +570,46 @@ document.querySelectorAll('.utctime').forEach(el => {{
 
 class MetricsHandler(BaseHTTPRequestHandler):
     collector = None  # Set by main
+    _jwks_client = None  # Lazily initialized
+
+    def _check_auth(self):
+        """Validate JWT token. Returns True if authorized, False if rejected."""
+        if DISABLE_AUTH:
+            return True
+
+        auth_header = self.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Missing or invalid Authorization header"}).encode())
+            return False
+
+        token = auth_header[7:]
+        try:
+            import jwt
+            if MetricsHandler._jwks_client is None:
+                jwks_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
+                MetricsHandler._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
+
+            signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(token)
+            jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=AZURE_AUDIENCE,
+                issuer=f"https://sts.windows.net/{AZURE_TENANT_ID}/",
+            )
+            return True
+        except Exception as e:
+            log.warning("JWT validation failed: %s", e)
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter", error="invalid_token"')
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Invalid or expired token"}).encode())
+            return False
 
     def do_GET(self):
         if self.path == "/metrics":
@@ -579,6 +625,8 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"ok")
         elif self.path == "/" or self.path == "/status":
+            if not self._check_auth():
+                return
             status = self.collector.get_status()
             body = _render_status_page(status).encode()
             self.send_response(200)
@@ -629,6 +677,10 @@ def main():
     MetricsHandler.collector = collector
     server = HTTPServer(("0.0.0.0", METRICS_PORT), MetricsHandler)
     log.info("Serving metrics on :%d/metrics (poll interval: %ds)", METRICS_PORT, POLL_INTERVAL)
+    if DISABLE_AUTH:
+        log.info("Auth DISABLED — debug page is unauthenticated (local dev mode)")
+    else:
+        log.info("Auth ENABLED — debug page requires Entra ID JWT (tenant=%s)", AZURE_TENANT_ID)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

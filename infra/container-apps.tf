@@ -245,9 +245,10 @@ resource "azurerm_container_app" "exporter" {
     identity            = azurerm_user_assigned_identity.main.id
   }
 
-  # Internal-only ingress — reachable by VictoriaMetrics within the environment
+  # External ingress — debug page requires JWT auth in code
+  # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
-    external_enabled = false
+    external_enabled = true
     target_port      = 9200
     transport        = "http"
 
@@ -285,6 +286,21 @@ resource "azurerm_container_app" "exporter" {
       env {
         name  = "EPCUBE_INTERVAL"
         value = "60"
+      }
+
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = data.azuread_client_config.current.tenant_id
+      }
+
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azuread_application.api.client_id
+      }
+
+      env {
+        name  = "AZURE_AUDIENCE"
+        value = "api://${var.environment_name}"
       }
     }
   }

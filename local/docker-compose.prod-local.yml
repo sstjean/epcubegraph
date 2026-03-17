@@ -28,6 +28,7 @@ services:
       - EPCUBE_PASSWORD=${EPCUBE_PASSWORD}
       - EPCUBE_PORT=9200
       - EPCUBE_INTERVAL=60
+      - EPCUBE_DISABLE_AUTH=true
     ports:
       - "9200:9200"
     restart: unless-stopped
