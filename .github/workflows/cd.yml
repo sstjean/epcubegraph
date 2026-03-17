@@ -167,7 +167,7 @@ jobs:
 
       # Wait for container apps to stabilize after deployment
       - name: Wait for deployment to stabilize
-        run: sleep 30
+        run: sleep 60
 
       - name: Run deployment validation
         run: ./infra/validate-deployment.sh --rg ${{ needs.deploy.outputs.resource_group }}
@@ -176,17 +176,17 @@ jobs:
         run: |
           API_FQDN="${{ needs.deploy.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
-            for i in 1 2 3; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" || echo "timeout")
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ API health endpoint responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
-              sleep 10
+              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::API health endpoint did not respond after 3 attempts"
+              echo "::error::API health endpoint did not respond after 5 attempts"
               exit 1
             fi
           else
@@ -197,17 +197,17 @@ jobs:
         run: |
           VM_FQDN="${{ needs.deploy.outputs.vm_fqdn }}"
           if [ -n "$VM_FQDN" ] && [ "$VM_FQDN" != "" ]; then
-            for i in 1 2 3; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${VM_FQDN}/health" || echo "timeout")
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${VM_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
                 echo "✓ VictoriaMetrics responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
-              sleep 10
+              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "401" ]; then
-              echo "::error::VictoriaMetrics did not respond after 3 attempts"
+              echo "::error::VictoriaMetrics did not respond after 5 attempts"
               exit 1
             fi
           else
@@ -218,14 +218,14 @@ jobs:
         run: |
           EXPORTER_FQDN="${{ needs.deploy.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
-            for i in 1 2 3; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" || echo "timeout")
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ epcube-exporter health responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
-              sleep 10
+              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
               echo "::error::epcube-exporter did not respond after 3 attempts"
