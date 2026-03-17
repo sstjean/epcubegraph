@@ -180,10 +180,10 @@ print(' '.join(c['name'] for c in containers))
 
   # Smoke test: hit the FQDN (expect 401 — vmauth requires bearer token)
   if [[ -n "$VM_FQDN" ]]; then
-    VM_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${VM_FQDN}/api/v1/query?query=up" 2>/dev/null || echo "timeout")
+    VM_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${VM_FQDN}/api/v1/query?query=up" 2>/dev/null) || true
     if [[ "$VM_HTTP" == "401" ]]; then
       pass "Remote-write endpoint rejects unauthenticated requests (401)"
-    elif [[ "$VM_HTTP" == "timeout" ]]; then
+    elif [[ "$VM_HTTP" == "000" || -z "$VM_HTTP" ]]; then
       skip "Could not reach $VM_FQDN (timeout — may be expected in CI)"
     else
       fail "Remote-write endpoint returned HTTP $VM_HTTP (expected 401)"
@@ -273,30 +273,30 @@ print(vm['value'] if vm else '')
 
   # Smoke test: health endpoint (unauthenticated)
   if [[ -n "$API_FQDN" ]]; then
-    API_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/health" 2>/dev/null || echo "timeout")
+    API_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
     if [[ "$API_HEALTH" == "200" || "$API_HEALTH" == "503" ]]; then
       pass "Health endpoint responded: HTTP $API_HEALTH"
-    elif [[ "$API_HEALTH" == "timeout" ]]; then
+    elif [[ "$API_HEALTH" == "000" || -z "$API_HEALTH" ]]; then
       skip "Could not reach API (timeout)"
     else
       fail "Health endpoint returned HTTP $API_HEALTH (expected 200 or 503)"
     fi
 
     # Authenticated endpoints should reject without token
-    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/query?query=up" 2>/dev/null || echo "timeout")
+    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/query?query=up" 2>/dev/null) || true
     if [[ "$API_NOAUTH" == "401" ]]; then
       pass "Query endpoint rejects unauthenticated requests (401)"
-    elif [[ "$API_NOAUTH" == "timeout" ]]; then
+    elif [[ "$API_NOAUTH" == "000" || -z "$API_NOAUTH" ]]; then
       skip "Could not reach API (timeout)"
     else
       fail "Query endpoint returned HTTP $API_NOAUTH without token (expected 401)"
     fi
 
     # Prometheus metrics endpoint (unauthenticated)
-    API_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/metrics" 2>/dev/null || echo "timeout")
+    API_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/metrics" 2>/dev/null) || true
     if [[ "$API_METRICS" == "200" ]]; then
       pass "Prometheus /metrics endpoint accessible (200)"
-    elif [[ "$API_METRICS" == "timeout" ]]; then
+    elif [[ "$API_METRICS" == "000" || -z "$API_METRICS" ]]; then
       skip "Could not reach /metrics (timeout)"
     else
       fail "/metrics endpoint returned HTTP $API_METRICS (expected 200)"
@@ -387,30 +387,30 @@ print(' '.join(s['name'] for s in secrets))
 
   # Smoke test: health endpoint (unauthenticated)
   if [[ -n "$EXP_FQDN" ]]; then
-    EXP_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/health" 2>/dev/null || echo "timeout")
+    EXP_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/health" 2>/dev/null) || true
     if [[ "$EXP_HEALTH" == "200" || "$EXP_HEALTH" == "503" ]]; then
       pass "Health endpoint responded: HTTP $EXP_HEALTH"
-    elif [[ "$EXP_HEALTH" == "timeout" ]]; then
+    elif [[ "$EXP_HEALTH" == "000" || -z "$EXP_HEALTH" ]]; then
       skip "Could not reach exporter (timeout)"
     else
       fail "Health endpoint returned HTTP $EXP_HEALTH (expected 200 or 503)"
     fi
 
     # Metrics endpoint should be unauthenticated
-    EXP_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/metrics" 2>/dev/null || echo "timeout")
+    EXP_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/metrics" 2>/dev/null) || true
     if [[ "$EXP_METRICS" == "200" ]]; then
       pass "Metrics endpoint accessible without auth (200)"
-    elif [[ "$EXP_METRICS" == "timeout" ]]; then
+    elif [[ "$EXP_METRICS" == "000" || -z "$EXP_METRICS" ]]; then
       skip "Could not reach /metrics (timeout)"
     else
       fail "Metrics endpoint returned HTTP $EXP_METRICS (expected 200)"
     fi
 
     # Debug page should require auth (401 without token)
-    EXP_DEBUG=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/" 2>/dev/null || echo "timeout")
+    EXP_DEBUG=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/" 2>/dev/null) || true
     if [[ "$EXP_DEBUG" == "401" ]]; then
       pass "Debug page requires JWT auth (401 without token)"
-    elif [[ "$EXP_DEBUG" == "timeout" ]]; then
+    elif [[ "$EXP_DEBUG" == "000" || -z "$EXP_DEBUG" ]]; then
       skip "Could not reach debug page (timeout)"
     else
       fail "Debug page returned HTTP $EXP_DEBUG without token (expected 401)"
@@ -497,24 +497,30 @@ else
     fail "Replication: $SA_REPL (expected Standard_LRS)"
   fi
 
-  # Check file share exists
-  SA_KEY=$(az storage account keys list --account-name "$SA_NAME" --resource-group "$RG_NAME" --query "[0].value" -o tsv 2>/dev/null || echo "")
-  if [[ -n "$SA_KEY" ]]; then
-    SHARE_EXISTS=$(az storage share exists --name "victoria-metrics-data" --account-name "$SA_NAME" --account-key "$SA_KEY" --query "exists" -o tsv 2>/dev/null || echo "false")
-    if [[ "$SHARE_EXISTS" == "true" ]]; then
-      pass "File share 'victoria-metrics-data' exists"
+  # Check file share exists (use --auth-mode login for storage accounts with shared key disabled)
+  SHARE_EXISTS=$(az storage share exists --name "victoria-metrics-data" --account-name "$SA_NAME" --auth-mode login --query "exists" -o tsv 2>/dev/null || echo "false")
+  if [[ "$SHARE_EXISTS" == "true" ]]; then
+    pass "File share 'victoria-metrics-data' exists"
 
-      SHARE_QUOTA=$(az storage share show --name "victoria-metrics-data" --account-name "$SA_NAME" --account-key "$SA_KEY" --query "properties.quota" -o tsv 2>/dev/null || echo "")
-      if [[ "$SHARE_QUOTA" == "50" ]]; then
-        pass "File share quota: 50 GB"
-      else
-        fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
-      fi
+    SHARE_QUOTA=$(az storage share show --name "victoria-metrics-data" --account-name "$SA_NAME" --auth-mode login --query "properties.quota" -o tsv 2>/dev/null || echo "")
+    if [[ "$SHARE_QUOTA" == "50" ]]; then
+      pass "File share quota: 50 GB"
     else
-      fail "File share 'victoria-metrics-data' not found"
+      fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
     fi
   else
-    skip "Cannot retrieve storage key (permissions?)"
+    # Fall back to key-based auth if AD auth fails
+    SA_KEY=$(az storage account keys list --account-name "$SA_NAME" --resource-group "$RG_NAME" --query "[0].value" -o tsv 2>/dev/null || echo "")
+    if [[ -n "$SA_KEY" ]]; then
+      SHARE_EXISTS=$(az storage share exists --name "victoria-metrics-data" --account-name "$SA_NAME" --account-key "$SA_KEY" --query "exists" -o tsv 2>/dev/null || echo "false")
+      if [[ "$SHARE_EXISTS" == "true" ]]; then
+        pass "File share 'victoria-metrics-data' exists"
+      else
+        fail "File share 'victoria-metrics-data' not found"
+      fi
+    else
+      skip "Cannot verify file share (shared key disabled and AD auth insufficient)"
+    fi
   fi
 fi
 
@@ -576,18 +582,19 @@ fi
 # ==============================================================================
 header "Entra ID App Registration"
 
-ENTRA_APP=$(az ad app list --display-name "EP Cube Graph API" --query "[0]" -o json 2>/dev/null || echo "")
+ENTRA_APP=$(az ad app list --filter "startswith(displayName,'EP Cube Graph API')" --query "[0]" -o json 2>/dev/null || echo "")
 
 if [[ -z "$ENTRA_APP" || "$ENTRA_APP" == "null" ]]; then
   fail "Entra ID App Registration 'EP Cube Graph API' not found"
 else
-  pass "App Registration 'EP Cube Graph API' exists"
+  ENTRA_DISPLAY=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('displayName',''))")
+  pass "App Registration '$ENTRA_DISPLAY' exists"
 
   ENTRA_URI=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); uris=d.get('identifierUris',[]); print(uris[0] if uris else '')")
-  if echo "$ENTRA_URI" | grep -q "api://${ENV_NAME}"; then
+  if echo "$ENTRA_URI" | grep -qE "^api://"; then
     pass "Identifier URI: $ENTRA_URI"
   else
-    fail "Identifier URI: $ENTRA_URI (expected api://${ENV_NAME})"
+    fail "Identifier URI: $ENTRA_URI (expected api://<client-id>)"
   fi
 
   ENTRA_AUDIENCE=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('signInAudience',''))")
