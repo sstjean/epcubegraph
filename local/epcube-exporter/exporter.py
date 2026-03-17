@@ -222,6 +222,8 @@ class EpCubeCollector:
         self._history = collections.deque(maxlen=self.HISTORY_MAX)
         self._poll_count = 0
         self._poll_errors = 0
+        self._consecutive_errors = 0
+        self._prev_bat_net = {}  # device_id → previous bat_net_kwh total
         self._start_time = time.time()
 
     def _ensure_auth(self):
@@ -347,6 +349,7 @@ class EpCubeCollector:
                 "grid_import_kwh": 0.0,
                 "grid_export_kwh": 0.0,
                 "backup_kwh": 0.0,
+                "bat_current_kwh": 0.0,
             })
 
             # ── Scrape health ──
@@ -402,6 +405,12 @@ class EpCubeCollector:
                 lines.append("# TYPE epcube_battery_net_kwh gauge")
                 lines.append(f"epcube_battery_net_kwh{{{bl}}} {bat_net_kwh}")
 
+                # Period delta: change since last poll
+                dev_id_key = dev["id"]
+                prev = self._prev_bat_net.get(dev_id_key)
+                bat_current_kwh = round(bat_net_kwh - prev, 2) if prev is not None else 0.0
+                self._prev_bat_net[dev_id_key] = bat_net_kwh
+
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])
                 if snap_dev:
@@ -409,7 +418,7 @@ class EpCubeCollector:
                     snap_dev["grid_import_kwh"] = grid_from
                     snap_dev["grid_export_kwh"] = grid_to
                     snap_dev["backup_kwh"] = backup_kwh
-                    snap_dev["bat_net_kwh"] = bat_net_kwh
+                    snap_dev["bat_current_kwh"] = bat_current_kwh
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -419,6 +428,7 @@ class EpCubeCollector:
             self._metrics_text = "\n".join(lines)
             self._last_poll = time.time()
             self._poll_count += 1
+            self._consecutive_errors = 0
             # Replace last entry if same minute (avoid duplicates)
             if self._history and self._history[-1]["time_minute"] == snapshot["time_minute"]:
                 self._history[-1] = snapshot
@@ -426,6 +436,22 @@ class EpCubeCollector:
                 self._history.append(snapshot)
 
         log.info("Poll complete: %d metric lines for %d device(s)", len(lines), len(self._devices))
+
+    def get_health(self):
+        """Return health status. Unhealthy if no poll in 5 min or 5+ consecutive errors."""
+        with self._lock:
+            checks = []
+            # Check last successful poll was within 5 minutes
+            if self._last_poll:
+                age = time.time() - self._last_poll
+                if age > 300:
+                    checks.append(f"last poll {int(age)}s ago (>300s)")
+            else:
+                checks.append("no successful poll yet")
+            # Check consecutive errors
+            if self._consecutive_errors >= 5:
+                checks.append(f"{self._consecutive_errors} consecutive errors")
+            return {"healthy": len(checks) == 0, "checks": checks}
 
     def get_metrics(self):
         with self._lock:
@@ -449,7 +475,7 @@ class EpCubeCollector:
 # HTTP server
 # ---------------------------------------------------------------------------
 
-def _render_status_page(status):
+def _render_status_page(status, health):
     """Render a minimal HTML debug page showing last 10 minutes of values."""
     uptime_m = status["uptime_s"] // 60
     uptime_h = uptime_m // 60
@@ -491,7 +517,7 @@ def _render_status_page(status):
                         f'<td style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_import_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_export_kwh", 0):.1f}</td>'
-                        f'<td style="text-align:right">{dev.get("bat_net_kwh", 0):+.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("bat_current_kwh", 0):+.1f}</td>'
                         f'</tr>'
                     )
             row_html = "\n".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;color:#888">No data</td></tr>'
@@ -521,7 +547,7 @@ def _render_status_page(status):
                 f'<table>\n<tr>'
                 f'<th>Time</th><th>Solar kW</th><th>Battery SoC</th>'
                 f'<th>Load kW</th><th>Self-Suff</th>'
-                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Net kWh</th>'
+                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Current kWh</th>'
                 f'</tr>\n{row_html}\n</table>'
             )
         tables_html = "\n".join(tables)
@@ -546,7 +572,9 @@ def _render_status_page(status):
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
 </style>
 </head><body>
-<h1>&#9889; epcube-exporter — debug status</h1>
+<h1>&#9889; epcube-exporter — debug status
+<span style="font-size:0.6em;background:{'#00d4aa' if health['healthy'] else '#e74c3c'};color:#fff;padding:0.2em 0.7em;border-radius:12px;margin-left:0.8em;vertical-align:middle">{'&#10003; healthy' if health['healthy'] else '&#10007; ' + ', '.join(health['checks'])}</span>
+</h1>
 <div class="info">
   <span>Uptime: <b>{uptime_str}</b></span>
   <span>Polls: <b>{status["poll_count"]}</b></span>
@@ -620,15 +648,23 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"ok")
+            health = self.collector.get_health()
+            if health["healthy"]:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode())
+            else:
+                self.send_response(503)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "unhealthy", "reasons": health["checks"]}).encode())
         elif self.path == "/" or self.path == "/status":
             if not self._check_auth():
                 return
             status = self.collector.get_status()
-            body = _render_status_page(status).encode()
+            health = self.collector.get_health()
+            body = _render_status_page(status, health).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -654,6 +690,9 @@ def poll_loop(collector, interval):
             collector.poll()
         except Exception:
             log.exception("Poll failed")
+            with collector._lock:
+                collector._poll_errors += 1
+                collector._consecutive_errors += 1
 
 
 def main():

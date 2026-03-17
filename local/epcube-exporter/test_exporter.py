@@ -175,7 +175,7 @@ class TestEnergyBalance(unittest.TestCase):
         self.assertEqual(net, 0.0)
 
     def test_calculation_in_poll(self):
-        """Verify the actual poll method calculates bat_net_kwh correctly."""
+        """Verify the actual poll method calculates bat_current_kwh correctly."""
         c = _make_collector()
         dev = _make_device()
         c._devices = [dev]
@@ -192,10 +192,45 @@ class TestEnergyBalance(unittest.TestCase):
                           side_effect=_mock_api_for([dev], elec_data=elec_data)):
             c.poll()
 
-        # bat_net = solar(10) + grid_in(5) - load(8) - grid_out(2) = 5.0
+        # First poll: no previous value, so bat_current_kwh = 0.0
         snap = c._history[-1]
         device_snap = snap["devices"][0]
-        self.assertEqual(device_snap["bat_net_kwh"], 5.0)
+        self.assertEqual(device_snap["bat_current_kwh"], 0.0)
+
+    def test_period_delta_second_poll(self):
+        """Second poll shows the change since the first poll."""
+        c = _make_collector()
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        # First poll: bat_net = 10 + 5 - 8 - 2 = 5.0
+        elec1 = _make_electricity_data(
+            solarElectricity=10.0,
+            gridElectricityFrom=5.0,
+            gridElectricityTo=2.0,
+            backUpElectricity=8.0,
+        )
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for([dev], elec_data=elec1)):
+            c.poll()
+
+        c._history[-1]["time_minute"] = "old"  # force new snapshot
+
+        # Second poll: bat_net = 12 + 6 - 9 - 2 = 7.0
+        elec2 = _make_electricity_data(
+            solarElectricity=12.0,
+            gridElectricityFrom=6.0,
+            gridElectricityTo=2.0,
+            backUpElectricity=9.0,
+        )
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for([dev], elec_data=elec2)):
+            c.poll()
+
+        # Delta: 7.0 - 5.0 = 2.0
+        snap = c._history[-1]
+        self.assertEqual(snap["devices"][0]["bat_current_kwh"], 2.0)
 
 
 # ---------------------------------------------------------------------------
@@ -341,7 +376,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_import_kwh": 3.0,
                 "grid_export_kwh": 1.5,
                 "backup_kwh": 10.0,
-                "bat_net_kwh": 4.0,
+                "bat_current_kwh": 4.0,
             }],
         }
         status = self._make_status(history=[snap])
@@ -378,7 +413,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "backup_kw": 0, "self_sufficiency": 0, "system_status": "?",
                 "bat_stored_kwh": 0, "ress_count": 1,
                 "solar_kwh": 0, "grid_import_kwh": 0, "grid_export_kwh": 0,
-                "backup_kwh": 0, "bat_net_kwh": 0,
+                "backup_kwh": 0, "bat_current_kwh": 0,
             }],
         }
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
@@ -513,8 +548,8 @@ class TestSnapshotData(unittest.TestCase):
         self.assertAlmostEqual(d["grid_import_kwh"], 2.0)
         self.assertAlmostEqual(d["grid_export_kwh"], 0.5)
         self.assertAlmostEqual(d["backup_kwh"], 6.0)
-        # bat_net = 8.0 + 2.0 - 6.0 - 0.5 = 3.5
-        self.assertAlmostEqual(d["bat_net_kwh"], 3.5)
+        # bat_net total = 8.0 + 2.0 - 6.0 - 0.5 = 3.5; first poll so delta = 0.0
+        self.assertAlmostEqual(d["bat_current_kwh"], 0.0)
 
     def test_offline_device_skipped(self):
         c = _make_collector()
