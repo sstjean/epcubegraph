@@ -238,6 +238,7 @@ else
     --location "$LOCATION" \
     --sku Standard_LRS \
     --allow-blob-public-access false \
+    --allow-shared-key-access true \
     --output none
   success "Storage account '$TFSTATE_STORAGE' created"
 fi

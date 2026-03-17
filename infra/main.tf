@@ -28,6 +28,7 @@ terraform {
     container_name       = "tfstate"
     key                  = "epcubegraph.tfstate"
     use_oidc             = true
+    use_azuread_auth     = true
   }
 }
 
