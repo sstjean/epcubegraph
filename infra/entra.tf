@@ -4,9 +4,8 @@
 resource "random_uuid" "user_impersonation_scope" {}
 
 resource "azuread_application" "api" {
-  display_name = "EP Cube Graph API"
+  display_name = "EP Cube Graph API (${var.environment_name})"
 
-  identifier_uris  = ["api://${var.environment_name}"]
   sign_in_audience = "AzureADMyOrg"
 
   api {
@@ -23,6 +22,16 @@ resource "azuread_application" "api" {
   }
 
   owners = [data.azuread_client_config.current.object_id]
+
+  lifecycle {
+    ignore_changes = [identifier_uris]
+  }
+}
+
+# Set identifier URI after app creation (requires the app's own client_id)
+resource "azuread_application_identifier_uri" "api" {
+  application_id = azuread_application.api.id
+  identifier_uri = "api://${azuread_application.api.client_id}"
 }
 
 resource "azuread_service_principal" "api" {
