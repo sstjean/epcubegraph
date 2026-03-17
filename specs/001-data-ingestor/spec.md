@@ -29,7 +29,7 @@
 
 As the system owner, I want telemetry data from my EP Cube 1.0 and EP Cube 2.0 Gateway devices to be automatically collected and stored so that I have a continuous, reliable record of my solar, battery, and grid activity without manual intervention.
 
-The ingestor receives telemetry from epcube-exporter (which polls both device types via the EP Cube cloud API) via VictoriaMetrics direct scraping within the Azure Container Apps environment. It persists readings in VictoriaMetrics on Azure. Grid import/export values are derived from solar generation and battery power — no separate grid meter device is required. Data collection runs on the epcube-exporter poll schedule and handles temporary cloud API unavailability gracefully — epcube-exporter logs failures and auto-re-authenticates on 401, and VictoriaMetrics retries scrapes on the next interval.
+The ingestor receives telemetry from epcube-exporter (which polls both device types via the EP Cube cloud API) via VictoriaMetrics direct scraping within the Azure Container Apps environment. It persists readings in VictoriaMetrics on Azure. Grid import/export values are provided directly by the EP Cube cloud API (`gridElectricityFrom`, `gridElectricityTo`) — no derivation from solar/battery and no separate grid meter device is required. Data collection runs on the epcube-exporter poll schedule and handles temporary cloud API unavailability gracefully — epcube-exporter logs failures and auto-re-authenticates on 401, and VictoriaMetrics retries scrapes on the next interval.
 
 **Why this priority**: Without data ingestion, no other feature (graphing, historical review, mobile access) can function. This is the foundational data pipeline.
 
@@ -103,7 +103,7 @@ The repository provides a Dockerfile for epcube-exporter which is built, pushed 
   - **Solar** (`home_solar` class): instantaneous generation (W), cumulative generation today (kWh).
   - **Home load**: backup/home supply power (W), self-sufficiency rate (%).
   - **Grid**: grid import energy today (kWh), grid export energy today (kWh).
-- **FR-003a**: System MUST expose grid import and export energy via the API. The EP Cube cloud API provides daily grid energy totals (`gridElectricityFrom`, `gridElectricityTo`) directly; no derivation is required. The API `/grid` endpoint MUST query `epcube_grid_import_kwh` and `epcube_grid_export_kwh` from VictoriaMetrics and return the time series.
+- **FR-003a**: System MUST expose grid energy balance via the API. The EP Cube cloud API provides daily grid energy totals (`gridElectricityFrom`, `gridElectricityTo`) directly; no derivation is required. The API `/grid` endpoint MUST compute `epcube_grid_import_kwh - epcube_grid_export_kwh` via PromQL `query_range` against VictoriaMetrics and return the net grid balance as a single time series (positive = net import from grid, negative = net export to grid).
 - **FR-004**: System MUST accept telemetry via Prometheus remote-write protocol from external metric sources authenticated with a pre-shared bearer token. VictoriaMetrics MUST also scrape epcube-exporter directly via `-promscrape.config` within the Container Apps environment.
 - **FR-005**: System MUST store all received readings in a VictoriaMetrics instance deployed on Azure Container Apps, preserving device identifier, metric name, value, labels, and UTC timestamp.
 - **FR-006**: System MUST retry failed collection attempts on the next scheduled cycle and log each failure with the reason.
@@ -137,7 +137,7 @@ The repository provides a Dockerfile for epcube-exporter which is built, pushed 
 
 ### Measurable Outcomes
 
-- **SC-001**: Telemetry data is collected from both EP Cube 1.0 and 2.0 gateways with no more than one missed cycle per 24-hour period under normal network conditions.
+- **SC-001**: Telemetry data is collected from both EP Cube 1.0 and 2.0 gateways with no more than one missed cycle per 24-hour period under normal network conditions (EP Cube cloud API responsive within 30 seconds, Azure Container Apps environment healthy and not restarting).
 - **SC-002**: Zero data loss due to Azure-side interruptions — VictoriaMetrics retries failed scrapes on the next interval and persists all successfully scraped data to durable storage. Gaps during cloud API outages are expected and MUST be logged with timestamps for observability.
 - **SC-003**: API queries for up to 30 days of data return results within 2 seconds. Validated by an integration test that seeds 30 days of synthetic data in VictoriaMetrics (via Testcontainers) and asserts `query_range` latency <2s.
 - **SC-004**: 100% of API endpoints are authenticated; no unauthenticated access to telemetry data is possible.

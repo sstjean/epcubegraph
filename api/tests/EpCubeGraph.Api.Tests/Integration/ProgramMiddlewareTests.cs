@@ -5,7 +5,6 @@ using EpCubeGraph.Api.Tests.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EpCubeGraph.Api.Tests.Integration;
@@ -86,18 +85,12 @@ public class NoAuthBypassTests : IDisposable
 
     public NoAuthBypassTests()
     {
-        Environment.SetEnvironmentVariable("EPCUBE_DISABLE_AUTH", "true");
         _factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Development");
-                builder.ConfigureAppConfiguration((_, config) =>
-                {
-                    config.AddInMemoryCollection(new Dictionary<string, string?>
-                    {
-                        ["VictoriaMetrics:Url"] = "http://localhost:0"
-                    });
-                });
+                builder.UseSetting("Authentication:DisableAuth", "true");
+                builder.UseSetting("VictoriaMetrics:Url", "http://localhost:0");
                 builder.ConfigureTestServices(services =>
                 {
                     // Replace VM client so endpoints don't make real HTTP calls
@@ -116,7 +109,6 @@ public class NoAuthBypassTests : IDisposable
     {
         _client.Dispose();
         _factory.Dispose();
-        Environment.SetEnvironmentVariable("EPCUBE_DISABLE_AUTH", null);
     }
 
     [Fact]

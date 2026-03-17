@@ -154,7 +154,8 @@ infra/
 # CI/CD
 .github/
 └── workflows/
-    └── ci.yml               # Build, test (100% coverage), Docker, Terraform validate
+    ├── ci.yml               # Build, test (100% coverage), Docker, Terraform validate
+    └── cd.yml               # Deploy to Azure, validate, optional teardown
 ```
 
 **Structure Decision**: Two top-level directories (`api/` and `local/`) reflecting the code organization: the API service and the data exporter. Infrastructure-as-code in `infra/`. All services deploy to the same Azure Container Apps environment. The API follows standard .NET solution layout with `src/` and `tests/` under `api/`.
@@ -165,3 +166,4 @@ infra/
 |-----------|------------|-------------------------------------|
 | VictoriaMetrics (non-Azure-native) | Direct Prometheus remote-write compatibility, PromQL, simple single-container deployment | Azure Monitor Managed Prometheus: more complex config, higher cost at single-user scale, less direct PromQL control |
 | Pre-shared bearer token for remote-write (long-lived) | External remote-write clients have no built-in OAuth client-credentials flow | No auth: violates zero-trust. Mitigated by Key Vault storage and manual rotation policy |
+| API dev auth bypass (`NoAuthHandler.cs`) | Enables local development without Entra ID configuration (`Authentication:DisableAuth` setting) | Requiring Entra ID for local dev adds friction without security benefit (bypass only activates in Development environment) |

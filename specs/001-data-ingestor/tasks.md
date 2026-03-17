@@ -95,7 +95,7 @@
 ### Tests for User Story 2 (TDD — write tests FIRST, confirm they FAIL)
 
 - [x] T018 [P] [US2] Write VictoriaMetricsClient unit tests (QueryAsync, QueryRangeAsync, SeriesAsync, error handling, timeout) mocking HttpMessageHandler in api/tests/EpCubeGraph.Api.Tests/Unit/VictoriaMetricsClientTests.cs
-- [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=export/negative=import) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
+- [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=import/negative=export) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
 - [x] T020 [P] [US2] Write DeviceInfo record tests (serialization, optional fields, DeviceClass values) in api/tests/EpCubeGraph.Api.Tests/Unit/DeviceInfoTests.cs
 - [x] T038 [P] [US2] Write Validate helper unit tests (Required, Timestamp, Duration, SafeName — null=valid, invalid=error, valid=pass) in api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs
 
@@ -144,7 +144,8 @@
 - [x] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
 - [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
 - [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
-- [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
+- [x] T044 [P] Create CI pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
+- [x] T050 [P] Create CD pipeline: .github/workflows/cd.yml with OIDC Azure login, Terraform apply (remote state), ACR image build+push, deployment validation via validate-deployment.sh, optional environment teardown. Triggers on CI success for main branch or manual dispatch with environment selection (staging/production)
 
 ---
 

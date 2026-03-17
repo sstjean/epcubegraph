@@ -13,8 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddJsonConsole();
 
 // Authentication & Authorization
-if (builder.Environment.IsDevelopment() &&
-    string.Equals(Environment.GetEnvironmentVariable("EPCUBE_DISABLE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
+var disableAuth = string.Equals(builder.Configuration["Authentication:DisableAuth"], "true", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(Environment.GetEnvironmentVariable("EPCUBE_DISABLE_AUTH"), "true", StringComparison.OrdinalIgnoreCase);
+if (builder.Environment.IsDevelopment() && disableAuth)
 {
     // Local development: skip Entra ID, allow all requests
     builder.Services.AddAuthentication("NoAuth")
