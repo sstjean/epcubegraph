@@ -2,7 +2,7 @@
 # Scrapes epcube-exporter (cloud API bridge) running in Docker
 
 scrape_configs:
-  - job_name: echonet
+  - job_name: epcube
     static_configs:
       - targets: ["epcube-exporter:9200"]
     metrics_path: /metrics

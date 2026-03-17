@@ -10,7 +10,7 @@ public class GridCalculatorTests
         // The grid PromQL should compute: solar generation - battery charge/discharge
         // Positive = export, Negative = import
         Assert.Equal(
-            "echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts",
+            "epcube_solar_instantaneous_generation_watts - epcube_battery_charge_discharge_power_watts",
             GridCalculator.GridPromqlExpression);
     }
 
@@ -64,7 +64,7 @@ public class GridCalculatorTests
         // solar = 200W, battery_charge = 800W → grid = -600W (import)
         // This is documented in the PromQL: solar - battery
         var expr = GridCalculator.GridPromqlExpression;
-        Assert.StartsWith("echonet_solar", expr);
+        Assert.StartsWith("epcube_solar", expr);
         Assert.Contains(" - ", expr);
         Assert.Contains("battery_charge_discharge", expr);
     }

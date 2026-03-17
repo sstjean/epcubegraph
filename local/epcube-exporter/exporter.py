@@ -4,7 +4,7 @@ EP Cube Cloud Exporter — Bridges EP Cube cloud API to Prometheus metrics.
 Polls the EP Cube monitoring API (monitoring-us.epcube.com) and exposes 
 Prometheus-compatible metrics on :9200/metrics for VictoriaMetrics to scrape.
 
-Produces the same echonet_* metric names as the mock exporter so the API
+Produces the same epcube_* metric names as the mock exporter so the API
 and dashboard work without changes.
 
 Authentication: Automatically solves the AJ-Captcha block puzzle and logs in.
@@ -19,6 +19,7 @@ Optional env vars:
   EPCUBE_INTERVAL  — Poll interval in seconds (default: 60)
 """
 import base64
+import collections
 import json
 import logging
 import os
@@ -27,6 +28,10 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_TZ = ZoneInfo("America/New_York")
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from io import BytesIO
 
@@ -197,6 +202,9 @@ def authenticate(username, password):
 class EpCubeCollector:
     """Polls the EP Cube cloud API and produces Prometheus metrics."""
 
+    # Keep last 10 minutes of snapshots (at 60s interval = ~10 entries)
+    HISTORY_MAX = 10
+
     def __init__(self, username, password):
         self._username = username
         self._password = password
@@ -205,6 +213,10 @@ class EpCubeCollector:
         self._lock = threading.Lock()
         self._metrics_text = ""
         self._last_poll = 0.0
+        self._history = collections.deque(maxlen=self.HISTORY_MAX)
+        self._poll_count = 0
+        self._poll_errors = 0
+        self._start_time = time.time()
 
     def _ensure_auth(self):
         if not self._token:
@@ -236,6 +248,12 @@ class EpCubeCollector:
         self._ensure_auth()
 
         lines = []
+        now_utc = datetime.now(timezone.utc)
+        snapshot = {
+            "time": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "time_minute": now_utc.strftime("%Y-%m-%dT%H:%MZ"),
+            "devices": [],
+        }
         for dev in self._devices:
             dev_id = dev["id"]
             sg_sn = dev.get("sgSn", "")
@@ -252,6 +270,7 @@ class EpCubeCollector:
                 data = info.get("data", {})
             except Exception as e:
                 log.error("Failed to fetch data for %s: %s", dev_name, e)
+                self._poll_errors += 1
                 continue
 
             # Build Prometheus labels matching mock exporter format
@@ -273,109 +292,118 @@ class EpCubeCollector:
             solar_kw = float(data.get("solarPower", 0))
             solar_w = round(solar_kw * 1000, 1)
 
-            lines.append("# HELP echonet_solar_instantaneous_generation_watts Current solar generation")
-            lines.append("# TYPE echonet_solar_instantaneous_generation_watts gauge")
-            lines.append(f"echonet_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
+            lines.append("# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
+            lines.append("# TYPE epcube_solar_instantaneous_generation_watts gauge")
+            lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
 
             # ── Battery metrics ──
             soc = float(data.get("batterySoc", 0))
-            battery_kw = float(data.get("batteryPower", 0))
-            battery_w = round(battery_kw * 1000, 1)
 
-            lines.append("# HELP echonet_battery_state_of_capacity_percent Battery SoC")
-            lines.append("# TYPE echonet_battery_state_of_capacity_percent gauge")
-            lines.append(f"echonet_battery_state_of_capacity_percent{{{bl}}} {soc}")
-
-            lines.append("# HELP echonet_battery_charge_discharge_power_watts Charge/discharge power")
-            lines.append("# TYPE echonet_battery_charge_discharge_power_watts gauge")
-            lines.append(f"echonet_battery_charge_discharge_power_watts{{{bl}}} {battery_w}")
-
-            # Working operation state
-            if battery_w > 50:
-                op_state = 0x42  # Charging
-            elif battery_w < -50:
-                op_state = 0x43  # Discharging
-            else:
-                op_state = 0x44  # Standby
-
-            lines.append("# HELP echonet_battery_working_operation_state Operation state code")
-            lines.append("# TYPE echonet_battery_working_operation_state gauge")
-            lines.append(f"echonet_battery_working_operation_state{{{bl}}} {op_state}")
-
-            # ── Grid metrics ──
-            grid_kw = float(data.get("gridPower", 0))
-            grid_w = round(grid_kw * 1000, 1)
-
-            lines.append("# HELP echonet_grid_power_watts Grid import/export power")
-            lines.append("# TYPE echonet_grid_power_watts gauge")
-            lines.append(f"echonet_grid_power_watts{{{bl}}} {grid_w}")
+            lines.append("# HELP epcube_battery_state_of_capacity_percent Battery SoC")
+            lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
+            lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
             # ── Backup/home load metrics ──
             backup_kw = float(data.get("backUpPower", 0))
             backup_w = round(backup_kw * 1000, 1)
 
-            lines.append("# HELP echonet_home_load_power_watts Home load power consumption")
-            lines.append("# TYPE echonet_home_load_power_watts gauge")
-            lines.append(f"echonet_home_load_power_watts{{{bl}}} {backup_w}")
+            lines.append("# HELP epcube_home_load_power_watts Home load power consumption")
+            lines.append("# TYPE epcube_home_load_power_watts gauge")
+            lines.append(f"epcube_home_load_power_watts{{{bl}}} {backup_w}")
 
             # ── Self-sufficiency rate ──
             self_help = float(data.get("selfHelpRate", 0))
-            lines.append("# HELP echonet_self_sufficiency_rate Self-sufficiency percentage")
-            lines.append("# TYPE echonet_self_sufficiency_rate gauge")
-            lines.append(f"echonet_self_sufficiency_rate{{{bl}}} {self_help}")
+            lines.append("# HELP epcube_self_sufficiency_rate Self-sufficiency percentage")
+            lines.append("# TYPE epcube_self_sufficiency_rate gauge")
+            lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_help}")
+
+            # ── Capture snapshot for debug UI ──
+            _STATUS_MAP = {
+                0: "Standby", 1: "Self-Use", 2: "Backup",
+                3: "Off-Grid", 4: "Normal", 5: "Fault", 6: "Upgrading",
+            }
+            raw_status = data.get("systemStatus", "?")
+            system_status = f"{_STATUS_MAP.get(raw_status, raw_status)} ({raw_status})"
+            bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
+            ress_count = data.get("ressNumber", "?")
+            snapshot["devices"].append({
+                "name": dev_name,
+                "id": dev_id,
+                "solar_kw": solar_kw,
+                "battery_soc": soc,
+                "backup_kw": backup_kw,
+                "self_sufficiency": self_help,
+                "system_status": system_status,
+                "bat_stored_kwh": bat_stored_kwh,
+                "ress_count": ress_count,
+                # daily totals filled in below
+                "solar_kwh": 0.0,
+                "grid_import_kwh": 0.0,
+                "grid_export_kwh": 0.0,
+                "backup_kwh": 0.0,
+            })
 
             # ── Scrape health ──
             now_ts = int(time.time())
             for d_labels in [bat_labels, sol_labels]:
                 dl = ",".join(f'{k}="{v}"' for k, v in d_labels.items())
-                lines.append(f"echonet_scrape_success{{{dl}}} 1")
-                lines.append(f"echonet_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
+                lines.append(f"epcube_scrape_success{{{dl}}} 1")
+                lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
 
             # ── Device info ──
-            for d_labels, d_class in [(bat_labels, "storage_battery"), (sol_labels, "home_solar")]:
+            for dl in [bat_labels, sol_labels]:
                 info_labels = {
-                    **d_labels,
+                    **dl,
                     "manufacturer": "Canadian Solar",
                     "product_code": f"EP Cube (devType={dev_type})",
                     "uid": sg_sn,
                 }
                 il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
-                lines.append(f"echonet_device_info{{{il}}} 1")
+                lines.append(f"epcube_device_info{{{il}}} 1")
 
         # Also try to get daily energy totals
+        # Build a lookup from device id to snapshot entry for merging
+        snap_by_id = {d["id"]: d for d in snapshot["devices"]}
         for dev in self._devices:
             if dev.get("isOnline") != "1":
                 continue
             try:
-                from datetime import datetime
-                today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(_TZ).strftime("%Y-%m-%d")
                 elec = self._api(f"/home/queryDataElectricityV2?devId={dev['id']}&scopeType=1&queryDateStr={today}")
                 edata = elec.get("data", {})
-
                 bl = f'device="epcube{dev["id"]}_battery",ip="cloud",class="storage_battery"'
 
                 solar_kwh = float(edata.get("solarElectricity", 0))
-                lines.append("# HELP echonet_solar_cumulative_generation_kwh Total energy generated today")
-                lines.append("# TYPE echonet_solar_cumulative_generation_kwh gauge")
-                lines.append(f"echonet_solar_cumulative_generation_kwh{{{bl}}} {solar_kwh}")
+                lines.append("# HELP epcube_solar_cumulative_generation_kwh Total energy generated today")
+                lines.append("# TYPE epcube_solar_cumulative_generation_kwh gauge")
+                lines.append(f"epcube_solar_cumulative_generation_kwh{{{bl}}} {solar_kwh}")
 
                 grid_from = float(edata.get("gridElectricityFrom", 0))
                 grid_to = float(edata.get("gridElectricityTo", 0))
-                lines.append("# HELP echonet_grid_import_kwh Grid energy imported today")
-                lines.append("# TYPE echonet_grid_import_kwh gauge")
-                lines.append(f"echonet_grid_import_kwh{{{bl}}} {grid_from}")
-                lines.append("# HELP echonet_grid_export_kwh Grid energy exported today")
-                lines.append("# TYPE echonet_grid_export_kwh gauge")
-                lines.append(f"echonet_grid_export_kwh{{{bl}}} {grid_to}")
+                lines.append("# HELP epcube_grid_import_kwh Grid energy imported today")
+                lines.append("# TYPE epcube_grid_import_kwh gauge")
+                lines.append(f"epcube_grid_import_kwh{{{bl}}} {grid_from}")
+                lines.append("# HELP epcube_grid_export_kwh Grid energy exported today")
+                lines.append("# TYPE epcube_grid_export_kwh gauge")
+                lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_to}")
 
-                bat_charge = float(edata.get("batteryElectricityImported", 0))
-                bat_discharge = float(edata.get("batteryElectricityExported", 0))
-                lines.append("# HELP echonet_battery_cumulative_charge_kwh Battery energy charged today")
-                lines.append("# TYPE echonet_battery_cumulative_charge_kwh gauge")
-                lines.append(f"echonet_battery_cumulative_charge_kwh{{{bl}}} {bat_charge}")
-                lines.append("# HELP echonet_battery_cumulative_discharge_kwh Battery energy discharged today")
-                lines.append("# TYPE echonet_battery_cumulative_discharge_kwh gauge")
-                lines.append(f"echonet_battery_cumulative_discharge_kwh{{{bl}}} {bat_discharge}")
+                backup_kwh = float(edata.get("backUpElectricity", 0))
+
+                # Calculate battery net from energy balance:
+                # Solar + Grid Import = House Load + Grid Export + Net Battery Charge
+                bat_net_kwh = round(solar_kwh + grid_from - backup_kwh - grid_to, 2)
+                lines.append("# HELP epcube_battery_net_kwh Net battery energy today (positive=charge, negative=discharge)")
+                lines.append("# TYPE epcube_battery_net_kwh gauge")
+                lines.append(f"epcube_battery_net_kwh{{{bl}}} {bat_net_kwh}")
+
+                # Merge daily totals into snapshot
+                snap_dev = snap_by_id.get(dev["id"])
+                if snap_dev:
+                    snap_dev["solar_kwh"] = solar_kwh
+                    snap_dev["grid_import_kwh"] = grid_from
+                    snap_dev["grid_export_kwh"] = grid_to
+                    snap_dev["backup_kwh"] = backup_kwh
+                    snap_dev["bat_net_kwh"] = bat_net_kwh
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -384,6 +412,12 @@ class EpCubeCollector:
         with self._lock:
             self._metrics_text = "\n".join(lines)
             self._last_poll = time.time()
+            self._poll_count += 1
+            # Replace last entry if same minute (avoid duplicates)
+            if self._history and self._history[-1]["time_minute"] == snapshot["time_minute"]:
+                self._history[-1] = snapshot
+            else:
+                self._history.append(snapshot)
 
         log.info("Poll complete: %d metric lines for %d device(s)", len(lines), len(self._devices))
 
@@ -391,10 +425,142 @@ class EpCubeCollector:
         with self._lock:
             return self._metrics_text
 
+    def get_status(self):
+        """Return debug status dict for the web UI."""
+        with self._lock:
+            uptime = time.time() - self._start_time
+            return {
+                "uptime_s": int(uptime),
+                "poll_count": self._poll_count,
+                "poll_errors": self._poll_errors,
+                "last_poll": self._last_poll,
+                "devices": len(self._devices),
+                "history": list(self._history),
+            }
+
 
 # ---------------------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------------------
+
+def _render_status_page(status):
+    """Render a minimal HTML debug page showing last 10 minutes of values."""
+    uptime_m = status["uptime_s"] // 60
+    uptime_h = uptime_m // 60
+    uptime_str = f"{uptime_h}h {uptime_m % 60}m {status['uptime_s'] % 60}s"
+    last_ago = int(time.time() - status["last_poll"]) if status["last_poll"] else None
+    last_str = f"{last_ago}s ago" if last_ago is not None else "never"
+
+    # Build per-device tables from history
+    history = status["history"]
+
+    # Collect all unique device names/ids seen across history
+    device_order = []
+    device_seen = set()
+    for snap in history:
+        for dev in snap["devices"]:
+            key = dev["id"]
+            if key not in device_seen:
+                device_seen.add(key)
+                device_order.append((key, dev["name"]))
+    device_order.sort(key=lambda d: d[0])
+
+    if not history or not device_order:
+        tables_html = '<p style="color:#888">No data yet — waiting for first poll</p>'
+    else:
+        tables = []
+        for dev_id, dev_name in device_order:
+            rows = []
+            for snap in history:  # oldest first
+                for dev in snap["devices"]:
+                    if dev["id"] != dev_id:
+                        continue
+                    rows.append(
+                        f'<tr>'
+                        f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
+                        f'<td style="text-align:right">{dev["solar_kw"]:.2f}</td>'
+                        f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
+                        f'<td style="text-align:right">{dev["backup_kw"]:.2f}</td>'
+                        f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
+                        f'<td style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("grid_import_kwh", 0):.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("grid_export_kwh", 0):.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("bat_net_kwh", 0):+.1f}</td>'
+                        f'</tr>'
+                    )
+            row_html = "\n".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;color:#888">No data</td></tr>'
+            # Get latest snapshot values for this device
+            latest_status = "?"
+            latest_backup_kwh = 0.0
+            latest_bat_stored = 0.0
+            latest_ress = "?"
+            for snap in reversed(history):
+                for dev in snap["devices"]:
+                    if dev["id"] == dev_id:
+                        latest_status = dev.get("system_status", "?")
+                        latest_backup_kwh = dev.get("backup_kwh", 0.0)
+                        latest_bat_stored = dev.get("bat_stored_kwh", 0.0)
+                        latest_ress = dev.get("ress_count", "?")
+                        break
+                else:
+                    continue
+                break
+            tables.append(
+                f'<h2 style="color:#00d4aa;font-size:1em;margin:1.5em 0 0.5em">{dev_name}'
+                f' <span class="badge">EP Cube &middot; {latest_ress}x</span>'
+                f' <span class="badge">Status: {latest_status}</span>'
+                f' <span class="badge">Battery level: {latest_bat_stored:.1f} kWh</span>'
+                f' <span class="badge">Home Supply (total): {latest_backup_kwh:.1f} kWh</span>'
+                f'</h2>\n'
+                f'<table>\n<tr>'
+                f'<th>Time</th><th>Solar kW</th><th>Battery SoC</th>'
+                f'<th>Load kW</th><th>Self-Suff</th>'
+                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Net kWh</th>'
+                f'</tr>\n{row_html}\n</table>'
+            )
+        tables_html = "\n".join(tables)
+
+    return f"""<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="30">
+<title>epcube-exporter status</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }}
+  h1 {{ color: #00d4aa; font-size: 1.3em; }}
+  .info {{ display: flex; gap: 2em; margin-bottom: 1.5em; font-size: 0.9em; }}
+  .info span {{ background: #16213e; padding: 0.4em 0.8em; border-radius: 4px; }}
+  .info .ok {{ color: #00d4aa; }}
+  .info .warn {{ color: #ffc107; }}
+  .badge {{ font-size: 0.75em; background: #16213e; color: #aaa; padding: 0.2em 0.6em; border-radius: 4px; margin-left: 1.2em; vertical-align: middle; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 0.85em; margin-bottom: 0.5em; }}
+  th, td {{ padding: 0.5em 0.8em; border: 1px solid #2a2a4a; }}
+  th {{ background: #16213e; text-align: left; position: sticky; top: 0; }}
+  tr:hover {{ background: #16213e; }}
+  .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+</style>
+</head><body>
+<h1>&#9889; epcube-exporter — debug status</h1>
+<div class="info">
+  <span>Uptime: <b>{uptime_str}</b></span>
+  <span>Polls: <b>{status["poll_count"]}</b></span>
+  <span class="{'warn' if status['poll_errors'] else 'ok'}">Errors: <b>{status["poll_errors"]}</b></span>
+  <span>Devices: <b>{status["devices"]}</b></span>
+  <span>Last poll: <b>{last_str}</b></span>
+</div>
+{tables_html}
+<script>
+document.querySelectorAll('.utctime').forEach(el => {{
+  const d = new Date(el.dataset.utc);
+  el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', hour12: true}});
+}});
+</script>
+<div class="footer">Auto-refreshes every 30s &middot; Last 10 polls (~10 min) &middot;
+  <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
+  <a href="/health" style="color:#00d4aa">/health</a>
+</div>
+</body></html>"""
+
 
 class MetricsHandler(BaseHTTPRequestHandler):
     collector = None  # Set by main
@@ -412,6 +578,14 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(b"ok")
+        elif self.path == "/" or self.path == "/status":
+            status = self.collector.get_status()
+            body = _render_status_page(status).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         else:
             self.send_response(404)
             self.end_headers()
@@ -427,11 +601,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
 def poll_loop(collector, interval):
     """Background thread: polls API on schedule."""
     while True:
+        time.sleep(interval)
         try:
             collector.poll()
         except Exception:
             log.exception("Poll failed")
-        time.sleep(interval)
 
 
 def main():

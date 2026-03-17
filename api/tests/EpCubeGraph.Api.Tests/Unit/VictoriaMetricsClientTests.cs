@@ -250,7 +250,7 @@ public class VictoriaMetricsClientTests
         var handler = new CapturingHttpMessageHandler(HttpStatusCode.OK, json);
         var client = CreateClient(handler);
 
-        await client.SeriesAsync("{__name__=~\"echonet_.*\"}");
+        await client.SeriesAsync("{__name__=~\"epcube_.*\"}");
 
         var query = handler.LastRequestUri?.Query ?? "";
         // The match param should be URL-encoded

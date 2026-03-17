@@ -1,7 +1,7 @@
 # vmagent scrape configuration for epcube-exporter (production)
 
 scrape_configs:
-  - job_name: echonet
+  - job_name: epcube
     static_configs:
       - targets: ["epcube-exporter:9200"]
     metrics_path: /metrics

@@ -23,9 +23,9 @@ public static class DevicesEndpoints
 
         try
         {
-            // Get device info labels from the echonet_device_info metric
-            infoResult = await client.SeriesAsync("echonet_device_info", ct: ct);
-            scrapeResult = await client.QueryAsync("echonet_scrape_success", ct: ct);
+            // Get device info labels from the epcube_device_info metric
+            infoResult = await client.SeriesAsync("epcube_device_info", ct: ct);
+            scrapeResult = await client.QueryAsync("epcube_scrape_success", ct: ct);
         }
         catch (HttpRequestException ex)
         {

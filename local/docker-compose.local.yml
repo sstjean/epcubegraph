@@ -13,7 +13,7 @@
 #   cd ../api/src/EpCubeGraph.Api && dotnet run
 #
 # After ~2 minutes, mock data appears in VictoriaMetrics:
-#   curl 'http://localhost:8428/api/v1/query?query=echonet_battery_state_of_capacity_percent'
+#   curl 'http://localhost:8428/api/v1/query?query=epcube_battery_state_of_capacity_percent'
 #
 # Web UIs:
 #   VictoriaMetrics (vmui):  http://localhost:8428/vmui

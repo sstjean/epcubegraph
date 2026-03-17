@@ -439,9 +439,9 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             {
                 "status": "success",
                 "data": [
-                    {"__name__": "echonet_battery_soc"},
-                    {"__name__": "echonet_battery_power"},
-                    {"__name__": "echonet_battery_soc"}
+                    {"__name__": "epcube_battery_soc"},
+                    {"__name__": "epcube_battery_power"},
+                    {"__name__": "epcube_battery_soc"}
                 ]
             }
             """;
@@ -451,8 +451,8 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("epcube_battery", body);
-        Assert.Contains("echonet_battery_soc", body);
-        Assert.Contains("echonet_battery_power", body);
+        Assert.Contains("epcube_battery_soc", body);
+        Assert.Contains("epcube_battery_power", body);
     }
 
     [Fact]
@@ -493,7 +493,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "status": "success",
                 "data": [
                     {"device": "epcube_battery"},
-                    {"__name__": "echonet_battery_soc"}
+                    {"__name__": "epcube_battery_soc"}
                 ]
             }
             """;
@@ -502,7 +502,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("echonet_battery_soc", body);
+        Assert.Contains("epcube_battery_soc", body);
     }
 
     // ── Grid ──
@@ -821,7 +821,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                     "resultType": "vector",
                     "result": [
                         {
-                            "metric": {"job": "echonet"},
+                            "metric": {"job": "epcube"},
                             "value": [1709827200, "1"]
                         }
                     ]
@@ -890,9 +890,9 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             {
                 "status": "success",
                 "data": [
-                    {"__name__": "echonet_battery_soc"},
-                    {"__name__": "echonet_battery_soc"},
-                    {"__name__": "echonet_battery_soc"}
+                    {"__name__": "epcube_battery_soc"},
+                    {"__name__": "epcube_battery_soc"},
+                    {"__name__": "epcube_battery_soc"}
                 ]
             }
             """;

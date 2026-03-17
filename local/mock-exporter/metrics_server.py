@@ -81,13 +81,13 @@ def _generate_metrics() -> str:
         _cumulative[cum_key] = prev_kwh + solar_w / 1000 * (60 / 3600)
         solar_cum_kwh = round(_cumulative[cum_key], 3)
 
-        lines.append(f"# HELP echonet_solar_instantaneous_generation_watts Current solar generation")
-        lines.append(f"# TYPE echonet_solar_instantaneous_generation_watts gauge")
-        lines.append(f"echonet_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
+        lines.append(f"# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
+        lines.append(f"# TYPE epcube_solar_instantaneous_generation_watts gauge")
+        lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
 
-        lines.append(f"# HELP echonet_solar_cumulative_generation_kwh Total energy generated")
-        lines.append(f"# TYPE echonet_solar_cumulative_generation_kwh counter")
-        lines.append(f"echonet_solar_cumulative_generation_kwh{{{sl}}} {solar_cum_kwh}")
+        lines.append(f"# HELP epcube_solar_cumulative_generation_kwh Total energy generated")
+        lines.append(f"# TYPE epcube_solar_cumulative_generation_kwh counter")
+        lines.append(f"epcube_solar_cumulative_generation_kwh{{{sl}}} {solar_cum_kwh}")
 
         # ── Battery metrics ──
         # SoC follows solar: charges during day, discharges at night
@@ -126,44 +126,44 @@ def _generate_metrics() -> str:
         else:
             _cumulative[cum_discharge_key] = prev_discharge + abs(charge_w) * (60 / 3600)
 
-        lines.append(f"# HELP echonet_battery_state_of_capacity_percent Battery SoC")
-        lines.append(f"# TYPE echonet_battery_state_of_capacity_percent gauge")
-        lines.append(f"echonet_battery_state_of_capacity_percent{{{bl}}} {soc}")
+        lines.append(f"# HELP epcube_battery_state_of_capacity_percent Battery SoC")
+        lines.append(f"# TYPE epcube_battery_state_of_capacity_percent gauge")
+        lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-        lines.append(f"# HELP echonet_battery_charge_discharge_power_watts Charge/discharge power")
-        lines.append(f"# TYPE echonet_battery_charge_discharge_power_watts gauge")
-        lines.append(f"echonet_battery_charge_discharge_power_watts{{{bl}}} {charge_w}")
+        lines.append(f"# HELP epcube_battery_charge_discharge_power_watts Charge/discharge power")
+        lines.append(f"# TYPE epcube_battery_charge_discharge_power_watts gauge")
+        lines.append(f"epcube_battery_charge_discharge_power_watts{{{bl}}} {charge_w}")
 
-        lines.append(f"# HELP echonet_battery_remaining_capacity_wh Remaining stored energy")
-        lines.append(f"# TYPE echonet_battery_remaining_capacity_wh gauge")
-        lines.append(f"echonet_battery_remaining_capacity_wh{{{bl}}} {remaining_wh}")
+        lines.append(f"# HELP epcube_battery_remaining_capacity_wh Remaining stored energy")
+        lines.append(f"# TYPE epcube_battery_remaining_capacity_wh gauge")
+        lines.append(f"epcube_battery_remaining_capacity_wh{{{bl}}} {remaining_wh}")
 
-        lines.append(f"# HELP echonet_battery_chargeable_capacity_wh Max chargeable capacity")
-        lines.append(f"# TYPE echonet_battery_chargeable_capacity_wh gauge")
-        lines.append(f"echonet_battery_chargeable_capacity_wh{{{bl}}} {chargeable_wh}")
+        lines.append(f"# HELP epcube_battery_chargeable_capacity_wh Max chargeable capacity")
+        lines.append(f"# TYPE epcube_battery_chargeable_capacity_wh gauge")
+        lines.append(f"epcube_battery_chargeable_capacity_wh{{{bl}}} {chargeable_wh}")
 
-        lines.append(f"# HELP echonet_battery_dischargeable_capacity_wh Max dischargeable capacity")
-        lines.append(f"# TYPE echonet_battery_dischargeable_capacity_wh gauge")
-        lines.append(f"echonet_battery_dischargeable_capacity_wh{{{bl}}} {dischargeable_wh}")
+        lines.append(f"# HELP epcube_battery_dischargeable_capacity_wh Max dischargeable capacity")
+        lines.append(f"# TYPE epcube_battery_dischargeable_capacity_wh gauge")
+        lines.append(f"epcube_battery_dischargeable_capacity_wh{{{bl}}} {dischargeable_wh}")
 
-        lines.append(f"# HELP echonet_battery_cumulative_charge_wh Cumulative energy charged")
-        lines.append(f"# TYPE echonet_battery_cumulative_charge_wh counter")
-        lines.append(f"echonet_battery_cumulative_charge_wh{{{bl}}} {round(_cumulative.get(cum_charge_key, 1000.0), 1)}")
+        lines.append(f"# HELP epcube_battery_cumulative_charge_wh Cumulative energy charged")
+        lines.append(f"# TYPE epcube_battery_cumulative_charge_wh counter")
+        lines.append(f"epcube_battery_cumulative_charge_wh{{{bl}}} {round(_cumulative.get(cum_charge_key, 1000.0), 1)}")
 
-        lines.append(f"# HELP echonet_battery_cumulative_discharge_wh Cumulative energy discharged")
-        lines.append(f"# TYPE echonet_battery_cumulative_discharge_wh counter")
-        lines.append(f"echonet_battery_cumulative_discharge_wh{{{bl}}} {round(_cumulative.get(cum_discharge_key, 800.0), 1)}")
+        lines.append(f"# HELP epcube_battery_cumulative_discharge_wh Cumulative energy discharged")
+        lines.append(f"# TYPE epcube_battery_cumulative_discharge_wh counter")
+        lines.append(f"epcube_battery_cumulative_discharge_wh{{{bl}}} {round(_cumulative.get(cum_discharge_key, 800.0), 1)}")
 
-        lines.append(f"# HELP echonet_battery_working_operation_state Operation state code")
-        lines.append(f"# TYPE echonet_battery_working_operation_state gauge")
-        lines.append(f"echonet_battery_working_operation_state{{{bl}}} {op_state}")
+        lines.append(f"# HELP epcube_battery_working_operation_state Operation state code")
+        lines.append(f"# TYPE epcube_battery_working_operation_state gauge")
+        lines.append(f"epcube_battery_working_operation_state{{{bl}}} {op_state}")
 
         # ── Scrape health metrics ──
         for d_labels in [bat, sol]:
             dl = _labels(d_labels)
-            lines.append(f"echonet_scrape_success{{{dl}}} 1")
-            lines.append(f"echonet_scrape_duration_seconds{{{dl}}} {round(0.05 + 0.02 * math.sin(elapsed / 20), 4)}")
-            lines.append(f"echonet_last_scrape_timestamp_seconds{{{dl}}} {int(time.time())}")
+            lines.append(f"epcube_scrape_success{{{dl}}} 1")
+            lines.append(f"epcube_scrape_duration_seconds{{{dl}}} {round(0.05 + 0.02 * math.sin(elapsed / 20), 4)}")
+            lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {int(time.time())}")
 
         # ── Device info (constant=1 with metadata labels) ──
         for d_labels, d_class_name in [(bat, "storage_battery"), (sol, "home_solar")]:
@@ -174,7 +174,7 @@ def _generate_metrics() -> str:
                 "uid": dev["uid"],
             }
             il = _labels(info_labels)
-            lines.append(f"echonet_device_info{{{il}}} 1")
+            lines.append(f"epcube_device_info{{{il}}} 1")
 
     lines.append("")
     return "\n".join(lines)
@@ -201,5 +201,5 @@ class MetricsHandler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     port = 9191
     server = HTTPServer(("0.0.0.0", port), MetricsHandler)
-    print(f"Mock echonet-exporter serving metrics on :{port}/metrics", flush=True)
+    print(f"Mock epcube-exporter serving metrics on :{port}/metrics", flush=True)
     server.serve_forever()
