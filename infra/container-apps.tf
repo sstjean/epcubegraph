@@ -198,16 +198,15 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "AzureAd__Audience"
-        value = "api://${var.environment_name}"
+        value = "api://${azuread_application.api.client_id}"
       }
 
       env {
         name = "VictoriaMetrics__Url"
-        # Query VictoriaMetrics directly on port 8428 within the Container Apps
-        # environment. This bypasses vmauth (which enforces bearer-token auth
-        # for external remote-write traffic). Internal traffic between apps in
-        # the same environment uses the container app name as hostname.
-        value = "http://${azurerm_container_app.vm.name}:8428"
+        # Route through vmauth (port 80 → ingress targetPort 8427 → localhost:8428).
+        # Container Apps inter-app communication only works on port 80/443.
+        # vmauth's unauthorized_user config allows unauthenticated read queries.
+        value = "http://${azurerm_container_app.vm.name}"
       }
     }
   }

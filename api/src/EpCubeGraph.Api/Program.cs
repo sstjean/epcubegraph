@@ -44,6 +44,7 @@ builder.Services
     {
         var url = builder.Configuration["VictoriaMetrics:Url"] ?? "http://localhost:8428";
         client.BaseAddress = new Uri(url);
+        client.Timeout = TimeSpan.FromSeconds(10);
     });
 builder.Services.AddScoped<GridCalculator>();
 

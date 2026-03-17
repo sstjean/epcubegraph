@@ -68,10 +68,23 @@ resource "azurerm_user_assigned_identity" "main" {
 locals {
   # vmauth config YAML with env-var placeholder for runtime substitution
   # vmauth resolves %{REMOTE_WRITE_TOKEN} from its own environment at startup
+  #
+  # unauthorized_user allows the API container app (and external reads) to
+  # query VictoriaMetrics through vmauth without a bearer token. Only safe
+  # read paths are allowed; writes still require the bearer token.
   vmauth_config = <<-YAML
 users:
 - bearer_token: "%%{REMOTE_WRITE_TOKEN}"
   url_prefix: "http://localhost:8428/"
+unauthorized_user:
+  url_map:
+  - src_paths:
+    - "/api/v1/query.*"
+    - "/api/v1/series.*"
+    - "/api/v1/labels.*"
+    - "/api/v1/label/.+"
+    - "/health"
+    url_prefix: "http://localhost:8428/"
 YAML
 
   vmauth_config_b64 = base64encode(local.vmauth_config)
