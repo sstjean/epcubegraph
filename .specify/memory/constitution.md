@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.6.1 → 1.6.2
+  Version change: 1.6.2 → 1.7.0
   Modified sections:
-    - DevOps — added CI Coverage Gate rule (NON-NEGOTIABLE)
+    - DevOps — added CI/CD Zero Warnings rule
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -219,6 +219,13 @@ and protecting data across all client platforms.
   environment-specific values (e.g., device IPs, tokens) via
   a configuration file or environment variables; all other
   steps MUST be automated.
+- **CI/CD Zero Warnings**: All errors and warnings reported
+  by GitHub Actions during push and pull request workflows
+  MUST be analyzed and resolved. Warnings MUST NOT be
+  ignored or allowed to accumulate. Each CI/CD run MUST
+  complete with zero warnings and zero errors. Persistent
+  warnings that cannot be fixed MUST be suppressed with an
+  inline justification comment explaining why.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -242,4 +249,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.6.2 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-08
+**Version**: 1.7.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-17
