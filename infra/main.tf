@@ -70,4 +70,18 @@ users:
 YAML
 
   vmauth_config_b64 = base64encode(local.vmauth_config)
+
+  # VictoriaMetrics promscrape config — scrapes epcube-exporter within the
+  # Container Apps environment via internal ingress (HTTP port 80 → target 9200)
+  promscrape_config = <<-YAML
+scrape_configs:
+  - job_name: echonet
+    static_configs:
+      - targets: ["${var.environment_name}-exporter"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 30s
+YAML
+
+  promscrape_config_b64 = base64encode(local.promscrape_config)
 }

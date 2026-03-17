@@ -11,7 +11,6 @@ public class DeviceInfoTests
         var device = new DeviceInfo(
             Device: "epcube_battery",
             DeviceClass: "storage_battery",
-            Ip: "192.168.1.10",
             Manufacturer: "Canadian Solar",
             ProductCode: "EP Cube 2.0",
             Uid: "ABC123",
@@ -23,7 +22,6 @@ public class DeviceInfoTests
 
         Assert.Equal("epcube_battery", root.GetProperty("device").GetString());
         Assert.Equal("storage_battery", root.GetProperty("class").GetString());
-        Assert.Equal("192.168.1.10", root.GetProperty("ip").GetString());
         Assert.Equal("Canadian Solar", root.GetProperty("manufacturer").GetString());
         Assert.Equal("EP Cube 2.0", root.GetProperty("product_code").GetString());
         Assert.Equal("ABC123", root.GetProperty("uid").GetString());
@@ -37,7 +35,6 @@ public class DeviceInfoTests
             {
                 "device": "epcube_solar",
                 "class": "home_solar",
-                "ip": "192.168.1.10",
                 "online": false
             }
             """;
@@ -47,7 +44,6 @@ public class DeviceInfoTests
         Assert.NotNull(device);
         Assert.Equal("epcube_solar", device.Device);
         Assert.Equal("home_solar", device.DeviceClass);
-        Assert.Equal("192.168.1.10", device.Ip);
         Assert.False(device.Online);
     }
 
@@ -56,8 +52,7 @@ public class DeviceInfoTests
     {
         var device = new DeviceInfo(
             Device: "epcube_battery",
-            DeviceClass: "storage_battery",
-            Ip: "192.168.1.10");
+            DeviceClass: "storage_battery");
 
         Assert.Null(device.Manufacturer);
         Assert.Null(device.ProductCode);
@@ -68,14 +63,14 @@ public class DeviceInfoTests
     [Fact]
     public void DeviceClass_AcceptsStorageBattery()
     {
-        var device = new DeviceInfo(Device: "test", DeviceClass: "storage_battery", Ip: "10.0.0.1");
+        var device = new DeviceInfo(Device: "test", DeviceClass: "storage_battery");
         Assert.Equal("storage_battery", device.DeviceClass);
     }
 
     [Fact]
     public void DeviceClass_AcceptsHomeSolar()
     {
-        var device = new DeviceInfo(Device: "test", DeviceClass: "home_solar", Ip: "10.0.0.1");
+        var device = new DeviceInfo(Device: "test", DeviceClass: "home_solar");
         Assert.Equal("home_solar", device.DeviceClass);
     }
 
@@ -84,8 +79,7 @@ public class DeviceInfoTests
     {
         var device = new DeviceInfo(
             Device: "epcube_battery",
-            DeviceClass: "storage_battery",
-            Ip: "192.168.1.10");
+            DeviceClass: "storage_battery");
 
         var options = new JsonSerializerOptions
         {

@@ -26,12 +26,12 @@ output "acr_name" {
 }
 
 output "remote_write_url" {
-  description = "Full remote-write URL for local vmagent .env"
+  description = "Full remote-write URL for external metric sources"
   value       = "https://${azurerm_container_app.vm.ingress[0].fqdn}/api/v1/write"
 }
 
 output "remote_write_token" {
-  description = "Remote-write bearer token (for local .env)"
+  description = "Remote-write bearer token"
   value       = random_password.remote_write_token.result
   sensitive   = true
 }

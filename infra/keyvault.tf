@@ -43,3 +43,17 @@ resource "azurerm_key_vault_secret" "remote_write_token" {
   value        = random_password.remote_write_token.result
   key_vault_id = azurerm_key_vault.main.id
 }
+
+# ── EP Cube cloud credentials ──
+
+resource "azurerm_key_vault_secret" "epcube_username" {
+  name         = "epcube-username"
+  value        = var.epcube_username
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "epcube_password" {
+  name         = "epcube-password"
+  value        = var.epcube_password
+  key_vault_id = azurerm_key_vault.main.id
+}

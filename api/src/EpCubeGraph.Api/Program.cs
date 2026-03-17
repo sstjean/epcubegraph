@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EpCubeGraph.Api;
 using EpCubeGraph.Api.Endpoints;
 using EpCubeGraph.Api.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -11,18 +12,30 @@ var builder = WebApplication.CreateBuilder(args);
 // Structured JSON logging (T042)
 builder.Logging.AddJsonConsole();
 
-// Authentication — Entra ID JWT validation (T006)
-builder.Services
-    .AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-
-// Authorization — require user_impersonation scope as default policy (T006)
-builder.Services.AddAuthorization(options =>
+// Authentication & Authorization
+if (builder.Environment.IsDevelopment() &&
+    string.Equals(Environment.GetEnvironmentVariable("EPCUBE_DISABLE_AUTH"), "true", StringComparison.OrdinalIgnoreCase))
 {
-    options.DefaultPolicy = new AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .RequireScope("user_impersonation")
-        .Build();
-});
+    // Local development: skip Entra ID, allow all requests
+    builder.Services.AddAuthentication("NoAuth")
+        .AddScheme<AuthenticationSchemeOptions, NoAuthHandler>("NoAuth", null);
+    builder.Services.AddAuthorization();
+}
+else
+{
+    // Production: Entra ID JWT validation (T006)
+    builder.Services
+        .AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+
+    // Require user_impersonation scope as default policy (T006)
+    builder.Services.AddAuthorization(options =>
+    {
+        options.DefaultPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .RequireScope("user_impersonation")
+            .Build();
+    });
+}
 
 // Service registration (T031)
 builder.Services

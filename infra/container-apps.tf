@@ -54,20 +54,24 @@ resource "azurerm_container_app" "vm" {
     min_replicas = 1
     max_replicas = 1
 
-    # Init container writes vmauth config file to shared EmptyDir volume.
-    # The config uses vmauth's %{ENV_VAR} syntax — vmauth substitutes
-    # REMOTE_WRITE_TOKEN from its own environment at startup.
+    # Init container writes vmauth config and promscrape config to shared
+    # EmptyDir volumes. vmauth's %{ENV_VAR} syntax is used for the token.
     init_container {
-      name   = "vmauth-config-init"
+      name   = "config-init"
       image  = "busybox:1.36"
       cpu    = 0.25
       memory = "0.5Gi"
 
-      command = ["/bin/sh", "-c", "echo '${local.vmauth_config_b64}' | base64 -d > /etc/vmauth/config.yml"]
+      command = ["/bin/sh", "-c", "echo '${local.vmauth_config_b64}' | base64 -d > /etc/vmauth/config.yml && echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
 
       volume_mounts {
         name = "vmauth-config"
         path = "/etc/vmauth"
+      }
+
+      volume_mounts {
+        name = "promscrape-config"
+        path = "/etc/promscrape"
       }
     }
 
@@ -82,11 +86,17 @@ resource "azurerm_container_app" "vm" {
         "-dedup.minScrapeInterval=1m",
         "-storageDataPath=/victoria-metrics-data",
         "-httpListenAddr=:8428",
+        "-promscrape.config=/etc/promscrape/config.yml",
       ]
 
       volume_mounts {
         name = "vm-data"
         path = "/victoria-metrics-data"
+      }
+
+      volume_mounts {
+        name = "promscrape-config"
+        path = "/etc/promscrape"
       }
     }
 
@@ -120,6 +130,11 @@ resource "azurerm_container_app" "vm" {
 
     volume {
       name         = "vmauth-config"
+      storage_type = "EmptyDir"
+    }
+
+    volume {
+      name         = "promscrape-config"
       storage_type = "EmptyDir"
     }
   }
@@ -193,6 +208,83 @@ resource "azurerm_container_app" "api" {
         # for external remote-write traffic). Internal traffic between apps in
         # the same environment uses the container app name as hostname.
         value = "http://${azurerm_container_app.vm.name}:8428"
+      }
+    }
+  }
+}
+
+# ── epcube-exporter Container App ──
+
+resource "azurerm_container_app" "exporter" {
+  count = var.epcube_image != "" ? 1 : 0
+
+  name                         = "${var.environment_name}-exporter"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.main.id]
+  }
+
+  registry {
+    server   = azurerm_container_registry.main.login_server
+    identity = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "epcube-username"
+    key_vault_secret_id = azurerm_key_vault_secret.epcube_username.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "epcube-password"
+    key_vault_secret_id = azurerm_key_vault_secret.epcube_password.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  # Internal-only ingress — reachable by VictoriaMetrics within the environment
+  ingress {
+    external_enabled = false
+    target_port      = 9200
+    transport        = "http"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "epcube-exporter"
+      image  = var.epcube_image
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "EPCUBE_USERNAME"
+        secret_name = "epcube-username"
+      }
+
+      env {
+        name        = "EPCUBE_PASSWORD"
+        secret_name = "epcube-password"
+      }
+
+      env {
+        name  = "EPCUBE_PORT"
+        value = "9200"
+      }
+
+      env {
+        name  = "EPCUBE_INTERVAL"
+        value = "60"
       }
     }
   }

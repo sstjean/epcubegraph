@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "local": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "EPCUBE_DISABLE_AUTH": "true"
+      },
+      "applicationUrl": "http://localhost:5062"
+    }
+  }
+}

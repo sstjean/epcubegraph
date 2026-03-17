@@ -3,7 +3,7 @@
 **Input**: Design documents from `/specs/001-data-ingestor/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/api-v1.md, quickstart.md
 
-**Tests**: Included — constitution v1.6.1 mandates TDD with 100% code coverage (non-negotiable).
+**Tests**: Included — constitution mandates TDD with 100% code coverage (non-negotiable).
 
 **Organization**: Tasks grouped by user story for independent implementation and testing.
 
@@ -19,7 +19,7 @@
 
 **Purpose**: Project initialization, directory structure, .NET solution scaffolding
 
-- [x] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{echonet-exporter,vmagent}, infra/
+- [x] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{epcube-exporter,mock-exporter}, infra/
 - [x] T002 Initialize .NET solution: create api/EpCubeGraph.sln, api/src/EpCubeGraph.Api/EpCubeGraph.Api.csproj (.NET 10, web SDK), add NuGet packages: Microsoft.Identity.Web, Swashbuckle.AspNetCore, prometheus-net.AspNetCore (8.2.1)
 - [x] T003 [P] Initialize test project: create api/tests/EpCubeGraph.Api.Tests/EpCubeGraph.Api.Tests.csproj with xunit, coverlet.collector, Microsoft.AspNetCore.Mvc.Testing, Testcontainers, add project reference to API project
 - [x] T004 [P] Create api/.editorconfig with C# coding conventions and api/Directory.Build.props with TreatWarningsAsErrors and nullable enabled
@@ -30,7 +30,7 @@
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story implementation
 
-**CRITICAL**: No user story work can begin until this phase is complete
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
 - [x] T005 Create appsettings.json with AzureAd (Instance, TenantId, ClientId, Audience) and VictoriaMetrics (Url) sections in api/src/EpCubeGraph.Api/appsettings.json
 - [x] T006 [P] Configure Microsoft.Identity.Web authentication and authorization middleware in api/src/EpCubeGraph.Api/Program.cs (AddMicrosoftIdentityWebApiAuthentication, AddAuthorization with RequireScope("user_impersonation") as DefaultPolicy, UseAuthentication, UseAuthorization)
@@ -42,24 +42,24 @@
 
 ---
 
-## Phase 3: User Story 3 — Containerized Local Ingestion Stack (Priority: P1)
+## Phase 3: User Story 3 — Cloud-Deployed Ingestion Stack (Priority: P1)
 
-**Goal**: Package echonet-exporter and vmagent as Docker containers with Docker Compose, deployable via `docker compose up`
+**Goal**: Deploy epcube-exporter as a Container App in Azure, scraped directly by VictoriaMetrics via `-promscrape.config`. EP Cube cloud credentials stored in Key Vault.
 
-**Independent Test**: Run `docker compose build` to verify images build. Run `docker compose up -d` on a LAN-connected device with a valid `.env` file. Verify containers start, echonet-exporter exposes metrics on port 9191, and vmagent scrapes and forwards to the remote-write URL.
+**Independent Test**: Run `infra/deploy.sh` to verify epcube-exporter Container App deploys, VictoriaMetrics scrapes it, and metrics appear in VictoriaMetrics.
 
 **FRs covered**: FR-015, FR-016, FR-017, FR-018
 
-**Also covers (indirectly)**: FR-001, FR-002 (echonet-exporter polls both EP Cube 1.0 and 2.0 gateways via ECHONET Lite — ingestion is inherent to deploying and configuring echonet-exporter with gateway IPs), FR-006 (vmagent WAL buffers failed remote-writes and retries automatically; echonet-exporter retries on next scrape cycle)
+**Also covers (indirectly)**: FR-001, FR-002 (epcube-exporter polls both EP Cube 1.0 and 2.0 devices via the cloud API), FR-006 (epcube-exporter retries on next poll cycle; VictoriaMetrics handles scrape failures gracefully)
 
 ### Implementation for User Story 3
 
-- [x] T010 [P] [US3] Create echonet-exporter multi-arch Dockerfile with docker buildx, Go cross-compilation (CGO_ENABLED=0), alpine:3.19 base, ca-certificates + tzdata in local/echonet-exporter/Dockerfile
-- [x] T011 [P] [US3] Create vmagent scrape configuration targeting echonet-exporter:9191 with 60s scrape interval, 30s timeout in local/vmagent/scrape.yml
-- [x] T012 [P] [US3] Create .env.example with EPCUBE1_IP, EPCUBE2_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
-- [x] T013 [US3] Create docker-compose.yml orchestrating echonet-exporter and vmagent: env_file for .env, vmagent with -remoteWrite.bearerToken, -remoteWrite.tmpDataPath, -remoteWrite.maxDiskUsagePerURL=1GB, persistent volume for vmagent WAL, restart: unless-stopped on both, scrape.yml mounted read-only in local/docker-compose.yml
+- [x] T010 [P] [US3] Create epcube-exporter Dockerfile with python:3.12-slim base, opencv-python-headless, pycryptodome, numpy in local/epcube-exporter/Dockerfile
+- [x] T011 [P] [US3] Create VictoriaMetrics promscrape configuration targeting epcube-exporter Container App with 60s scrape interval, 30s timeout in infra/main.tf (promscrape_config local)
+- [x] T012 [P] [US3] Add epcube_username, epcube_password, epcube_image variables to infra/variables.tf; add EP Cube credential secrets to infra/keyvault.tf
+- [x] T013 [US3] Add epcube-exporter Container App resource with internal-only ingress, Key Vault secret references, and ACR registry in infra/container-apps.tf; add promscrape config to VictoriaMetrics
 
-**Checkpoint**: `docker compose build` succeeds, `docker compose config` validates. Local stack is independently deployable.
+**Checkpoint**: `terraform validate` passes. epcube-exporter Container App deploys with VictoriaMetrics scraping it directly.
 
 ---
 
@@ -71,7 +71,7 @@
 
 **FRs covered**: FR-004, FR-005, FR-007, FR-011, FR-012, FR-013, FR-014
 
-**Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). vmagent attaches timestamps at scrape time using the host clock. No application-level normalization code is required.
+**Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). No application-level normalization code is required.
 
 ### Implementation for User Story 1
 
@@ -101,7 +101,7 @@
 
 ### Models for User Story 2
 
-- [x] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"device_class", Ip→"ip", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
+- [x] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"class", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
 - [x] T022 [P] [US2] Create HealthResponse record (Status, VictoriaMetrics) in api/src/EpCubeGraph.Api/Models/HealthResponse.cs
 - [x] T023 [P] [US2] Create DeviceMetricsResponse record (Device, Metrics list) in api/src/EpCubeGraph.Api/Models/DeviceMetricsResponse.cs
 - [x] T024 [P] [US2] Create DeviceListResponse record (Devices list) in api/src/EpCubeGraph.Api/Models/DeviceListResponse.cs
@@ -154,7 +154,7 @@
 
 - **Setup (Phase 1)**: No dependencies — can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
-- **US3 (Phase 3)**: Depends on Foundational — no code dependencies on other stories (Docker files only)
+- **US3 (Phase 3)**: Depends on Foundational — no code dependencies on other stories (Docker + Terraform only)
 - **US1 (Phase 4)**: Depends on Foundational — no code dependencies on other stories (Terraform only)
 - **US2 (Phase 5)**: Depends on Foundational — uses IVictoriaMetricsClient interface and auth from Phase 2
 - **Polish (Phase 6)**: Depends on all user stories being complete
@@ -233,7 +233,7 @@ T036 (depends on all above)
 
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational (CRITICAL — blocks all stories)
-3. Complete Phase 3: US3 (local Docker stack)
+3. Complete Phase 3: US3 (epcube-exporter Container App)
 4. Complete Phase 4: US1 (Azure infrastructure)
 5. Complete Phase 5: US2 (API)
 6. **STOP and VALIDATE**: All three stories independently testable
@@ -242,8 +242,8 @@ T036 (depends on all above)
 ### Incremental Delivery
 
 1. Setup + Foundational → Foundation ready
-2. US3 → `docker compose build` works → Local stack deployable
-3. US1 → Terraform deploys → VictoriaMetrics receives remote-write
+2. US3 → `deploy.sh` builds and pushes epcube-exporter → Container App deployable
+3. US1 → Terraform deploys → VictoriaMetrics accepts remote-write and scrapes epcube-exporter
 4. US2 → API serves queries → Full pipeline operational (MVP!)
 5. Polish → 100% coverage enforced, security verified
 
@@ -261,8 +261,8 @@ With capacity for parallel work:
 
 ## Notes
 
-- All file paths are relative to repository root (`/Users/steve/repos/epcubegraph/`)
-- TDD is mandated by constitution v1.6.1 — tests MUST fail before implementation
+- All file paths are relative to repository root
+- TDD is mandated by constitution — tests MUST fail before implementation
 - 100% code coverage enforced via coverlet in CI
 - US3 and US1 contain no C# code (Docker + Terraform) so TDD applies only to US2
 - Commit after each task or logical group

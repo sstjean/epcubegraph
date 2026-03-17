@@ -320,7 +320,6 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                     {
                         "device": "epcube_battery",
                         "class": "storage_battery",
-                        "ip": "192.168.1.10",
                         "manufacturer": "Canadian Solar",
                         "product_code": "EP Cube 2.0",
                         "uid": "ABC123"
@@ -362,8 +361,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_solar",
-                        "class": "home_solar",
-                        "ip": "192.168.1.11"
+                        "class": "home_solar"
                     }
                 ]
             }
@@ -396,8 +394,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_battery",
-                        "class": "storage_battery",
-                        "ip": "192.168.1.10"
+                        "class": "storage_battery"
                     }
                 ]
             }
@@ -495,7 +492,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             {
                 "status": "success",
                 "data": [
-                    {"device": "epcube_battery", "ip": "192.168.1.10"},
+                    {"device": "epcube_battery"},
                     {"__name__": "echonet_battery_soc"}
                 ]
             }
@@ -720,19 +717,16 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_battery",
-                        "class": "storage_battery",
-                        "ip": "192.168.1.10"
+                        "class": "storage_battery"
                     },
                     {
                         "device": "epcube_solar",
                         "class": "home_solar",
-                        "ip": "192.168.1.11",
                         "manufacturer": "Canadian Solar"
                     },
                     {
                         "device": "epcube_meter",
                         "class": "smart_meter",
-                        "ip": "192.168.1.12",
                         "uid": "METER001"
                     }
                 ]
@@ -778,8 +772,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_battery",
-                        "class": "storage_battery",
-                        "ip": "192.168.1.10"
+                        "class": "storage_battery"
                     }
                 ]
             }
@@ -815,8 +808,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_battery",
-                        "class": "storage_battery",
-                        "ip": "192.168.1.10"
+                        "class": "storage_battery"
                     }
                 ]
             }
@@ -852,8 +844,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
                 "data": [
                     {
                         "device": "epcube_battery",
-                        "class": "storage_battery",
-                        "ip": "192.168.1.10"
+                        "class": "storage_battery"
                     }
                 ]
             }
@@ -939,7 +930,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             {
                 "status": "success",
                 "data": [
-                    {"device": "epcube_battery", "ip": "192.168.1.10"},
+                    {"device": "epcube_battery"},
                     {"device": "epcube_battery", "class": "storage_battery"}
                 ]
             }

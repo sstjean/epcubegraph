@@ -1,4 +1,5 @@
-# vmagent scrape configuration for epcube-exporter (production)
+# vmagent scrape configuration for production-local testing (macOS)
+# Scrapes epcube-exporter (cloud API bridge) running in Docker
 
 scrape_configs:
   - job_name: echonet

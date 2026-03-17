@@ -1,20 +1,29 @@
-# EP Cube Graph — Local Ingestion Stack
-# Orchestrates echonet-exporter (metrics collector) and vmagent (remote-write forwarder)
+# EP Cube Graph — Local Development: epcube-exporter + vmagent
+# For local testing that writes to Azure VictoriaMetrics.
+# Production deployment is fully in Azure — see infra/deploy.sh.
+#
+# The epcube-exporter polls the EP Cube cloud API (monitoring-us.epcube.com)
+# and exposes Prometheus metrics. vmagent scrapes and remote-writes to Azure.
 #
 # Usage:
-#   cp .env.example .env  # Edit with your device IPs and remote-write credentials
+#   cp .env.example .env  # Edit with EP Cube credentials and remote-write config
 #   docker compose up -d
+#
+# Environment variables (.env):
+#   EPCUBE_USERNAME     — EP Cube cloud account email
+#   EPCUBE_PASSWORD     — EP Cube cloud account password
+#   REMOTE_WRITE_URL    — Azure-hosted VictoriaMetrics write endpoint
+#   REMOTE_WRITE_TOKEN  — Bearer token for remote-write auth
 
 services:
-  echonet-exporter:
+  epcube-exporter:
     build:
-      context: ./echonet-exporter
-      dockerfile: Dockerfile
+      context: ./epcube-exporter
     environment:
-      - EPCUBE1_IP=${EPCUBE1_IP}
-      - EPCUBE2_IP=${EPCUBE2_IP}
-    ports:
-      - "9191:9191"
+      - EPCUBE_USERNAME=${EPCUBE_USERNAME}
+      - EPCUBE_PASSWORD=${EPCUBE_PASSWORD}
+      - EPCUBE_PORT=9200
+      - EPCUBE_INTERVAL=60
     restart: unless-stopped
 
   vmagent:
@@ -32,12 +41,11 @@ services:
     secrets:
       - remote_write_token
     depends_on:
-      - echonet-exporter
+      - epcube-exporter
     restart: unless-stopped
 
 secrets:
   remote_write_token:
-    # Reads REMOTE_WRITE_TOKEN from .env and mounts as /run/secrets/remote_write_token
     environment: "REMOTE_WRITE_TOKEN"
 
 volumes:

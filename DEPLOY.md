@@ -1,56 +1,34 @@
 # Deployment Guide
 
 **Project**: EP Cube Graph  
-**Date**: 2026-03-08
+**Date**: 2026-03-16
 
 ---
 
 ## Architecture Overview
 
+Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure and deploys all services.
+
 ```
-┌─────────────────────────────────────────────────┐
-│                Azure (Storage + API Tier)        │
-│                                                  │
-│  Container Apps Environment                      │
-│  ┌──────────────────────┐  ┌──────────────────┐ │
-│  │ VictoriaMetrics App  │  │ API App          │ │
-│  │  vmauth (:8427) ─────│──│─► PromQL queries │ │
-│  │  VictoriaMetrics     │  │  ASP.NET Core    │ │
-│  │    (:8428)           │  │  Entra ID auth   │ │
-│  └──────────────────────┘  └──────────────────┘ │
-│          ▲                         ▲             │
-│          │ remote-write            │ HTTPS/JWT   │
-│  Key Vault (bearer token)         │             │
-└──────────┼─────────────────────────┼─────────────┘
-           │                         │
-    ┌──────┘                    Clients (web,
-    │                           iPhone, iPad)
-    │ HTTPS + Bearer Token
-    │
-┌───┴─────────────────────────────────────────────┐
-│             Local LAN (Ingestion Tier)           │
-│                                                  │
-│  Docker Compose                                  │
-│  ┌──────────────────┐    ┌────────────────────┐ │
-│  │ echonet-exporter │◄───│ vmagent            │ │
-│  │   :9191/metrics  │    │  scrapes + forwards │ │
-│  └────────┬─────────┘    └────────────────────┘ │
-│           │ ECHONET Lite (UDP 3610)              │
-│     ┌─────┴─────┐                                │
-│     │ EP Cube   │                                │
-│     │ Gateways  │                                │
-│     └───────────┘                                │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Azure Container Apps Environment           │
+│                                                              │
+│  ┌──────────────────────────┐  ┌──────────────────────────┐ │
+│  │ VictoriaMetrics App      │  │ API App                  │ │
+│  │  vmauth (:8427, ingress) │  │  ASP.NET Core (:8080)    │ │
+│  │  VictoriaMetrics (:8428) │──│  Entra ID auth           │ │
+│  │    scrapes ──┐           │  │  PromQL queries ─────────│─│─► Clients
+│  └──────────────│───────────┘  └──────────────────────────┘ │
+│                 │                                            │
+│  ┌──────────────▼───────────┐                                │
+│  │ epcube-exporter App      │     Key Vault                  │
+│  │  :9200/metrics (internal)│     (bearer token, credentials)│
+│  │  polls cloud API ───────────► monitoring-us.epcube.com    │
+│  └──────────────────────────┘                                │
+│                                                              │
+│  ACR (container images)  Storage (VM data)  Log Analytics    │
+└──────────────────────────────────────────────────────────────┘
 ```
-
-Deployment has two steps:
-
-1. **Azure** — run `infra/deploy.sh` to provision all cloud resources and deploy the API
-2. **Local Ingestion Stack** — run `local/deploy.sh` on a LAN device
-
-The Azure deploy script uses Terraform to create everything automatically:
-resource group, ACR, Container Apps, VictoriaMetrics, Key Vault, Entra ID app registration,
-bearer token generation, API container build and push.
 
 > **First time?** Set up your development environment first — see [DEVELOP.md](DEVELOP.md).
 
@@ -62,21 +40,18 @@ bearer token generation, API container build and push.
 |------|---------|---------|
 | Terraform | 1.5+ | Azure infrastructure provisioning |
 | Azure CLI (`az`) | 2.60+ | Authentication, ACR login |
-| Docker | 24+ | Container builds, local stack |
-| Docker Compose | v2+ | Local ingestion stack |
+| Docker | 24+ | Container image builds |
 | Git | 2.x | Image tagging by commit hash |
 
 You also need:
 - An Azure subscription with Owner or Contributor + User Access Administrator role
-- EP Cube gateway device(s) on your LAN
+- EP Cube cloud account credentials (monitoring-us.epcube.com)
 
 ---
 
-## Step 1: Deploy Azure Infrastructure + API
+## Deploy
 
-Everything is automated. You only need to set two values.
-
-### 1.1 Configure
+### 1. Configure
 
 ```bash
 cd infra
@@ -86,13 +61,17 @@ cp terraform.tfvars.example terraform.tfvars
 Edit `terraform.tfvars`:
 
 ```hcl
-environment_name = "epcubegraph"   # Prefix for all Azure resources
-location         = "eastus"        # Azure region
+environment_name = "epcubegraph"              # Prefix for all Azure resources
+location         = "eastus"                    # Azure region
+
+# EP Cube cloud account
+epcube_username  = "your-email@example.com"
+epcube_password  = "your-epcube-password"
 ```
 
-That's it. All other values (Entra ID app, bearer token, ACR, Key Vault) are auto-generated.
+All other values (Entra ID app, bearer token, ACR, Key Vault) are auto-generated.
 
-### 1.2 Deploy
+### 2. Deploy
 
 ```bash
 ./deploy.sh
@@ -101,10 +80,10 @@ That's it. All other values (Entra ID app, bearer token, ACR, Key Vault) are aut
 The script will:
 1. Log you in to Azure (if needed)
 2. Run `terraform apply` to create all infrastructure
-3. Build the API Docker image from `api/`
-4. Push the image to the auto-created ACR
-5. Run `terraform apply` again to deploy the API container app
-6. Print all endpoints and the remote-write token
+3. Build the API and epcube-exporter Docker images
+4. Push both images to the auto-created ACR
+5. Run `terraform apply` again to deploy all container apps
+6. Print endpoints
 
 On completion, you'll see:
 
@@ -117,28 +96,20 @@ On completion, you'll see:
     VictoriaMetrics:  https://<env>-vm.<region>.azurecontainerapps.io
     API:              https://<env>-api.<region>.azurecontainerapps.io
 
-  For local/.env:
-    REMOTE_WRITE_URL=https://<vm-fqdn>/api/v1/write
-    REMOTE_WRITE_TOKEN=<auto-generated-64-char-token>
-
   Entra ID:
     Tenant ID:  <your-tenant-id>
     Client ID:  <auto-generated-app-client-id>
 ═══════════════════════════════════════════════════════════
 ```
 
-**Save the `REMOTE_WRITE_URL` and `REMOTE_WRITE_TOKEN` values** — you'll need them for the local stack.
-
-### 1.3 Verify
+### 3. Verify
 
 ```bash
 # Show all outputs
 ./deploy.sh --output
 
-# Get the bearer token (sensitive — not shown in --output)
-cd infra && terraform output -raw remote_write_token
-
 # Test VictoriaMetrics endpoint
+cd infra
 VM_FQDN=$(terraform output -raw vm_fqdn)
 TOKEN=$(terraform output -raw remote_write_token)
 curl -sf -o /dev/null -w "%{http_code}" \
@@ -146,102 +117,22 @@ curl -sf -o /dev/null -w "%{http_code}" \
   "https://$VM_FQDN/api/v1/query?query=up"
 ```
 
-A `200` response confirms VictoriaMetrics and vmauth are running.
+A `200` response confirms VictoriaMetrics is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
 
-### 1.4 What Gets Created
+### What Gets Created
 
 | Resource | Purpose |
 |----------|---------|
 | Resource Group | Container for all resources |
 | Container Apps Environment | Hosting platform with Log Analytics |
-| VictoriaMetrics + vmauth | Time-series DB with bearer-token auth |
+| VictoriaMetrics + vmauth | Time-series DB with bearer-token auth, scrapes epcube-exporter |
+| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics (internal) |
 | API Container App | ASP.NET Core service with Entra ID auth |
 | Azure Container Registry | Private Docker image registry |
-| Key Vault | Stores the remote-write bearer token |
+| Key Vault | Stores bearer token and EP Cube credentials |
 | Storage Account + File Share | Persistent VictoriaMetrics data (50 GB) |
 | Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
 | User-Assigned Managed Identity | ACR pull + Key Vault read access |
-
----
-
-## Step 2: Local Ingestion Stack
-
-Deploy on a LAN-connected device (Raspberry Pi, NAS, or any Docker-capable machine) that can reach the EP Cube gateways over UDP port 3610.
-
-### 2.1 Copy the Local Stack Files
-
-On the target device:
-
-```bash
-git clone <repo-url> epcubegraph
-cd epcubegraph/local
-```
-
-Or copy just the `local/` directory if git is not available.
-
-### 2.2 Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with values from the Azure deployment output:
-
-```dotenv
-# Gateway IPs (find these on your router's DHCP client list)
-EPCUBE1_IP=192.168.1.10    # EP Cube 1.0 gateway
-EPCUBE2_IP=192.168.1.11    # EP Cube 2.0 gateway
-
-# Azure-hosted VictoriaMetrics (from deploy.sh output)
-REMOTE_WRITE_URL=https://<vm-fqdn>/api/v1/write
-REMOTE_WRITE_TOKEN=<token-from-deploy-output>
-```
-
-### 2.3 Validate and Deploy
-
-```bash
-# Validate config without starting
-./deploy.sh --validate
-
-# Build and start the stack
-./deploy.sh
-```
-
-The deploy script will:
-1. Check Docker and Compose are installed
-2. Validate all `.env` values (no placeholders, valid IPs, valid URL)
-3. Build the echonet-exporter image (multi-arch: AMD64 or ARM64)
-4. Pull the vmagent image
-5. Start both containers with `restart: unless-stopped`
-
-### 2.4 Verify Data Flow
-
-Wait ~2 minutes (2 scrape cycles), then:
-
-```bash
-# Check container status
-./deploy.sh --status
-
-# View logs
-./deploy.sh --logs
-
-# Verify echonet-exporter is collecting metrics
-curl -sf http://localhost:9191/metrics | grep echonet_battery
-
-# Verify data reached Azure (from any machine with network access)
-curl -sf \
-  -H "Authorization: Bearer $REMOTE_WRITE_TOKEN" \
-  "https://$VM_FQDN/api/v1/query?query=echonet_battery_state_of_capacity_percent"
-```
-
-### 2.5 Manage the Stack
-
-```bash
-./deploy.sh --status     # Container status + metrics endpoint check
-./deploy.sh --logs       # Tail logs (Ctrl+C to stop)
-./deploy.sh --stop       # Stop containers (preserves vmagent WAL data)
-./deploy.sh --destroy    # Stop containers and remove data volumes
-```
 
 ---
 
@@ -254,7 +145,12 @@ cd infra
 ./deploy.sh --api-only
 ```
 
-This rebuilds the API image, pushes to ACR, and updates the Container App.
+### Update the Exporter
+
+```bash
+cd infra
+./deploy.sh --exporter-only
+```
 
 ### Update Infrastructure
 
@@ -264,40 +160,18 @@ cd infra
 ./deploy.sh           # Apply changes
 ```
 
-### Update the Local Stack
-
-```bash
-cd local
-git pull
-./deploy.sh   # Rebuilds images and restarts with zero downtime
-```
-
-vmagent's WAL ensures no data loss during restarts — buffered metrics are forwarded once the stack is back up.
-
 ---
 
 ## Deploy Script Reference
 
-### Azure (`infra/deploy.sh`)
-
 | Command | Description |
 |---------|-------------|
-| `./deploy.sh` | Full deploy: infrastructure + API build + push |
+| `./deploy.sh` | Full deploy: infrastructure + all container images |
 | `./deploy.sh --plan` | Show what Terraform would change |
-| `./deploy.sh --output` | Show deployment outputs (endpoints, token) |
+| `./deploy.sh --output` | Show deployment outputs (endpoints) |
 | `./deploy.sh --api-only` | Rebuild and redeploy only the API container |
+| `./deploy.sh --exporter-only` | Rebuild and redeploy only the epcube-exporter |
 | `./deploy.sh --destroy` | Tear down all Azure resources |
-
-### Local (`local/deploy.sh`)
-
-| Command | Description |
-|---------|-------------|
-| `./deploy.sh` | Build and start the ingestion stack |
-| `./deploy.sh --validate` | Validate `.env` without starting containers |
-| `./deploy.sh --status` | Show container status |
-| `./deploy.sh --logs` | Tail container logs |
-| `./deploy.sh --stop` | Stop containers (preserves data) |
-| `./deploy.sh --destroy` | Stop containers and remove volumes |
 
 ---
 
@@ -305,12 +179,9 @@ vmagent's WAL ensures no data loss during restarts — buffered metrics are forw
 
 | Symptom | Check |
 |---------|-------|
-| `deploy.sh` fails validation | Verify `.env` values; run `./deploy.sh --validate` |
 | Terraform fails on first apply | Ensure you have Owner or Contributor + User Access Admin role on the subscription |
 | Terraform state locked | Another apply is running, or a previous one crashed — run `terraform force-unlock <ID>` |
-| echonet-exporter shows no metrics | Confirm EP Cube gateways are reachable: `ping $EPCUBE1_IP` |
-| vmagent logs show remote-write errors | Verify `REMOTE_WRITE_URL` and `REMOTE_WRITE_TOKEN` match Azure deployment |
+| epcube-exporter shows no metrics | Check Container App logs for login errors; verify `epcube_username` and `epcube_password` in `terraform.tfvars` |
 | API returns 401 | Token expired or wrong audience — re-acquire via `az account get-access-token` |
 | API returns 403 | Token missing `user_impersonation` scope — check Entra app registration |
-| VictoriaMetrics returns empty results | Wait 2+ minutes for data to flow; check vmagent logs for write confirmations |
-| Container won't start on ARM device | Ensure `docker buildx` is available and the echonet-exporter Dockerfile supports multi-arch |
+| VictoriaMetrics returns empty results | Wait 2+ minutes for data to flow; check VictoriaMetrics container logs for scrape errors |

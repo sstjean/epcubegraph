@@ -1,9 +1,12 @@
 # EP Cube Graph — Terraform Variables
 # Copy to terraform.tfvars and fill in your values.
-# Only environment_name is required — everything else has sensible defaults.
 
 environment_name = "epcubegraph" # Prefix for all Azure resources
 location         = "eastus"      # Azure region
+
+# EP Cube cloud account (monitoring-us.epcube.com)
+epcube_username = "your-email@example.com"
+epcube_password = "your-epcube-password"
 
 # Optional overrides (defaults are usually fine):
 # victoria_metrics_image = "victoriametrics/victoria-metrics:v1.106.1"

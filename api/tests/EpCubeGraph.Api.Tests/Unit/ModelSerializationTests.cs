@@ -128,8 +128,8 @@ public class ModelSerializationTests
     [Fact]
     public void DeviceInfo_RecordEquality_EqualInstances()
     {
-        var a = new DeviceInfo("dev1", "cls", "10.0.0.1", "mfr", "pc", "uid", true);
-        var b = new DeviceInfo("dev1", "cls", "10.0.0.1", "mfr", "pc", "uid", true);
+        var a = new DeviceInfo("dev1", "cls", "mfr", "pc", "uid", true);
+        var b = new DeviceInfo("dev1", "cls", "mfr", "pc", "uid", true);
 
         Assert.Equal(a, b);
         Assert.True(a == b);
@@ -138,8 +138,8 @@ public class ModelSerializationTests
     [Fact]
     public void DeviceInfo_RecordEquality_DifferentInstances()
     {
-        var a = new DeviceInfo("dev1", "cls", "10.0.0.1");
-        var b = new DeviceInfo("dev2", "cls", "10.0.0.1");
+        var a = new DeviceInfo("dev1", "cls");
+        var b = new DeviceInfo("dev2", "cls");
 
         Assert.NotEqual(a, b);
         Assert.True(a != b);
@@ -192,9 +192,9 @@ public class ModelSerializationTests
     {
         var devices = new List<DeviceInfo>
         {
-            new("battery", "storage_battery", "10.0.0.1", Online: true),
-            new("solar", "home_solar", "10.0.0.2"),
-            new("meter", "smart_meter", "10.0.0.3", Manufacturer: "TestMfr")
+            new("battery", "storage_battery", Online: true),
+            new("solar", "home_solar"),
+            new("meter", "smart_meter", Manufacturer: "TestMfr")
         };
         var response = new DeviceListResponse(devices);
         var json = JsonSerializer.Serialize(response);
@@ -213,7 +213,6 @@ public class ModelSerializationTests
         var device = new DeviceInfo(
             "test_device",
             "cls",
-            "10.0.0.1",
             Manufacturer: "Company & Co <Ltd>",
             ProductCode: "Model \"X\"");
 
@@ -228,8 +227,8 @@ public class ModelSerializationTests
     [Fact]
     public void DeviceInfo_GetHashCode_ConsistentForEqualRecords()
     {
-        var a = new DeviceInfo("dev1", "cls", "10.0.0.1", Online: true);
-        var b = new DeviceInfo("dev1", "cls", "10.0.0.1", Online: true);
+        var a = new DeviceInfo("dev1", "cls", Online: true);
+        var b = new DeviceInfo("dev1", "cls", Online: true);
 
         Assert.Equal(a.GetHashCode(), b.GetHashCode());
     }
@@ -237,7 +236,7 @@ public class ModelSerializationTests
     [Fact]
     public void DeviceInfo_ToString_ContainsValues()
     {
-        var device = new DeviceInfo("dev1", "cls", "10.0.0.1");
+        var device = new DeviceInfo("dev1", "cls");
         var str = device.ToString();
 
         Assert.Contains("dev1", str);

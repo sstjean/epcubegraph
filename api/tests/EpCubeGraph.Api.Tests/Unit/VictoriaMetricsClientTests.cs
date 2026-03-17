@@ -125,7 +125,7 @@ public class VictoriaMetricsClientTests
     [Fact]
     public async Task LabelsAsync_ReturnsLabelNames()
     {
-        var json = """{"status":"success","data":["__name__","device","ip"]}""";
+        var json = """{"status":"success","data":["__name__","device"]}""";
         var handler = CreateMockHandler(HttpStatusCode.OK, json);
         var client = CreateClient(handler);
 

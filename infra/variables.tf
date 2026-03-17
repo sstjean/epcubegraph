@@ -33,3 +33,23 @@ variable "api_image" {
   type        = string
   default     = ""
 }
+
+variable "epcube_image" {
+  description = "epcube-exporter container image (set by deploy.sh after build; leave empty to skip exporter deployment)"
+  type        = string
+  default     = ""
+}
+
+variable "epcube_username" {
+  description = "EP Cube cloud account email (monitoring-us.epcube.com)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "epcube_password" {
+  description = "EP Cube cloud account password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

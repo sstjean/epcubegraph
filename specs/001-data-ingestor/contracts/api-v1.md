@@ -42,7 +42,7 @@ Authorization: Bearer <entra-id-jwt>
 
 List all known devices with their metadata.
 
-**Description**: Returns device identity information from `echonet_device_info` metrics stored in VictoriaMetrics. Each device entry includes the labels exposed by echonet-exporter.
+**Description**: Returns device identity information from `echonet_device_info` metrics stored in VictoriaMetrics. Each device entry includes the labels exposed by epcube-exporter.
 
 **Response**: `200 OK`
 
@@ -52,7 +52,6 @@ List all known devices with their metadata.
     {
       "device": "epcube_battery",
       "class": "storage_battery",
-      "ip": "192.168.1.10",
       "manufacturer": "Canadian Solar",
       "product_code": "EP Cube 2.0",
       "uid": "ABC123",
@@ -61,7 +60,6 @@ List all known devices with their metadata.
     {
       "device": "epcube_solar",
       "class": "home_solar",
-      "ip": "192.168.1.10",
       "manufacturer": "Canadian Solar",
       "product_code": "EP Cube 2.0",
       "uid": "ABC123",
@@ -98,8 +96,7 @@ Execute an instant PromQL query against VictoriaMetrics (FR-008).
         "metric": {
           "__name__": "echonet_battery_state_of_capacity_percent",
           "device": "epcube_battery",
-          "class": "storage_battery",
-          "ip": "192.168.1.10"
+          "class": "storage_battery"
         },
         "value": [1709827200, "85"]
       }
@@ -148,8 +145,7 @@ GET /api/v1/query_range?query=echonet_battery_state_of_capacity_percent{device="
         "metric": {
           "__name__": "echonet_battery_state_of_capacity_percent",
           "device": "epcube_battery",
-          "class": "storage_battery",
-          "ip": "192.168.1.10"
+          "class": "storage_battery"
         },
         "values": [
           [1709683200, "72"],
@@ -204,8 +200,7 @@ Find metric series matching a set of label matchers.
     {
       "__name__": "echonet_battery_state_of_capacity_percent",
       "device": "epcube_battery",
-      "class": "storage_battery",
-      "ip": "192.168.1.10"
+      "class": "storage_battery"
     }
   ]
 }
@@ -222,7 +217,7 @@ List all label names.
 ```json
 {
   "status": "success",
-  "data": ["__name__", "class", "device", "ip", "manufacturer", "product_code", "uid"]
+  "data": ["__name__", "class", "device", "manufacturer", "product_code", "uid"]
 }
 ```
 
@@ -406,7 +401,6 @@ using System.Text.Json.Serialization;
 public record DeviceInfo(
     [property: JsonPropertyName("device")] string Device,
     [property: JsonPropertyName("class")] string DeviceClass,  // "storage_battery" or "home_solar"
-    [property: JsonPropertyName("ip")] string Ip,
     [property: JsonPropertyName("manufacturer")] string? Manufacturer = null,
     [property: JsonPropertyName("product_code")] string? ProductCode = null,
     [property: JsonPropertyName("uid")] string? Uid = null,

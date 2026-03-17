@@ -99,9 +99,6 @@ build_and_push_api() {
     || die "Cannot determine git commit SHA. Refusing to build without a deterministic tag."
   api_image="${acr_login_server}/epcubegraph-api:${image_tag}"
 
-  info "Logging in to ACR: ${acr_name}..."
-  az acr login --name "$acr_name"
-
   info "Building API image: ${api_image}..."
   docker build \
     --tag "$api_image" \
@@ -112,10 +109,31 @@ build_and_push_api() {
   docker push "$api_image"
 
   ok "API image pushed: ${api_image}"
-
-  # Persist the image reference for subsequent terraform applies
-  echo "api_image = \"${api_image}\"" > "$SCRIPT_DIR/deploy.auto.tfvars"
   echo "$api_image"
+}
+
+# -- Exporter image build & push -----------------------------------------------
+
+build_and_push_exporter() {
+  local acr_name acr_login_server image_tag epcube_image
+
+  acr_name=$(tf_output -raw acr_name)
+  acr_login_server=$(tf_output -raw acr_login_server)
+  image_tag=$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null) \
+    || die "Cannot determine git commit SHA. Refusing to build without a deterministic tag."
+  epcube_image="${acr_login_server}/epcube-exporter:${image_tag}"
+
+  info "Building epcube-exporter image: ${epcube_image}..."
+  docker build \
+    --tag "$epcube_image" \
+    --file "$REPO_ROOT/local/epcube-exporter/Dockerfile" \
+    "$REPO_ROOT/local/epcube-exporter"
+
+  info "Pushing epcube-exporter image..."
+  docker push "$epcube_image"
+
+  ok "Exporter image pushed: ${epcube_image}"
+  echo "$epcube_image"
 }
 
 # -- Commands ------------------------------------------------------------------
@@ -129,19 +147,31 @@ cmd_deploy() {
   require_tfvars
 
   # Phase 1: Create all infrastructure (ACR, Container Apps, Entra ID, Key Vault)
-  # API container app is skipped because api_image is empty on first deploy
+  # Container apps using custom images are skipped on first deploy
   tf_init
   tf_apply
 
-  # Phase 2: Build API image and push to ACR
+  # Phase 2: Build container images and push to ACR
   echo ""
-  info "Building and pushing API container image..."
-  local api_image
-  api_image=$(build_and_push_api)
+  local acr_name
+  acr_name=$(tf_output -raw acr_name)
+  info "Logging in to ACR: ${acr_name}..."
+  az acr login --name "$acr_name"
 
-  # Phase 3: Deploy API container app with the built image
+  info "Building and pushing container images..."
+  local api_image epcube_image
+  api_image=$(build_and_push_api)
+  epcube_image=$(build_and_push_exporter)
+
+  # Persist image references for subsequent terraform applies
+  cat > "$SCRIPT_DIR/deploy.auto.tfvars" <<EOF
+api_image    = "${api_image}"
+epcube_image = "${epcube_image}"
+EOF
+
+  # Phase 3: Deploy all container apps with the built images
   echo ""
-  info "Deploying API container app..."
+  info "Deploying container apps..."
   tf_apply
 
   echo ""
@@ -159,7 +189,49 @@ cmd_api_only() {
     die "Infrastructure not deployed yet. Run './deploy.sh' first."
   fi
 
-  build_and_push_api
+  local acr_name
+  acr_name=$(tf_output -raw acr_name)
+  az acr login --name "$acr_name"
+
+  local api_image
+  api_image=$(build_and_push_api)
+
+  # Update only api_image in deploy.auto.tfvars (preserve other values)
+  if [[ -f "$SCRIPT_DIR/deploy.auto.tfvars" ]]; then
+    sed -i '' '/^api_image/d' "$SCRIPT_DIR/deploy.auto.tfvars"
+  fi
+  echo "api_image = \"${api_image}\"" >> "$SCRIPT_DIR/deploy.auto.tfvars"
+
+  tf_apply
+
+  echo ""
+  cmd_output_summary
+}
+
+cmd_exporter_only() {
+  info "Rebuilding and redeploying epcube-exporter only..."
+
+  require_tools
+  require_azure_login
+
+  cd "$SCRIPT_DIR"
+  if ! terraform output acr_name >/dev/null 2>&1; then
+    die "Infrastructure not deployed yet. Run './deploy.sh' first."
+  fi
+
+  local acr_name
+  acr_name=$(tf_output -raw acr_name)
+  az acr login --name "$acr_name"
+
+  local epcube_image
+  epcube_image=$(build_and_push_exporter)
+
+  # Update only epcube_image in deploy.auto.tfvars (preserve other values)
+  if [[ -f "$SCRIPT_DIR/deploy.auto.tfvars" ]]; then
+    sed -i '' '/^epcube_image/d' "$SCRIPT_DIR/deploy.auto.tfvars"
+  fi
+  echo "epcube_image = \"${epcube_image}\"" >> "$SCRIPT_DIR/deploy.auto.tfvars"
+
   tf_apply
 
   echo ""
@@ -205,45 +277,44 @@ cmd_output_summary() {
   echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
   echo ""
 
-  local vm_fqdn api_fqdn remote_write_url
+  local vm_fqdn api_fqdn
 
   vm_fqdn=$(tf_output -raw vm_fqdn 2>/dev/null || echo "pending")
   api_fqdn=$(tf_output -raw api_fqdn 2>/dev/null || echo "not deployed")
-  remote_write_url=$(tf_output -raw remote_write_url 2>/dev/null || echo "pending")
 
   echo -e "  ${BOLD}Endpoints:${NC}"
   echo -e "    VictoriaMetrics:  https://${vm_fqdn}"
   echo -e "    API:              https://${api_fqdn}"
   echo ""
-  echo -e "  ${BOLD}For local/.env:${NC}"
-  echo -e "    REMOTE_WRITE_URL=${remote_write_url}"
-  echo -e "    REMOTE_WRITE_TOKEN=$(tf_output -raw remote_write_token 2>/dev/null || echo '<run: terraform output -raw remote_write_token>')"
-  echo ""
   echo -e "  ${BOLD}Entra ID:${NC}"
   echo -e "    Tenant ID:  $(tf_output -raw entra_tenant_id 2>/dev/null || echo 'pending')"
   echo -e "    Client ID:  $(tf_output -raw entra_app_client_id 2>/dev/null || echo 'pending')"
   echo ""
-  echo -e "  Run ${BOLD}terraform output -raw remote_write_token${NC} to retrieve the bearer token."
+  echo -e "  ${BOLD}Remote Write (external sources):${NC}"
+  echo -e "    URL:   $(tf_output -raw remote_write_url 2>/dev/null || echo 'pending')"
+  echo -e "    Token: run ${BOLD}terraform output -raw remote_write_token${NC}"
   echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
 }
 
 # -- Entrypoint ----------------------------------------------------------------
 
 case "${1:-}" in
-  --plan|-p)       cmd_plan      ;;
-  --output|-o)     cmd_output    ;;
-  --api-only|-a)   cmd_api_only  ;;
-  --destroy)       cmd_destroy   ;;
+  --plan|-p)            cmd_plan           ;;
+  --output|-o)          cmd_output         ;;
+  --api-only|-a)        cmd_api_only       ;;
+  --exporter-only|-e)   cmd_exporter_only  ;;
+  --destroy)            cmd_destroy        ;;
   --help|-h)
     echo "Usage: $0 [COMMAND]"
     echo ""
     echo "Commands:"
-    echo "  (none)       Full deploy: infrastructure + API build + push"
-    echo "  --plan       Show what Terraform would change"
-    echo "  --output     Show deployment outputs (endpoints, token)"
-    echo "  --api-only   Rebuild and redeploy only the API container"
-    echo "  --destroy    Tear down all Azure resources"
-    echo "  --help       Show this help message"
+    echo "  (none)            Full deploy: infrastructure + all images"
+    echo "  --plan            Show what Terraform would change"
+    echo "  --output          Show deployment outputs (endpoints, token)"
+    echo "  --api-only        Rebuild and redeploy only the API container"
+    echo "  --exporter-only   Rebuild and redeploy only the epcube-exporter"
+    echo "  --destroy         Tear down all Azure resources"
+    echo "  --help            Show this help message"
     ;;
   "")              cmd_deploy    ;;
   *)               die "Unknown command: $1 (try --help)" ;;

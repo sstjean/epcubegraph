@@ -7,10 +7,11 @@
 ## Prerequisites
 
 - .NET 10 SDK
-- Docker Desktop (or Docker Engine + Docker Compose v2)
+- Docker Desktop (or Docker Engine)
 - Azure CLI (`az`) — for infrastructure deployment
+- Terraform 1.5+
 - An Azure subscription with Entra ID tenant
-- EP Cube gateway device(s) on the local network
+- EP Cube cloud account credentials (monitoring-us.epcube.com)
 
 ---
 
@@ -68,19 +69,17 @@ Create `api/src/EpCubeGraph.Api/appsettings.Development.json`:
 }
 ```
 
-### Local Ingestion Stack
+### Local Development Stack
 
-Create `local/.env`:
+For local development with mock data, create `local/.env`:
 
 ```bash
-# echonet-exporter device configuration
-EPCUBE1_IP=192.168.1.10
-EPCUBE2_IP=192.168.1.11
-
-# Remote-write target (Azure-hosted VictoriaMetrics via vmauth)
-REMOTE_WRITE_URL=https://epcubegraph-vm.<region>.azurecontainerapps.io/api/v1/write
-REMOTE_WRITE_TOKEN=<token-from-azure-key-vault>
+# Only needed for local testing with real cloud data
+EPCUBE_USERNAME=your-email@example.com
+EPCUBE_PASSWORD=your-epcube-password
 ```
+
+For production, credentials are configured in `infra/terraform.tfvars`.
 
 ---
 
@@ -125,28 +124,16 @@ dotnet watch run
 
 ---
 
-## 5. Deploy the Local Ingestion Stack
+## 5. Deploy to Azure
 
-On a LAN-connected device (e.g., Raspberry Pi, NAS):
+A single command deploys everything (VictoriaMetrics, epcube-exporter, API):
 
 ```bash
-cd local
+cd infra
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with environment name and EP Cube credentials
 
-# Configure devices and remote-write target
-cp .env.example .env
-# Edit .env with your device IPs, remote-write URL, and bearer token
-
-# Build and start
-docker compose up -d
-
-# Verify containers are running
-docker compose ps
-
-# Check echonet-exporter metrics
-curl http://localhost:9191/metrics
-
-# View vmagent logs (confirm remote-write is succeeding)
-docker compose logs vmagent --tail=20
+./deploy.sh
 ```
 
 ### Verify Data Flow
@@ -154,9 +141,21 @@ docker compose logs vmagent --tail=20
 After 2 scrape cycles (~2 minutes):
 
 ```bash
-# Query VictoriaMetrics directly (from a machine that can reach the Azure endpoint)
-curl -H "Authorization: Bearer <token>" \
-  "https://epcubegraph-vm.<region>.azurecontainerapps.io/api/v1/query?query=echonet_battery_state_of_capacity_percent"
+# Query VictoriaMetrics directly
+VM_FQDN=$(cd infra && terraform output -raw vm_fqdn)
+TOKEN=$(cd infra && terraform output -raw remote_write_token)
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://$VM_FQDN/api/v1/query?query=echonet_battery_state_of_capacity_percent"
+```
+
+### Local Development Stack (Optional)
+
+For local development with mock data:
+
+```bash
+cd local
+docker compose -f docker-compose.local.yml up -d
+cd ../api/src/EpCubeGraph.Api && dotnet run
 ```
 
 ---
@@ -218,13 +217,13 @@ epcubegraph/
 │   │       └── Fixtures/              # Shared test fixtures
 │   ├── Dockerfile
 │   └── EpCubeGraph.sln
-├── local/                            # Local ingestion stack
-│   ├── docker-compose.yml            # echonet-exporter + vmagent
-│   ├── .env.example                  # Template for local config
-│   ├── echonet-exporter/
-│   │   └── Dockerfile                # Multi-arch Go build
-│   └── vmagent/
-│       └── scrape.yml                # Prometheus scrape config
+├── local/                            # Local development + exporter source
+│   ├── epcube-exporter/
+│   │   ├── Dockerfile                # Python cloud API poller (built by deploy.sh)
+│   │   └── exporter.py               # Cloud API → Prometheus metrics
+│   ├── mock-exporter/                # Mock data for local dev
+│   ├── docker-compose.local.yml      # Local dev stack (mock data)
+│   └── docker-compose.prod-local.yml # Local dev stack (real cloud data)
 ├── infra/                            # Azure infrastructure (Terraform)
 │   ├── main.tf                    # Providers, resource group, managed identity
 │   ├── variables.tf               # Input variables with validation

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# EP Cube Graph — Local Ingestion Stack Deployment
-# Deploys echonet-exporter + vmagent via Docker Compose
+# EP Cube Graph — Local Development Stack Deployment
+# For local testing with Docker Compose. Production runs entirely in Azure
+# via infra/deploy.sh — this script is NOT needed for production.
 #
 # Usage:
 #   ./deploy.sh              # Build and start (or update) the stack
@@ -71,8 +72,8 @@ validate_env() {
 
   # Required variables and their placeholder patterns
   local -A required=(
-    [EPCUBE1_IP]="<"
-    [EPCUBE2_IP]="<"
+    [EPCUBE_USERNAME]="<"
+    [EPCUBE_PASSWORD]="<"
     [REMOTE_WRITE_URL]="<"
     [REMOTE_WRITE_TOKEN]="<"
   )
@@ -85,15 +86,6 @@ validate_env() {
       ((errors++))
     elif [[ "${val}" == *"${placeholder}"* ]]; then
       error "${var} still contains placeholder value: ${val}"
-      ((errors++))
-    fi
-  done
-
-  # Validate IP addresses are plausible
-  for ip_var in EPCUBE1_IP EPCUBE2_IP; do
-    val="${!ip_var:-}"
-    if [[ -n "${val}" && ! "${val}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      error "${ip_var} does not look like a valid IP address: ${val}"
       ((errors++))
     fi
   done
@@ -143,11 +135,11 @@ cmd_status() {
 
   echo ""
 
-  # Check if echonet-exporter metrics endpoint is reachable
-  if curl -sf http://localhost:9191/metrics >/dev/null 2>&1; then
-    ok "echonet-exporter metrics endpoint is reachable at http://localhost:9191/metrics"
+  # Check if epcube-exporter metrics endpoint is reachable
+  if curl -sf http://localhost:9200/metrics >/dev/null 2>&1; then
+    ok "epcube-exporter metrics endpoint is reachable at http://localhost:9200/metrics"
   else
-    warn "echonet-exporter metrics endpoint is not reachable at http://localhost:9191/metrics"
+    warn "epcube-exporter metrics endpoint is not reachable at http://localhost:9200/metrics"
   fi
 }
 

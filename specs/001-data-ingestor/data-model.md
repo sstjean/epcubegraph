@@ -12,25 +12,23 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 ## Entity: Device
 
-**What it represents**: An EP Cube gateway device (1.0 or 2.0) as configured in echonet-exporter.
+**What it represents**: An EP Cube device (1.0 or 2.0) as identified by epcube-exporter via the cloud API.
 
-**Storage**: Not stored as a separate record. Device identity is encoded in VictoriaMetrics metric labels, populated automatically by echonet-exporter.
+**Storage**: Not stored as a separate record. Device identity is encoded in VictoriaMetrics metric labels, populated automatically by epcube-exporter.
 
 | Label | Source | Example | Description |
 |-------|--------|---------|-------------|
-| `device` | echonet-exporter `name` config | `epcube_battery` | Unique device identifier |
-| `ip` | echonet-exporter `ip` config | `192.168.1.10` | LAN IP address |
-| `class` | echonet-exporter `class` config | `storage_battery` | ECHONET Lite device class |
-| `manufacturer` | `echonet_device_info` metric | `Canadian Solar` | From EPC 0x8A |
-| `product_code` | `echonet_device_info` metric | `EP Cube 2.0` | From EPC 0x8C |
-| `uid` | `echonet_device_info` metric | `ABC123` | From EPC 0x83 |
+| `device` | epcube-exporter config | `epcube_battery` | Unique device identifier |
+| `class` | epcube-exporter config | `storage_battery` | Device class |
+| `manufacturer` | `echonet_device_info` metric | `Canadian Solar` | Device manufacturer |
+| `product_code` | `echonet_device_info` metric | `EP Cube 2.0` | Device model |
+| `uid` | `echonet_device_info` metric | `ABC123` | Unique device ID |
 
-**Enrichment via `echonet_device_info`**: echonet-exporter exposes a constant-value metric `echonet_device_info{device, ip, class, manufacturer, product_code, uid} = 1` that carries device metadata as labels. The API service can query this metric to resolve device details.
+**Enrichment via `echonet_device_info`**: epcube-exporter exposes a constant-value metric `echonet_device_info{device, class, manufacturer, product_code, uid} = 1` that carries device metadata as labels. The API service can query this metric to resolve device details.
 
 **Validation rules**:
 - `device` label MUST be non-empty and unique across all configured devices
 - `class` MUST be one of: `storage_battery`, `home_solar`
-- `ip` MUST be a valid IPv4 address
 
 ---
 
@@ -38,7 +36,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **What it represents**: Telemetry data points from an EP Cube storage battery.
 
-**ECHONET Lite class**: `storage_battery` (EOJ 0x02-0x7D)
+**Device class**: `storage_battery`
 
 | Metric Name | Type | Unit | Description |
 |-------------|------|------|-------------|
@@ -51,7 +49,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 | `echonet_battery_cumulative_discharge_wh` | counter | Wh | Cumulative energy discharged (monotonic) |
 | `echonet_battery_working_operation_state` | gauge | code | 0x42=Charging, 0x43=Discharging, 0x44=Standby |
 
-**Labels on every metric**: `device`, `ip`, `class`
+**Labels on every metric**: `device`, `class`
 
 ---
 
@@ -59,14 +57,14 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **What it represents**: Telemetry data points from EP Cube home solar generation.
 
-**ECHONET Lite class**: `home_solar` (EOJ 0x02-0x79)
+**Device class**: `home_solar`
 
 | Metric Name | Type | Unit | Description |
 |-------------|------|------|-------------|
 | `echonet_solar_instantaneous_generation_watts` | gauge | W | Current solar generation |
 | `echonet_solar_cumulative_generation_kwh` | counter | kWh | Total generated energy (monotonic) |
 
-**Labels on every metric**: `device`, `ip`, `class`
+**Labels on every metric**: `device`, `class`
 
 ---
 
@@ -84,7 +82,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **Implementation options** (decided during implementation):
 1. **PromQL at query time**: The API computes `echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts` on each request. Simplest, no stored data.
-2. **VictoriaMetrics recording rule**: Pre-computes and stores `grid_power_watts` at regular intervals. Better for historical queries and Grafana dashboards.
+2. **VictoriaMetrics recording rule**: Pre-computes and stores `grid_power_watts` at regular intervals. Better for historical queries.
 
 ---
 
@@ -98,8 +96,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 | `echonet_scrape_duration_seconds` | gauge | seconds | Duration of last scrape |
 | `echonet_last_scrape_timestamp_seconds` | gauge | unix epoch | Time of last successful scrape |
 | `echonet_device_info` | gauge | constant 1 | Device identity labels (manufacturer, product_code, uid) |
-
-**Labels on every metric**: `device`, `ip`, `class`
+**Labels on every metric**: `device`, `class`
 
 ---
 
@@ -155,7 +152,7 @@ Offline ──scrape success──▶ Online (scrape_success=1)
 
 ## Deduplication
 
-VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If vmagent retries a remote-write and sends duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
+VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If an external remote-write client retries and sends duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
 
 ---
 

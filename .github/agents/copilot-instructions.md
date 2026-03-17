@@ -11,6 +11,8 @@ Auto-generated from all feature plans. Last updated: 2025-06-23
 - VictoriaMetrics single-node + vmauth on Azure Container Apps
 - Terraform (azurerm ~>4.0, azuread ~>3.0) for infrastructure (infra/)
 - Docker Compose for local ingestion stack (local/)
+- C# / .NET 10 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI) (001-data-ingestor)
+- VictoriaMetrics single-node on Azure Container Apps (Prometheus remote-write ingestion, PromQL queries) (001-data-ingestor)
 
 ## Project Structure
 
@@ -41,6 +43,7 @@ cd local && docker compose up -d                  # Start local ingestion
 - No `:latest` container tags in production
 
 ## Recent Changes
+- 001-data-ingestor: Added C# / .NET 10 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI)
 - 001-data-ingestor: C# / .NET 10 Minimal API with PromQL passthrough endpoints, device discovery, VictoriaMetrics time-series backend, Terraform IaC on Azure Container Apps
 
 <!-- MANUAL ADDITIONS START -->

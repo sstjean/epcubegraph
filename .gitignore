@@ -12,6 +12,9 @@ obj/
 packages/
 *.nupkg
 
+# Node
+node_modules/
+
 # Build outputs
 dist/
 build/
@@ -38,6 +41,8 @@ Thumbs.db
 .env
 *.env.local
 appsettings.Development.json
+*.har
+.epcube-token
 
 # Docker
 docker-compose.override.yml
