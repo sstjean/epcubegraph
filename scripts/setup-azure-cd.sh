@@ -362,6 +362,46 @@ assign_role "Contributor" "$SUB_SCOPE" "subscription"
 assign_role "User Access Administrator" "$SUB_SCOPE" "subscription"
 assign_role "Storage Blob Data Contributor" "$STORAGE_SCOPE" "tfstate storage"
 
+# ── Step 5b: Microsoft Graph API Permissions ───────────────────────────────────
+
+header "Step 5b: Microsoft Graph API Permissions"
+
+info "Terraform azuread provider needs Graph API permissions to manage Entra ID resources"
+
+SP_OBJECT_ID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+GRAPH_SP_ID=$(az ad sp list --filter "displayName eq 'Microsoft Graph'" --query '[0].id' -o tsv)
+
+# Well-known Microsoft Graph app role IDs
+GRAPH_ROLES_NAMES=(
+  "Application.ReadWrite.All"
+  "Directory.Read.All"
+)
+GRAPH_ROLES_IDS=(
+  "1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9"
+  "7ab1d382-f21e-4acd-a863-ba3e13f7da61"
+)
+
+for i in "${!GRAPH_ROLES_NAMES[@]}"; do
+  ROLE_NAME="${GRAPH_ROLES_NAMES[$i]}"
+  ROLE_ID="${GRAPH_ROLES_IDS[$i]}"
+
+  # Check if already granted
+  EXISTING=$(az rest --method GET \
+    --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$SP_OBJECT_ID/appRoleAssignments" \
+    --query "value[?appRoleId=='$ROLE_ID'].id | [0]" -o tsv 2>/dev/null || true)
+
+  if [[ -n "$EXISTING" ]]; then
+    success "$ROLE_NAME (already granted)"
+  else
+    info "Granting $ROLE_NAME..."
+    run az rest --method POST \
+      --uri "https://graph.microsoft.com/v1.0/servicePrincipals/$SP_OBJECT_ID/appRoleAssignments" \
+      --body "{\"principalId\":\"$SP_OBJECT_ID\",\"resourceId\":\"$GRAPH_SP_ID\",\"appRoleId\":\"$ROLE_ID\"}" \
+      --output none
+    success "$ROLE_NAME"
+  fi
+done
+
 # ── Step 6: GitHub Secrets ─────────────────────────────────────────────────────
 
 if [[ "$SETUP_GITHUB" == "true" ]]; then

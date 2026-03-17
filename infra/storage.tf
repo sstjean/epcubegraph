@@ -18,6 +18,7 @@ resource "azurerm_storage_account" "main" {
   location                 = azurerm_resource_group.main.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+  shared_access_key_enabled = true
 }
 
 resource "azurerm_storage_share" "vm_data" {
