@@ -1,6 +1,12 @@
 using System.Net;
 using System.Text.Json;
+using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
@@ -9,6 +15,7 @@ namespace EpCubeGraph.Api.Tests.Integration;
 /// the default Development-environment tests:
 /// - Global exception handler (non-Development only, lines 51-64)
 /// - Swagger disabled in Production
+/// - NoAuthHandler bypass in Development with EPCUBE_DISABLE_AUTH=true
 /// </summary>
 public class ProgramMiddlewareTests : IDisposable
 {
@@ -60,6 +67,72 @@ public class ProgramMiddlewareTests : IDisposable
         var response = await _client.GetAsync("/api/v1/health");
 
         // Health endpoint should still work in Production
+        Assert.True(
+            response.StatusCode == HttpStatusCode.OK ||
+            response.StatusCode == HttpStatusCode.ServiceUnavailable,
+            $"Expected OK or 503 but got {response.StatusCode}");
+    }
+}
+
+/// <summary>
+/// Tests the NoAuthHandler dev bypass path in Program.cs (lines 17-23).
+/// Uses EPCUBE_DISABLE_AUTH=true with Development environment so
+/// NoAuthHandler is activated instead of Entra ID.
+/// </summary>
+public class NoAuthBypassTests : IDisposable
+{
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly HttpClient _client;
+
+    public NoAuthBypassTests()
+    {
+        Environment.SetEnvironmentVariable("EPCUBE_DISABLE_AUTH", "true");
+        _factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Development");
+                builder.ConfigureAppConfiguration((_, config) =>
+                {
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["VictoriaMetrics:Url"] = "http://localhost:0"
+                    });
+                });
+                builder.ConfigureTestServices(services =>
+                {
+                    // Replace VM client so endpoints don't make real HTTP calls
+                    var descriptors = services
+                        .Where(d => d.ServiceType == typeof(IVictoriaMetricsClient))
+                        .ToList();
+                    foreach (var d in descriptors)
+                        services.Remove(d);
+                    services.AddSingleton<IVictoriaMetricsClient>(new ConfigurableMockVmClient());
+                });
+            });
+        _client = _factory.CreateClient();
+    }
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _factory.Dispose();
+        Environment.SetEnvironmentVariable("EPCUBE_DISABLE_AUTH", null);
+    }
+
+    [Fact]
+    public async Task NoAuth_AuthenticatedEndpoints_Return200_WithoutToken()
+    {
+        // With NoAuthHandler active, requests should succeed without any JWT
+        var response = await _client.GetAsync("/api/v1/query?query=up");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task NoAuth_HealthEndpoint_StillWorks()
+    {
+        var response = await _client.GetAsync("/api/v1/health");
+
         Assert.True(
             response.StatusCode == HttpStatusCode.OK ||
             response.StatusCode == HttpStatusCode.ServiceUnavailable,
