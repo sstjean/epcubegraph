@@ -497,30 +497,19 @@ else
     fail "Replication: $SA_REPL (expected Standard_LRS)"
   fi
 
-  # Check file share exists (use --auth-mode login for storage accounts with shared key disabled)
-  SHARE_EXISTS=$(az storage share exists --name "victoria-metrics-data" --account-name "$SA_NAME" --auth-mode login --query "exists" -o tsv 2>/dev/null || echo "false")
-  if [[ "$SHARE_EXISTS" == "true" ]]; then
+  # Check file share exists (use ARM API which uses Azure AD auth natively)
+  SHARE_JSON=$(az storage share-rm show --storage-account "$SA_NAME" --resource-group "$RG_NAME" --name "victoria-metrics-data" -o json 2>/dev/null || echo "")
+  if [[ -n "$SHARE_JSON" && "$SHARE_JSON" != "" ]]; then
     pass "File share 'victoria-metrics-data' exists"
 
-    SHARE_QUOTA=$(az storage share show --name "victoria-metrics-data" --account-name "$SA_NAME" --auth-mode login --query "properties.quota" -o tsv 2>/dev/null || echo "")
+    SHARE_QUOTA=$(echo "$SHARE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('shareQuota',''))")
     if [[ "$SHARE_QUOTA" == "50" ]]; then
       pass "File share quota: 50 GB"
     else
       fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
     fi
   else
-    # Fall back to key-based auth if AD auth fails
-    SA_KEY=$(az storage account keys list --account-name "$SA_NAME" --resource-group "$RG_NAME" --query "[0].value" -o tsv 2>/dev/null || echo "")
-    if [[ -n "$SA_KEY" ]]; then
-      SHARE_EXISTS=$(az storage share exists --name "victoria-metrics-data" --account-name "$SA_NAME" --account-key "$SA_KEY" --query "exists" -o tsv 2>/dev/null || echo "false")
-      if [[ "$SHARE_EXISTS" == "true" ]]; then
-        pass "File share 'victoria-metrics-data' exists"
-      else
-        fail "File share 'victoria-metrics-data' not found"
-      fi
-    else
-      skip "Cannot verify file share (shared key disabled and AD auth insufficient)"
-    fi
+    fail "File share 'victoria-metrics-data' not found"
   fi
 fi
 
