@@ -171,7 +171,96 @@ cd infra
 | `./deploy.sh --output` | Show deployment outputs (endpoints) |
 | `./deploy.sh --api-only` | Rebuild and redeploy only the API container |
 | `./deploy.sh --exporter-only` | Rebuild and redeploy only the epcube-exporter |
+| `./deploy.sh --validate` | Run deployment validation checks against Azure |
 | `./deploy.sh --destroy` | Tear down all Azure resources |
+
+---
+
+## CI/CD Pipeline
+
+### Overview
+
+| Workflow | Trigger | What it does |
+|----------|---------|-------------|
+| **CI** (`ci.yml`) | Push to `main` or `001-data-ingestor`, PRs to `main` | Build, test (100% coverage), Docker build, Terraform validate |
+| **CD** (`cd.yml`) | After CI passes (any branch), or manual dispatch | Deploy to Azure, validate, smoke test all services |
+
+**Branch behavior**:
+- **Feature branches**: Deploy to `staging` → validate → auto-destroy
+- **`main`**: Deploy to `production` → validate → keep running
+- **Manual dispatch**: Choose environment (staging/production), optional destroy
+
+### Prerequisites
+
+#### 1. Create Terraform Remote State Storage
+
+The CD pipeline stores Terraform state in an Azure Storage Account.
+
+```bash
+# Create resource group and storage for Terraform state
+az group create --name tfstate-rg --location eastus
+az storage account create \
+  --name tfstateepcubegraph \
+  --resource-group tfstate-rg \
+  --sku Standard_LRS \
+  --allow-blob-public-access false
+az storage container create \
+  --name tfstate \
+  --account-name tfstateepcubegraph
+```
+
+#### 2. Create OIDC App Registration for GitHub Actions
+
+GitHub Actions authenticates to Azure using OIDC (no stored credentials).
+
+```bash
+# Create the app registration
+az ad app create --display-name "epcubegraph-github-actions"
+
+# Note the appId from the output, then create a service principal
+az ad sp create --id <appId>
+
+# Add federated credential for GitHub Actions
+az ad app federated-credential create --id <appId> --parameters '{
+  "name": "github-actions",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/main",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# Also add a wildcard credential for feature branches
+az ad app federated-credential create --id <appId> --parameters '{
+  "name": "github-actions-branches",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/*",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+
+# Grant Contributor + User Access Administrator on the subscription
+az role assignment create --assignee <appId> --role Contributor --scope /subscriptions/<subscriptionId>
+az role assignment create --assignee <appId> --role "User Access Administrator" --scope /subscriptions/<subscriptionId>
+```
+
+#### 3. Configure GitHub Secrets
+
+Go to **Settings → Secrets and variables → Actions** in the GitHub repository and add:
+
+| Secret | Value | Source |
+|--------|-------|--------|
+| `AZURE_CLIENT_ID` | App registration Application (client) ID | `az ad app list --display-name epcubegraph-github-actions --query '[0].appId' -o tsv` |
+| `AZURE_TENANT_ID` | Entra ID tenant ID | `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id -o tsv` |
+| `EPCUBE_USERNAME` | EP Cube cloud account email | Your monitoring-us.epcube.com login |
+| `EPCUBE_PASSWORD` | EP Cube cloud account password | Your monitoring-us.epcube.com password |
+
+#### 4. Configure GitHub Environments
+
+Go to **Settings → Environments** and create:
+
+| Environment | Protection rules |
+|-------------|-----------------|
+| `staging` | None (auto-deploy) |
+| `production` | Required reviewers (recommended) |
 
 ---
 
