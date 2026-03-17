@@ -38,6 +38,7 @@ provider "azurerm" {
       purge_soft_delete_on_destroy = true
     }
   }
+  storage_use_azuread = true
 }
 
 provider "azuread" {}
