@@ -6,6 +6,7 @@
 #   ./deploy.sh              # Full deploy: infra + API build + push
 #   ./deploy.sh --plan       # Show what Terraform would change
 #   ./deploy.sh --output     # Show deployment outputs (endpoints, token)
+#   ./deploy.sh --validate   # Validate deployed resources match Terraform
 #   ./deploy.sh --api-only   # Rebuild and redeploy only the API image
 #   ./deploy.sh --destroy    # Tear down all Azure resources
 
@@ -271,6 +272,11 @@ cmd_output() {
   terraform output
 }
 
+cmd_validate() {
+  info "Running deployment validation..."
+  exec "$SCRIPT_DIR/validate-deployment.sh"
+}
+
 cmd_output_summary() {
   echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
   echo -e "${GREEN}  EP Cube Graph — Deployment Complete${NC}"
@@ -301,6 +307,7 @@ cmd_output_summary() {
 case "${1:-}" in
   --plan|-p)            cmd_plan           ;;
   --output|-o)          cmd_output         ;;
+  --validate|-v)        cmd_validate       ;;
   --api-only|-a)        cmd_api_only       ;;
   --exporter-only|-e)   cmd_exporter_only  ;;
   --destroy)            cmd_destroy        ;;
@@ -311,6 +318,7 @@ case "${1:-}" in
     echo "  (none)            Full deploy: infrastructure + all images"
     echo "  --plan            Show what Terraform would change"
     echo "  --output          Show deployment outputs (endpoints, token)"
+    echo "  --validate        Validate deployed resources are correct"
     echo "  --api-only        Rebuild and redeploy only the API container"
     echo "  --exporter-only   Rebuild and redeploy only the epcube-exporter"
     echo "  --destroy         Tear down all Azure resources"

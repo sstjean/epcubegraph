@@ -19,13 +19,16 @@ terraform {
     }
   }
 
-  # Uncomment to use remote state in Azure Blob Storage:
-  # backend "azurerm" {
-  #   resource_group_name  = "tfstate-rg"
-  #   storage_account_name = "tfstateepcubegraph"
-  #   container_name       = "tfstate"
-  #   key                  = "epcubegraph.tfstate"
-  # }
+  # Remote state in Azure Blob Storage — required for CI/CD deployments.
+  # The storage account must be pre-created (see DEPLOY.md § CI/CD Setup).
+  # For local-only usage, comment this block and state is stored locally.
+  backend "azurerm" {
+    resource_group_name  = "tfstate-rg"
+    storage_account_name = "tfstateepcubegraph"
+    container_name       = "tfstate"
+    key                  = "epcubegraph.tfstate"
+    use_oidc             = true
+  }
 }
 
 provider "azurerm" {

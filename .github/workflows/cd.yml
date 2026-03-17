@@ -1,0 +1,227 @@
+name: CD
+
+on:
+  # Deploy after CI passes on main branch
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+  # Manual trigger for any branch
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      destroy:
+        description: 'Destroy resources after validation (for ephemeral test deployments)'
+        required: false
+        default: false
+        type: boolean
+
+# Limit to one deployment at a time
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+env:
+  TF_VAR_environment_name: ${{ github.event.inputs.environment || 'epcubegraph-staging' }}
+  TF_VAR_location: 'eastus'
+  ARM_USE_OIDC: 'true'
+
+permissions:
+  id-token: write   # OIDC token for Azure login
+  contents: read
+
+jobs:
+  # Gate: only deploy if CI passed (skip for manual dispatch)
+  check-ci:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - run: echo "CI passed or manual dispatch — proceeding with deployment"
+
+  deploy:
+    needs: check-ci
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+
+    outputs:
+      resource_group: ${{ steps.tf-output.outputs.resource_group }}
+      api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
+      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Terraform Init
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: terraform init -input=false
+
+      # Phase 1: Deploy infrastructure (without container images)
+      - name: Terraform Apply — Infrastructure
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+        run: terraform apply -auto-approve -input=false
+
+      # Phase 2: Build and push container images
+      - name: Get ACR details
+        id: acr
+        working-directory: infra
+        run: |
+          echo "name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
+          echo "server=$(terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
+
+      - name: ACR Login
+        run: az acr login --name ${{ steps.acr.outputs.name }}
+
+      - name: Build & Push API image
+        id: api-image
+        run: |
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          docker build --tag "$IMAGE" --file api/Dockerfile api/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push exporter image
+        id: exporter-image
+        run: |
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Phase 3: Deploy container apps with built images
+      - name: Terraform Apply — Container Apps
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
+          TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Capture Terraform outputs
+        id: tf-output
+        working-directory: infra
+        run: |
+          echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
+          echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Wait for container apps to stabilize after deployment
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Run deployment validation
+        run: ./infra/validate-deployment.sh --rg ${{ needs.deploy.outputs.resource_group }}
+
+      - name: Smoke test — API health endpoint
+        run: |
+          API_FQDN="${{ needs.deploy.outputs.api_fqdn }}"
+          if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
+            for i in 1 2 3; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" || echo "timeout")
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+                echo "✓ API health endpoint responded: HTTP $STATUS"
+                exit 0
+              fi
+              echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
+              sleep 10
+            done
+            echo "::error::API health endpoint did not respond after 3 attempts"
+            exit 1
+          else
+            echo "API not deployed (no FQDN) — skipping smoke test"
+          fi
+
+  # Optional: tear down ephemeral environments
+  destroy:
+    needs: [deploy, validate]
+    runs-on: ubuntu-latest
+    if: >
+      always() &&
+      github.event.inputs.destroy == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: terraform init -input=false
+
+      - name: Terraform Destroy
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+        run: terraform destroy -auto-approve -input=false
