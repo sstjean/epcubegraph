@@ -28,9 +28,9 @@ PASS=0
 FAIL=0
 SKIP=0
 
-pass()   { echo -e "  ${GREEN}✓${NC} $*"; ((PASS++)); }
-fail()   { echo -e "  ${RED}✗${NC} $*"; ((FAIL++)); }
-skip()   { echo -e "  ${YELLOW}⊘${NC} $*"; ((SKIP++)); }
+pass()   { echo -e "  ${GREEN}✓${NC} $*"; PASS=$((PASS + 1)); }
+fail()   { echo -e "  ${RED}✗${NC} $*"; FAIL=$((FAIL + 1)); }
+skip()   { echo -e "  ${YELLOW}⊘${NC} $*"; SKIP=$((SKIP + 1)); }
 header() { echo ""; echo -e "${BOLD}── $* ──${NC}"; }
 info()   { echo -e "  ${BLUE}→${NC} $*"; }
 
