@@ -5,12 +5,12 @@ namespace EpCubeGraph.Api.Tests.Unit;
 public class GridCalculatorTests
 {
     [Fact]
-    public void GridPromqlExpression_ContainsSolarMinusBattery()
+    public void GridPromqlExpression_ContainsGridImportMinusExport()
     {
-        // The grid PromQL should compute: solar generation - battery charge/discharge
-        // Positive = export, Negative = import
+        // The grid PromQL should compute: grid import - grid export
+        // Positive = net import, Negative = net export
         Assert.Equal(
-            "epcube_solar_instantaneous_generation_watts - epcube_battery_charge_discharge_power_watts",
+            "epcube_grid_import_kwh - epcube_grid_export_kwh",
             GridCalculator.GridPromqlExpression);
     }
 
@@ -53,20 +53,17 @@ public class GridCalculatorTests
         Assert.Equal("success", result.GetProperty("status").GetString());
     }
 
-    // Sign convention: positive = export, negative = import
-    // This is inherent in the PromQL expression (solar minus battery)
-    // When solar > battery_charge: excess goes to grid (positive/export)
-    // When solar < battery_charge: deficit comes from grid (negative/import)
+    // Sign convention: positive = net import, negative = net export
+    // This is inherent in the PromQL expression (import minus export)
+    // When import > export: net consumer from grid (positive)
+    // When export > import: net contributor to grid (negative)
     [Fact]
-    public void SignConvention_PositiveExport_NegativeImport()
+    public void SignConvention_PositiveImport_NegativeExport()
     {
-        // solar = 1000W, battery_charge = 600W → grid = 400W (export)
-        // solar = 200W, battery_charge = 800W → grid = -600W (import)
-        // This is documented in the PromQL: solar - battery
         var expr = GridCalculator.GridPromqlExpression;
-        Assert.StartsWith("epcube_solar", expr);
+        Assert.StartsWith("epcube_grid_import", expr);
         Assert.Contains(" - ", expr);
-        Assert.Contains("battery_charge_discharge", expr);
+        Assert.Contains("grid_export", expr);
     }
 
     // ── Edge Cases ──

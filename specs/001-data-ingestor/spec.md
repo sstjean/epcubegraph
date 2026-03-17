@@ -14,7 +14,7 @@
 - Q: Which Azure time-series backend should receive the remote-written metrics? → A: VictoriaMetrics deployed as a single container on Azure Container Apps, accepting Prometheus remote-write and queryable via PromQL.
 - Q: How should the VictoriaMetrics remote-write endpoint be authenticated? → A: Pre-shared bearer token in the Authorization header; token stored in Azure Key Vault and injected into Container Apps as a secret.
 - Q: What data retention period should VictoriaMetrics enforce? → A: 5 years (`-retentionPeriod=5y`).
-- Q: Should grid import/export metrics be in scope, and if so, how are they obtained? → A: Derived grid — calculate grid import/export from solar generation and battery charge/discharge power. No additional ECHONET Lite device class or smart meter needed.
+- Q: Should grid import/export metrics be in scope, and if so, how are they obtained? → A: The EP Cube cloud API provides daily grid import and export energy totals directly (`gridElectricityFrom`, `gridElectricityTo`). No derivation from solar/battery and no additional ECHONET Lite device class or smart meter is needed.
 - Q: Should SC-002 ("zero data loss during 1-hour outage") be revised given ECHONET Lite's instantaneous-only nature? → A: Reword — zero data loss due to Azure-side interruptions (VictoriaMetrics retries scrapes on schedule); gaps during cloud API outages are logged and expected.
 - Q: How should the downstream API (US2) authenticate client requests? → A: Entra ID (OAuth 2.0) — clients obtain short-lived JWT tokens via Microsoft Entra ID; the API validates the JWT on every request.
 - Q: Should the API restrict which PromQL queries authenticated clients can execute? → A: Unrestricted passthrough — any valid PromQL is allowed after JWT auth. The API validates required parameter presence (e.g., `query` non-empty) but does not filter metric names or cap time ranges. VictoriaMetrics handles malformed query errors.
@@ -67,7 +67,7 @@ The API supports querying by time range, device, and measurement type. All reque
 
 As the system owner, I want epcube-exporter deployed as a Container App in the same Azure Container Apps environment as VictoriaMetrics, so that the entire system runs in Azure with a single deployment command and no local infrastructure required.
 
-The repository provides a Dockerfile for epcube-exporter which is built, pushed to ACR, and deployed as a Container App with internal-only ingress. VictoriaMetrics scrapes it directly via `-promscrape.config`. EP Cube cloud credentials are stored in Key Vault and injected as Container App secrets.
+The repository provides a Dockerfile for epcube-exporter which is built, pushed to ACR, and deployed as a Container App. VictoriaMetrics scrapes it via internal networking using `-promscrape.config`. External ingress is enabled for browser access to the debug status page and health endpoint, authenticated via Entra ID JWT (same app registration as the API). EP Cube cloud credentials are stored in Key Vault and injected as Container App secrets.
 
 **Why this priority**: The constitution mandates that all data ingestion services run as Docker containers. Running in Azure Container Apps eliminates the need for any local infrastructure.
 
@@ -98,10 +98,12 @@ The repository provides a Dockerfile for epcube-exporter which is built, pushed 
 
 - **FR-001**: System MUST ingest telemetry from EP Cube 1.0 devices via epcube-exporter, which polls the EP Cube cloud API (monitoring-us.epcube.com) over HTTPS and exposes Prometheus-format metrics.
 - **FR-002**: System MUST ingest telemetry from EP Cube 2.0 devices via the same epcube-exporter instance.
-- **FR-003**: System MUST collect the following metrics exposed by epcube-exporter:
-  - **Battery** (`storage_battery` class): state of charge (%), charge/discharge power (W), remaining capacity (Wh), chargeable/dischargeable capacity (Wh), cumulative charge/discharge (Wh), working operation state.
-  - **Solar** (`home_solar` class): instantaneous generation (W), cumulative generation (kWh).
-- **FR-003a**: System MUST derive grid import/export power by calculating: `grid = solar_generation - battery_charge_discharge_power` (positive = export, negative = import). Household consumption is not directly metered, so this approximation is used. This derived metric MUST be computed alongside raw battery and solar readings.
+- **FR-003**: System MUST collect the following metrics exposed by epcube-exporter (which polls the EP Cube cloud API):
+  - **Battery** (`storage_battery` class): state of charge (%), net energy today (kWh, positive=charge/negative=discharge).
+  - **Solar** (`home_solar` class): instantaneous generation (W), cumulative generation today (kWh).
+  - **Home load**: backup/home supply power (W), self-sufficiency rate (%).
+  - **Grid**: grid import energy today (kWh), grid export energy today (kWh).
+- **FR-003a**: System MUST expose grid import and export energy via the API. The EP Cube cloud API provides daily grid energy totals (`gridElectricityFrom`, `gridElectricityTo`) directly; no derivation is required. The API `/grid` endpoint MUST query `epcube_grid_import_kwh` and `epcube_grid_export_kwh` from VictoriaMetrics and return the time series.
 - **FR-004**: System MUST accept telemetry via Prometheus remote-write protocol from external metric sources authenticated with a pre-shared bearer token. VictoriaMetrics MUST also scrape epcube-exporter directly via `-promscrape.config` within the Container Apps environment.
 - **FR-005**: System MUST store all received readings in a VictoriaMetrics instance deployed on Azure Container Apps, preserving device identifier, metric name, value, labels, and UTC timestamp.
 - **FR-006**: System MUST retry failed collection attempts on the next scheduled cycle and log each failure with the reason.
@@ -121,11 +123,14 @@ The repository provides a Dockerfile for epcube-exporter which is built, pushed 
 - **FR-019**: The API MUST validate all incoming request parameters for presence and type (e.g., `query` parameter is non-empty, timestamps are valid RFC3339 or Unix epoch, `step` is a valid duration, path parameters match expected format). Invalid parameters MUST be rejected with HTTP 400. PromQL query content is passed through to VictoriaMetrics without restriction after authentication; VictoriaMetrics handles PromQL syntax validation.
 - **FR-020**: The API MUST emit structured JSON logs via ASP.NET Core’s built-in `ILogger`. Logs MUST include: authentication failures (401/403), VictoriaMetrics query errors, and request durations for all endpoints.
 - **FR-021**: The API MUST expose a `/metrics` endpoint in Prometheus exposition format (via `prometheus-net`) for self-monitoring. This endpoint MUST be unauthenticated and MUST NOT expose telemetry data. Metrics MUST include HTTP request count, request duration histogram, and active connection count.
+- **FR-022**: The epcube-exporter MUST expose a `/health` endpoint that returns HTTP 200 with `{"status":"ok"}` when healthy, or HTTP 503 with `{"status":"unhealthy","reasons":[...]}` when unhealthy. The health check MUST report unhealthy if no successful poll has occurred in 5 minutes or if 5 or more consecutive poll errors have occurred. This endpoint MUST be unauthenticated.
+- **FR-023**: The epcube-exporter MUST expose a debug status page at `/` and `/status` showing the last 10 poll snapshots with per-device telemetry values, uptime, poll count, error count, and a health chiclet. This endpoint MUST be authenticated via Entra ID JWT when deployed to Azure (same app registration as the API), and MUST support unauthenticated access in local development via the `EPCUBE_DISABLE_AUTH` environment variable.
+- **FR-024**: The epcube-exporter Container App MUST be deployed with external ingress to allow browser access to the debug status page. JWT authentication in the exporter code MUST validate tokens from the same Entra ID app registration used by the API.
 
 ### Key Entities
 
 - **Device**: Represents an EP Cube device (1.0 or 2.0) as identified by epcube-exporter via the cloud API. Attributes: unique device ID, device class (`storage_battery` or `home_solar`), status (online/offline), device metadata (manufacturer, product code, UID).
-- **Reading**: A single telemetry data point scraped from epcube-exporter. Attributes: device reference, metric name (e.g., `echonet_battery_state_of_capacity_percent`), value, unit (W, Wh, kWh, %, or state code), UTC timestamp.
+- **Reading**: A single telemetry data point scraped from epcube-exporter. Attributes: device reference, metric name (e.g., `epcube_battery_state_of_capacity_percent`), value, unit (W, Wh, kWh, %, or state code), UTC timestamp.
 - **Time Series**: An ordered collection of Readings for a given device and metric over a time range, stored in VictoriaMetrics and queryable via PromQL. Used for downstream graphing and API responses.
 
 ## Success Criteria *(mandatory)*

@@ -5,7 +5,7 @@ namespace EpCubeGraph.Api.Services;
 public sealed class GridCalculator
 {
     public const string GridPromqlExpression =
-        "epcube_solar_instantaneous_generation_watts - epcube_battery_charge_discharge_power_watts";
+        "epcube_grid_import_kwh - epcube_grid_export_kwh";
 
     private readonly IVictoriaMetricsClient _client;
 

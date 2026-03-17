@@ -189,7 +189,7 @@ builder.Services.AddHttpClient<IVictoriaMetricsClient, VictoriaMetricsClient>(cl
 Key advantages:
 - **Zero additional dependencies**: `HttpClient` is built into .NET. No NuGet packages needed for HTTP calls.
 - **IHttpClientFactory integration**: ASP.NET Core's `AddHttpClient<T>` provides connection pooling, DNS refresh, and typed client DI — all for free.
-- **Full control**: The API service needs to construct PromQL queries with device/metric filters (e.g., `echonet_battery_state_of_capacity_percent{device="epcube_battery"}`). Direct HTTP calls give full control over query construction, timeout handling, and error mapping.
+- **Full control**: The API service needs to construct PromQL queries with device/metric filters (e.g., `epcube_battery_state_of_capacity_percent{device="epcube_battery"}`). Direct HTTP calls give full control over query construction, timeout handling, and error mapping.
 - **Async-native**: `HttpClient` is fully async, consistent with ASP.NET Core's async pipeline.
 - **Thin wrapper**: The `VictoriaMetricsClient` class is ~60–80 lines of code covering `QueryAsync`, `QueryRangeAsync`, and `SeriesAsync` — trivially testable by mocking `HttpMessageHandler`.
 - **VictoriaMetrics compatibility**: VictoriaMetrics is 100% compatible with the Prometheus HTTP API. No VictoriaMetrics-specific client is needed.
@@ -206,7 +206,7 @@ Key advantages:
 
 ## Topic 4: epcube-exporter — Cloud API Poller
 
-> **Updated 2026-03-16**: Originally researched Docker multi-arch builds for echonet-exporter (a Go-based ECHONET Lite poller). The EP Cube gateways were discovered to have no local protocol support. The system now uses epcube-exporter, a Python-based poller that authenticates with the EP Cube cloud API (monitoring-us.epcube.com) and exposes the same `echonet_*` Prometheus metrics.
+> **Updated 2026-03-16**: Originally researched Docker multi-arch builds for echonet-exporter (a Go-based ECHONET Lite poller). The EP Cube gateways were discovered to have no local protocol support. The system now uses epcube-exporter, a Python-based poller that authenticates with the EP Cube cloud API (monitoring-us.epcube.com) and exposes the same `epcube_*` Prometheus metrics.
 
 ### Decision
 

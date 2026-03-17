@@ -57,7 +57,7 @@
 - [x] T010 [P] [US3] Create epcube-exporter Dockerfile with python:3.12-slim base, opencv-python-headless, pycryptodome, numpy in local/epcube-exporter/Dockerfile
 - [x] T011 [P] [US3] Create VictoriaMetrics promscrape configuration targeting epcube-exporter Container App with 60s scrape interval, 30s timeout in infra/main.tf (promscrape_config local)
 - [x] T012 [P] [US3] Add epcube_username, epcube_password, epcube_image variables to infra/variables.tf; add EP Cube credential secrets to infra/keyvault.tf
-- [x] T013 [US3] Add epcube-exporter Container App resource with internal-only ingress, Key Vault secret references, and ACR registry in infra/container-apps.tf; add promscrape config to VictoriaMetrics
+- [x] T013 [US3] Add epcube-exporter Container App resource with external ingress (JWT-authenticated debug page), Key Vault secret references, and ACR registry in infra/container-apps.tf; add promscrape config to VictoriaMetrics
 
 **Checkpoint**: `terraform validate` passes. epcube-exporter Container App deploys with VictoriaMetrics scraping it directly.
 
@@ -114,13 +114,13 @@
 ### Services for User Story 2
 
 - [x] T025 [US2] Implement VictoriaMetricsClient using HttpClient with IHttpClientFactory DI registration: QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync in api/src/EpCubeGraph.Api/Services/VictoriaMetricsClient.cs
-- [x] T026 [US2] Implement GridCalculator: constructs PromQL expression (echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
+- [x] T026 [US2] Implement GridCalculator: constructs PromQL expression (epcube_grid_import_kwh - epcube_grid_export_kwh), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
 
 ### Endpoints for User Story 2
 
 - [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, checks VictoriaMetrics reachability, returns HealthResponse with 200 or 503) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
 - [x] T028 [US2] Implement QueryEndpoints: GET /api/v1/query, GET /api/v1/query_range, GET /api/v1/series, GET /api/v1/labels, GET /api/v1/label/{name}/values as authenticated PromQL passthrough to VictoriaMetrics in api/src/EpCubeGraph.Api/Endpoints/QueryEndpoints.cs
-- [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries echonet_device_info + echonet_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
+- [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries epcube_device_info + epcube_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
 - [x] T030 [US2] Implement GridEndpoints: GET /api/v1/grid (optional start, end, step params, delegates to GridCalculator, returns PromQL range result) in api/src/EpCubeGraph.Api/Endpoints/GridEndpoints.cs
 
 ### Wiring and Integration for User Story 2
@@ -145,6 +145,20 @@
 - [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
 - [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
 - [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
+
+---
+
+## Phase 7: Exporter Enhancements (Operational)
+
+**Purpose**: Health endpoint, debug status page, JWT auth, and test coverage for epcube-exporter
+
+**FRs covered**: FR-022, FR-023, FR-024
+
+- [x] T045 [US3] Add health endpoint to epcube-exporter: GET /health returns 200 {"status":"ok"} when healthy, 503 {"status":"unhealthy","reasons":[...]} when no poll in 5 min or 5+ consecutive errors (FR-022) in local/epcube-exporter/exporter.py
+- [x] T046 [US3] Add debug status page to epcube-exporter: GET / and /status render HTML showing last 10 poll snapshots with per-device tables, uptime, poll count, error count, health chiclet, auto-refresh, browser timezone conversion (FR-023) in local/epcube-exporter/exporter.py
+- [x] T047 [US3] Add JWT auth to epcube-exporter: validate Entra ID JWT (PyJWT + JWKS) on / and /status, bypass with EPCUBE_DISABLE_AUTH=true for local dev, /metrics and /health unauthenticated (FR-023, FR-024) in local/epcube-exporter/exporter.py
+- [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress and AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE env vars (FR-024) in infra/container-apps.tf
+- [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 42 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
 
 ---
 

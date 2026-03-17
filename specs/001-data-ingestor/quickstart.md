@@ -145,7 +145,7 @@ After 2 scrape cycles (~2 minutes):
 VM_FQDN=$(cd infra && terraform output -raw vm_fqdn)
 TOKEN=$(cd infra && terraform output -raw remote_write_token)
 curl -H "Authorization: Bearer $TOKEN" \
-  "https://$VM_FQDN/api/v1/query?query=echonet_battery_state_of_capacity_percent"
+  "https://$VM_FQDN/api/v1/query?query=epcube_battery_state_of_capacity_percent"
 ```
 
 ### Local Development Stack (Optional)

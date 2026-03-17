@@ -11,7 +11,7 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 
 1. **Ingestion tier** (Azure Container Apps): epcube-exporter polls EP Cube devices via the cloud API (monitoring-us.epcube.com) and exposes Prometheus metrics; VictoriaMetrics scrapes them directly via `-promscrape.config` within the same Container Apps environment.
 2. **Storage tier** (Azure Container Apps): VictoriaMetrics single-node stores time-series with 5-year retention, handles deduplication natively.
-3. **API tier** (Azure Container Apps): A C# ASP.NET Core Minimal API service queries VictoriaMetrics via PromQL and exposes a versioned REST API authenticated with Entra ID (OAuth 2.0 JWT) and authorized via `user_impersonation` scope. Also computes derived grid metrics. Emits structured JSON logs and exposes a `/metrics` endpoint for self-monitoring via `prometheus-net`.
+3. **API tier** (Azure Container Apps): A C# ASP.NET Core Minimal API service queries VictoriaMetrics via PromQL and exposes a versioned REST API authenticated with Entra ID (OAuth 2.0 JWT) and authorized via `user_impersonation` scope. Also exposes grid energy balance via PromQL (`epcube_grid_import_kwh - epcube_grid_export_kwh`). Emits structured JSON logs and exposes a `/metrics` endpoint for self-monitoring via `prometheus-net`.
 
 ## Technical Context
 
@@ -94,7 +94,7 @@ api/
 │       ├── Services/
 │       │   ├── IVictoriaMetricsClient.cs  # PromQL query interface
 │       │   ├── VictoriaMetricsClient.cs   # HttpClient-based implementation
-│       │   └── GridCalculator.cs          # Derived grid calculation
+│       │   └── GridCalculator.cs          # Grid energy balance query
 │       ├── Validate.cs              # Input validation helpers (FR-019)
 │       └── Endpoints/
 │           ├── DevicesEndpoints.cs   # /devices routes

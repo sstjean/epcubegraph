@@ -4,8 +4,9 @@ Simulates 2 gateways (EP Cube 1.0 battery + solar, EP Cube 2.0 battery + solar)
 with time-varying values:
   - Solar generation follows a bell curve peaking at noon JST
   - Battery SoC oscillates between 10-90%
-  - Charge/discharge power tracks solar availability
-  - Cumulative counters increase monotonically
+  - Battery net kWh derived from energy balance
+  - Home load and grid import/export track solar availability
+  - Self-sufficiency rate varies with solar output
 """
 
 import math
@@ -24,7 +25,6 @@ DEVICES = [
         "product_code": "EP Cube 1.0",
         "uid": "MOCK001",
         "peak_solar_w": 5500,
-        "battery_capacity_wh": 9900,
     },
     {
         "battery": {"device": "epcube2_battery", "ip": "192.168.1.11", "class": "storage_battery"},
@@ -33,7 +33,6 @@ DEVICES = [
         "product_code": "EP Cube 2.0",
         "uid": "MOCK002",
         "peak_solar_w": 6000,
-        "battery_capacity_wh": 12000,
     },
 ]
 
@@ -96,73 +95,60 @@ def _generate_metrics() -> str:
         soc = max(5, min(98, soc_base + 3 * math.sin(elapsed / 60 + phase)))
         soc = round(soc, 1)
 
-        # Charge/discharge power: positive=charging (during solar), negative=discharging
-        if solar_w > 500:
-            charge_w = round(min(solar_w * 0.6, 3000 + 200 * math.sin(elapsed / 45 + phase)), 1)
-        elif solar_w > 0:
-            charge_w = round(solar_w * 0.3, 1)
-        else:
-            charge_w = round(-800 - 400 * abs(math.sin(elapsed / 120 + phase)), 1)
+        # Home load: base ~800W, higher when solar is low (evening cooking etc.)
+        home_load_w = round(800 + 400 * abs(math.sin(elapsed / 90 + phase)) + (300 if solar_w < 100 else 0), 1)
 
-        remaining_wh = round(dev["battery_capacity_wh"] * soc / 100, 1)
-        chargeable_wh = round(dev["battery_capacity_wh"] * (100 - soc) / 100, 1)
-        dischargeable_wh = round(remaining_wh * 0.95, 1)  # 5% reserve
-
-        # Working operation state: 0x42=Charging, 0x43=Discharging, 0x44=Standby
-        if charge_w > 50:
-            op_state = 0x42
-        elif charge_w < -50:
-            op_state = 0x43
+        # Grid import/export: when solar exceeds load, export; otherwise import
+        net_power = solar_w - home_load_w
+        grid_import_key = f"grid_import_{i}"
+        grid_export_key = f"grid_export_{i}"
+        prev_import = _cumulative.get(grid_import_key, 0.0)
+        prev_export = _cumulative.get(grid_export_key, 0.0)
+        if net_power < 0:
+            _cumulative[grid_import_key] = prev_import + abs(net_power) / 1000 * (60 / 3600)
         else:
-            op_state = 0x44
+            _cumulative[grid_export_key] = prev_export + net_power / 1000 * (60 / 3600)
+        grid_import_kwh = round(_cumulative.get(grid_import_key, 0.0), 3)
+        grid_export_kwh = round(_cumulative.get(grid_export_key, 0.0), 3)
 
-        # Cumulative charge/discharge
-        cum_charge_key = f"cum_charge_{i}"
-        cum_discharge_key = f"cum_discharge_{i}"
-        prev_charge = _cumulative.get(cum_charge_key, 1000.0)
-        prev_discharge = _cumulative.get(cum_discharge_key, 800.0)
-        if charge_w > 0:
-            _cumulative[cum_charge_key] = prev_charge + abs(charge_w) * (60 / 3600)
-        else:
-            _cumulative[cum_discharge_key] = prev_discharge + abs(charge_w) * (60 / 3600)
+        # Self-sufficiency rate: higher when solar covers more of the load
+        self_sufficiency = min(100.0, max(0.0, round(min(solar_w, home_load_w) / max(home_load_w, 1) * 100, 1)))
+
+        # Battery net kWh: derived from energy balance (solar + grid_import - home_load - grid_export)
+        bat_net_key = f"bat_net_{i}"
+        prev_bat_net = _cumulative.get(bat_net_key, 0.0)
+        bat_delta = (solar_w + (abs(net_power) if net_power < 0 else 0) - home_load_w - (net_power if net_power > 0 else 0)) / 1000 * (60 / 3600)
+        _cumulative[bat_net_key] = prev_bat_net + bat_delta
+        bat_net_kwh = round(_cumulative.get(bat_net_key, 0.0), 3)
 
         lines.append(f"# HELP epcube_battery_state_of_capacity_percent Battery SoC")
         lines.append(f"# TYPE epcube_battery_state_of_capacity_percent gauge")
         lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-        lines.append(f"# HELP epcube_battery_charge_discharge_power_watts Charge/discharge power")
-        lines.append(f"# TYPE epcube_battery_charge_discharge_power_watts gauge")
-        lines.append(f"epcube_battery_charge_discharge_power_watts{{{bl}}} {charge_w}")
+        lines.append(f"# HELP epcube_battery_net_kwh Net battery energy today")
+        lines.append(f"# TYPE epcube_battery_net_kwh gauge")
+        lines.append(f"epcube_battery_net_kwh{{{bl}}} {bat_net_kwh}")
 
-        lines.append(f"# HELP epcube_battery_remaining_capacity_wh Remaining stored energy")
-        lines.append(f"# TYPE epcube_battery_remaining_capacity_wh gauge")
-        lines.append(f"epcube_battery_remaining_capacity_wh{{{bl}}} {remaining_wh}")
+        lines.append(f"# HELP epcube_home_load_power_watts Home load power")
+        lines.append(f"# TYPE epcube_home_load_power_watts gauge")
+        lines.append(f"epcube_home_load_power_watts{{{bl}}} {home_load_w}")
 
-        lines.append(f"# HELP epcube_battery_chargeable_capacity_wh Max chargeable capacity")
-        lines.append(f"# TYPE epcube_battery_chargeable_capacity_wh gauge")
-        lines.append(f"epcube_battery_chargeable_capacity_wh{{{bl}}} {chargeable_wh}")
+        lines.append(f"# HELP epcube_self_sufficiency_rate Self-sufficiency rate")
+        lines.append(f"# TYPE epcube_self_sufficiency_rate gauge")
+        lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_sufficiency}")
 
-        lines.append(f"# HELP epcube_battery_dischargeable_capacity_wh Max dischargeable capacity")
-        lines.append(f"# TYPE epcube_battery_dischargeable_capacity_wh gauge")
-        lines.append(f"epcube_battery_dischargeable_capacity_wh{{{bl}}} {dischargeable_wh}")
+        lines.append(f"# HELP epcube_grid_import_kwh Grid energy imported today")
+        lines.append(f"# TYPE epcube_grid_import_kwh gauge")
+        lines.append(f"epcube_grid_import_kwh{{{bl}}} {grid_import_kwh}")
 
-        lines.append(f"# HELP epcube_battery_cumulative_charge_wh Cumulative energy charged")
-        lines.append(f"# TYPE epcube_battery_cumulative_charge_wh counter")
-        lines.append(f"epcube_battery_cumulative_charge_wh{{{bl}}} {round(_cumulative.get(cum_charge_key, 1000.0), 1)}")
-
-        lines.append(f"# HELP epcube_battery_cumulative_discharge_wh Cumulative energy discharged")
-        lines.append(f"# TYPE epcube_battery_cumulative_discharge_wh counter")
-        lines.append(f"epcube_battery_cumulative_discharge_wh{{{bl}}} {round(_cumulative.get(cum_discharge_key, 800.0), 1)}")
-
-        lines.append(f"# HELP epcube_battery_working_operation_state Operation state code")
-        lines.append(f"# TYPE epcube_battery_working_operation_state gauge")
-        lines.append(f"epcube_battery_working_operation_state{{{bl}}} {op_state}")
+        lines.append(f"# HELP epcube_grid_export_kwh Grid energy exported today")
+        lines.append(f"# TYPE epcube_grid_export_kwh gauge")
+        lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_export_kwh}")
 
         # ── Scrape health metrics ──
         for d_labels in [bat, sol]:
             dl = _labels(d_labels)
             lines.append(f"epcube_scrape_success{{{dl}}} 1")
-            lines.append(f"epcube_scrape_duration_seconds{{{dl}}} {round(0.05 + 0.02 * math.sin(elapsed / 20), 4)}")
             lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {int(time.time())}")
 
         # ── Device info (constant=1 with metadata labels) ──

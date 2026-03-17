@@ -20,11 +20,11 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 |-------|--------|---------|-------------|
 | `device` | epcube-exporter config | `epcube_battery` | Unique device identifier |
 | `class` | epcube-exporter config | `storage_battery` | Device class |
-| `manufacturer` | `echonet_device_info` metric | `Canadian Solar` | Device manufacturer |
-| `product_code` | `echonet_device_info` metric | `EP Cube 2.0` | Device model |
-| `uid` | `echonet_device_info` metric | `ABC123` | Unique device ID |
+| `manufacturer` | `epcube_device_info` metric | `Canadian Solar` | Device manufacturer |
+| `product_code` | `epcube_device_info` metric | `EP Cube 2.0` | Device model |
+| `uid` | `epcube_device_info` metric | `ABC123` | Unique device ID |
 
-**Enrichment via `echonet_device_info`**: epcube-exporter exposes a constant-value metric `echonet_device_info{device, class, manufacturer, product_code, uid} = 1` that carries device metadata as labels. The API service can query this metric to resolve device details.
+**Enrichment via `epcube_device_info`**: epcube-exporter exposes a constant-value metric `epcube_device_info{device, class, manufacturer, product_code, uid} = 1` that carries device metadata as labels. The API service can query this metric to resolve device details.
 
 **Validation rules**:
 - `device` label MUST be non-empty and unique across all configured devices
@@ -34,22 +34,18 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 ## Entity: Reading (Battery Metrics)
 
-**What it represents**: Telemetry data points from an EP Cube storage battery.
+**What it represents**: Telemetry data points from an EP Cube storage battery, polled from the EP Cube cloud API.
 
 **Device class**: `storage_battery`
 
 | Metric Name | Type | Unit | Description |
 |-------------|------|------|-------------|
-| `echonet_battery_state_of_capacity_percent` | gauge | % | State of charge (0–100) |
-| `echonet_battery_charge_discharge_power_watts` | gauge | W | Instantaneous power (positive=charge, negative=discharge) |
-| `echonet_battery_remaining_capacity_wh` | gauge | Wh | Remaining stored energy |
-| `echonet_battery_chargeable_capacity_wh` | gauge | Wh | Max chargeable capacity |
-| `echonet_battery_dischargeable_capacity_wh` | gauge | Wh | Max dischargeable capacity |
-| `echonet_battery_cumulative_charge_wh` | counter | Wh | Cumulative energy charged (monotonic) |
-| `echonet_battery_cumulative_discharge_wh` | counter | Wh | Cumulative energy discharged (monotonic) |
-| `echonet_battery_working_operation_state` | gauge | code | 0x42=Charging, 0x43=Discharging, 0x44=Standby |
+| `epcube_battery_state_of_capacity_percent` | gauge | % | State of charge (0–100) |
+| `epcube_battery_net_kwh` | gauge | kWh | Net battery energy today (positive=charge, negative=discharge), calculated by epcube-exporter from cloud API energy balance fields (`solar + grid_import - backup - grid_export`) |
 
 **Labels on every metric**: `device`, `class`
+
+**Note**: The EP Cube cloud API does not expose instantaneous battery charge/discharge power, remaining capacity, chargeable/dischargeable capacity, cumulative charge/discharge, or working operation state. Only SoC% and daily net energy (derived from the energy balance) are available.
 
 ---
 
@@ -61,28 +57,43 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 | Metric Name | Type | Unit | Description |
 |-------------|------|------|-------------|
-| `echonet_solar_instantaneous_generation_watts` | gauge | W | Current solar generation |
-| `echonet_solar_cumulative_generation_kwh` | counter | kWh | Total generated energy (monotonic) |
+| `epcube_solar_instantaneous_generation_watts` | gauge | W | Current solar generation |
+| `epcube_solar_cumulative_generation_kwh` | gauge | kWh | Total solar energy generated today |
 
 **Labels on every metric**: `device`, `class`
 
 ---
 
-## Entity: Reading (Derived Grid Metric)
+## Entity: Reading (Home Load & Grid Metrics)
 
-**What it represents**: Grid import/export power derived from solar and battery readings.
+**What it represents**: Home load consumption and grid energy exchange, polled from the EP Cube cloud API.
 
-**Storage**: Computed by the API service at query time using PromQL, OR pre-computed via VictoriaMetrics recording rules.
+**Device class**: `storage_battery` (same labels as battery)
+
+| Metric Name | Type | Unit | Description |
+|-------------|------|------|-------------|
+| `epcube_home_load_power_watts` | gauge | W | Instantaneous home load (backup) power |
+| `epcube_self_sufficiency_rate` | gauge | % | Self-sufficiency rate (0–100) |
+| `epcube_grid_import_kwh` | gauge | kWh | Grid energy imported today |
+| `epcube_grid_export_kwh` | gauge | kWh | Grid energy exported today |
+
+**Labels on every metric**: `device`, `class`
+
+---
+
+## Entity: Reading (Grid Net — API Query)
+
+**What it represents**: Net grid energy consumption, computed at query time by the API.
+
+**Storage**: Computed by the API service at query time using PromQL.
 
 | Metric / Query | Type | Unit | Description |
 |----------------|------|------|-------------|
-| `grid_power_watts` (recording rule) | gauge | W | `echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts` |
+| `epcube_grid_import_kwh - epcube_grid_export_kwh` | gauge | kWh | Net grid energy (positive = net import, negative = net export) |
 
-**Sign convention**: Positive = export to grid, Negative = import from grid.
+**Sign convention**: Positive = net import from grid, Negative = net export to grid.
 
-**Implementation options** (decided during implementation):
-1. **PromQL at query time**: The API computes `echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts` on each request. Simplest, no stored data.
-2. **VictoriaMetrics recording rule**: Pre-computes and stores `grid_power_watts` at regular intervals. Better for historical queries.
+**Implementation**: The API `/grid` endpoint executes this PromQL `query_range` against VictoriaMetrics. Grid import and export are directly available from the EP Cube cloud API — no derivation from solar/battery is needed.
 
 ---
 
@@ -92,10 +103,9 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 | Metric Name | Type | Unit | Description |
 |-------------|------|------|-------------|
-| `echonet_scrape_success` | gauge | boolean | 1 = last scrape succeeded, 0 = failed |
-| `echonet_scrape_duration_seconds` | gauge | seconds | Duration of last scrape |
-| `echonet_last_scrape_timestamp_seconds` | gauge | unix epoch | Time of last successful scrape |
-| `echonet_device_info` | gauge | constant 1 | Device identity labels (manufacturer, product_code, uid) |
+| `epcube_scrape_success` | gauge | boolean | 1 = last scrape succeeded, 0 = failed |
+| `epcube_last_scrape_timestamp_seconds` | gauge | unix epoch | Time of last successful scrape |
+| `epcube_device_info` | gauge | constant 1 | Device identity labels (manufacturer, product_code, uid) |
 **Labels on every metric**: `device`, `class`
 
 ---
@@ -108,7 +118,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **PromQL query pattern**:
 ```promql
-echonet_battery_state_of_capacity_percent{device="epcube_battery"}[24h:1m]
+epcube_battery_state_of_capacity_percent{device="epcube_battery"}[24h:1m]
 ```
 
 This returns a time series of 1-minute-interval SoC readings for the last 24 hours.
@@ -121,8 +131,9 @@ This returns a time series of 1-minute-interval SoC readings for the last 24 hou
 Device (labels)
   ├── Battery Readings (storage_battery metrics)
   ├── Solar Readings (home_solar metrics)
+  ├── Home Load & Grid Readings (storage_battery metrics)
   ├── Scrape Health (scrape status metrics)
-  └── Derived Grid (computed from solar + battery)
+  └── Grid Net (computed at query time: import - export)
 ```
 
 All relationships are implicit via shared `device` label. There are no foreign keys or joins — VictoriaMetrics uses label matching.
@@ -130,15 +141,6 @@ All relationships are implicit via shared `device` label. There are no foreign k
 ---
 
 ## State Transitions
-
-### Battery Working Operation State
-
-```
-Standby (0x44) ──charge──▶ Charging (0x42)
-Standby (0x44) ──discharge──▶ Discharging (0x43)
-Charging (0x42) ──done──▶ Standby (0x44)
-Discharging (0x43) ──done──▶ Standby (0x44)
-```
 
 ### Device Scrape Status
 

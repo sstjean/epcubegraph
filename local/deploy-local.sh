@@ -69,7 +69,7 @@ cmd_seed() {
 
 cmd_query() {
   info "Querying VictoriaMetrics for battery SoC ..."
-  if curl -sf 'http://localhost:8428/api/v1/query?query=echonet_battery_state_of_capacity_percent' | python3 -m json.tool 2>/dev/null; then
+  if curl -sf 'http://localhost:8428/api/v1/query?query=epcube_battery_state_of_capacity_percent' | python3 -m json.tool 2>/dev/null; then
     ok "Data is being ingested"
   else
     warn "No data yet — wait a bit longer or check: $0 --logs"
