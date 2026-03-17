@@ -32,7 +32,6 @@ env:
   TF_VAR_environment_name: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'epcubegraph' || 'epcubegraph-staging') }}
   TF_VAR_location: 'eastus'
   ARM_USE_OIDC: 'true'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   id-token: write   # OIDC token for Azure login
@@ -60,7 +59,7 @@ jobs:
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -70,12 +69,12 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
 
       - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -152,7 +151,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -244,7 +243,7 @@ jobs:
       )
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -254,7 +253,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
 
