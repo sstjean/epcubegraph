@@ -15,6 +15,11 @@ output "api_fqdn" {
   value       = var.api_image != "" ? azurerm_container_app.api[0].ingress[0].fqdn : ""
 }
 
+output "exporter_fqdn" {
+  description = "FQDN of the epcube-exporter container app"
+  value       = var.epcube_image != "" ? azurerm_container_app.exporter[0].ingress[0].fqdn : ""
+}
+
 output "acr_login_server" {
   description = "ACR login server URL"
   value       = azurerm_container_registry.main.login_server
