@@ -33,6 +33,7 @@ env:
   TF_VAR_environment_name: ${{ github.event.inputs.environment || 'epcubegraph-staging' }}
   TF_VAR_location: 'eastus'
   ARM_USE_OIDC: 'true'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 permissions:
   id-token: write   # OIDC token for Azure login

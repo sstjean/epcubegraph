@@ -20,8 +20,8 @@ services:
     build:
       context: ./epcube-exporter
     environment:
-      - EPCUBE_USERNAME=${EPCUBE_USERNAME}
-      - EPCUBE_PASSWORD=${EPCUBE_PASSWORD}
+      - EPCUBE_USERNAME=${EPCUBE_USERNAME:-}
+      - EPCUBE_PASSWORD=${EPCUBE_PASSWORD:-}
       - EPCUBE_PORT=9200
       - EPCUBE_INTERVAL=60
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
     image: victoriametrics/vmagent:v1.106.1
     command:
       - "-promscrape.config=/etc/vmagent/scrape.yml"
-      - "-remoteWrite.url=${REMOTE_WRITE_URL}"
+      - "-remoteWrite.url=${REMOTE_WRITE_URL:-http://localhost:8428/api/v1/write}"
       - "-remoteWrite.bearerTokenFile=/run/secrets/remote_write_token"
       - "-remoteWrite.tmpDataPath=/vmagent-data"
       - "-remoteWrite.maxDiskUsagePerURL=1GB"
