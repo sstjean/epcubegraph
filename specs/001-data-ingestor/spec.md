@@ -3,6 +3,8 @@
 **Feature Branch**: `001-data-ingestor`  
 **Created**: 2026-03-07  
 **Status**: Draft  
+**Feature Issue**: [#3](https://github.com/sstjean/epcubegraph/issues/3)  
+**User Story Issues**: [US1 #9](https://github.com/sstjean/epcubegraph/issues/9) · [US2 #10](https://github.com/sstjean/epcubegraph/issues/10) · [US3 #11](https://github.com/sstjean/epcubegraph/issues/11)  
 **Input**: User description: "Build a data ingestor that pulls telemetry from EP Cube 1.0 and EP Cube 2.0 Gateway devices and stores it for downstream consumption via API."
 
 ## Clarifications

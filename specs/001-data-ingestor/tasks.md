@@ -1,6 +1,7 @@
 # Tasks: EP Cube Telemetry Data Ingestor
 
-**Input**: Design documents from `/specs/001-data-ingestor/`
+**Input**: Design documents from `/specs/001-data-ingestor/`  
+**Feature Issue**: [#3](https://github.com/sstjean/epcubegraph/issues/3) · **User Stories**: [US1 #9](https://github.com/sstjean/epcubegraph/issues/9) · [US2 #10](https://github.com/sstjean/epcubegraph/issues/10) · [US3 #11](https://github.com/sstjean/epcubegraph/issues/11)  
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/api-v1.md, quickstart.md
 
 **Tests**: Included — constitution mandates TDD with 100% code coverage (non-negotiable).
@@ -79,6 +80,8 @@
 - [x] T015 [P] [US1] Create deployment variables file with environment name, location, container image settings in infra/variables.tf
 - [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume, internal-only ingress on port 8428), promscrape config targeting epcube-exporter, API container placeholder in infra/container-apps.tf
 - [x] T017 [US1] Add Entra ID app registration and managed identity resources in infra/entra.tf for API authentication (FR-010)
+- [x] T051 [US1] Create VNet with infrastructure and private endpoints subnets, private endpoints + DNS zones for Key Vault and Storage in infra/network.tf (added retroactively — implemented during Bug #14 resolution)
+- [x] T053 [US1] Configure Azure File Share mount for VictoriaMetrics persistent storage (access_key via private endpoint — platform limitation documented in plan.md Complexity Tracking) in infra/storage.tf, infra/container-apps.tf
 
 **Checkpoint**: `terraform validate` passes. VictoriaMetrics accepts promscrape-based ingestion from epcube-exporter.
 
@@ -98,6 +101,7 @@
 - [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=import/negative=export) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
 - [x] T020 [P] [US2] Write DeviceInfo record tests (serialization, optional fields, DeviceClass values) in api/tests/EpCubeGraph.Api.Tests/Unit/DeviceInfoTests.cs
 - [x] T038 [P] [US2] Write Validate helper unit tests (Required, Timestamp, Duration, SafeName — null=valid, invalid=error, valid=pass) in api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs
+- [x] T052 [P] [US2] Write model serialization tests (JSON round-trip for all response records) in api/tests/EpCubeGraph.Api.Tests/Unit/ModelSerializationTests.cs (added retroactively)
 
 ### Models for User Story 2
 
@@ -282,3 +286,11 @@ With capacity for parallel work:
 - US3 and US1 contain no C# code (Docker + Terraform) so TDD applies only to US2
 - Commit after each task or logical group
 - Stop at any checkpoint to validate the story independently
+
+---
+
+## Future: Phase 8 — Full DevOps CD Pipeline (Issue [#12](https://github.com/sstjean/epcubegraph/issues/12))
+
+**Status**: Not started — tracked in GitHub Issue #12, out of scope for initial 001-data-ingestor implementation  
+**Purpose**: Evolve CI/CD from current single-environment pipeline (T044/T050) to full DevOps process: staging on push, production on merge to main, no hardcoded branch names  
+**Depends on**: Phase 6 (Polish) completion + merge to main

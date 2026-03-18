@@ -1,6 +1,7 @@
 # Implementation Plan: EP Cube Telemetry Data Ingestor
 
-**Branch**: `001-data-ingestor` | **Date**: 2026-03-16 | **Spec**: [spec.md](spec.md)
+**Branch**: `001-data-ingestor` | **Date**: 2026-03-16 | **Spec**: [spec.md](spec.md)  
+**Feature Issue**: [#3](https://github.com/sstjean/epcubegraph/issues/3) · **User Stories**: [US1 #9](https://github.com/sstjean/epcubegraph/issues/9) · [US2 #10](https://github.com/sstjean/epcubegraph/issues/10) · [US3 #11](https://github.com/sstjean/epcubegraph/issues/11)  
 **Input**: Feature specification from `/specs/001-data-ingestor/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
