@@ -212,7 +212,8 @@ cmd_api_only() {
 
   # Update only api_image in deploy.auto.tfvars (preserve other values)
   if [[ -f "$SCRIPT_DIR/deploy.auto.tfvars" ]]; then
-    sed -i '' '/^api_image/d' "$SCRIPT_DIR/deploy.auto.tfvars"
+    grep -v '^api_image' "$SCRIPT_DIR/deploy.auto.tfvars" > "$SCRIPT_DIR/deploy.auto.tfvars.tmp" \
+      && mv "$SCRIPT_DIR/deploy.auto.tfvars.tmp" "$SCRIPT_DIR/deploy.auto.tfvars"
   fi
   echo "api_image = \"${api_image}\"" >> "$SCRIPT_DIR/deploy.auto.tfvars"
 
@@ -243,7 +244,8 @@ cmd_exporter_only() {
 
   # Update only epcube_image in deploy.auto.tfvars (preserve other values)
   if [[ -f "$SCRIPT_DIR/deploy.auto.tfvars" ]]; then
-    sed -i '' '/^epcube_image/d' "$SCRIPT_DIR/deploy.auto.tfvars"
+    grep -v '^epcube_image' "$SCRIPT_DIR/deploy.auto.tfvars" > "$SCRIPT_DIR/deploy.auto.tfvars.tmp" \
+      && mv "$SCRIPT_DIR/deploy.auto.tfvars.tmp" "$SCRIPT_DIR/deploy.auto.tfvars"
   fi
   echo "epcube_image = \"${epcube_image}\"" >> "$SCRIPT_DIR/deploy.auto.tfvars"
 
