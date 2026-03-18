@@ -145,7 +145,8 @@ infra/
 ├── acr.tf                   # Azure Container Registry + AcrPull role
 ├── keyvault.tf              # Key Vault for EP Cube creds + OAuth client secret
 ├── storage.tf               # Log Analytics + storage account + file share
-├── container-apps.tf        # Container Apps: VictoriaMetrics (internal), API, epcube-exporter
+├── network.tf               # VNet, subnets, private endpoints + DNS for KV and Storage
+├── container-apps.tf        # Container Apps (VNet-integrated): VictoriaMetrics, API, exporter
 ├── deploy.sh                # Single-command deployment script
 ├── terraform.tfvars.example # Variable values template
 └── .gitignore               # Excludes .terraform/, state files
@@ -165,4 +166,6 @@ infra/
 |-----------|------------|-------------------------------------|
 | VictoriaMetrics (non-Azure-native) | Direct Prometheus remote-write compatibility, PromQL, simple single-container deployment | Azure Monitor Managed Prometheus: more complex config, higher cost at single-user scale, less direct PromQL control |
 | Internal service communication without per-request auth (zero-trust) | API→VM and promscrape→exporter use unauthenticated HTTP within Container Apps internal network | mTLS between all containers: adds certificate lifecycle management disproportionate to single-user threat model. Endpoints expose no telemetry data. |
+| VNet + Private Endpoints for KV and Storage | Container Apps must access Key Vault secrets via managed identity through private network; data-plane firewalls stay at Deny. Also required for Storage file share mount. | Passing secrets as direct Terraform values: violates constitution (secrets MUST use Key Vault). Adding Container Apps outbound IPs to firewall: unreliable — Consumption plan IPs are dynamic and shared. |
+| Storage file share access_key (zero-trust: Explicit Verification) | `azurerm_container_app_environment_storage` requires `access_key` — Azure Container Apps has no managed identity option for file share mounts. This is an Azure platform limitation. Private endpoint ensures traffic stays on private network; access_key provides authentication (not identity-based). | No alternative exists: NFS shares also require access_key in Terraform; Azure Disk not supported in Consumption workload profile; ephemeral volumes lose data on restart. Tracked for remediation when Azure adds identity-based file mount support. |
 | API dev auth bypass (`NoAuthHandler.cs`) | Enables local development without Entra ID configuration (`Authentication:DisableAuth` setting) | Requiring Entra ID for local dev adds friction without security benefit (bypass only activates in Development environment) |

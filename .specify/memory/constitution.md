@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.6.2 → 1.7.0
+  Version change: 1.7.0 → 1.8.0
   Modified sections:
-    - DevOps — added CI/CD Zero Warnings rule
+    - DevOps — strengthened Environment Parity to NON-NEGOTIABLE
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -204,10 +204,15 @@ and protecting data across all client platforms.
   informational, or reduced to a warning under any
   circumstance. Lowering the threshold requires a constitution
   amendment (MAJOR version bump).
-- **Environment Parity**: Development, staging (if present),
-  and production environments MUST be provisioned from the
-  same infrastructure-as-code templates, differing only in
-  parameter values.
+- **Environment Parity (NON-NEGOTIABLE)**: Staging and
+  production environments MUST be identical in architecture,
+  security posture, network topology, and configuration —
+  differing only in parameter values (names, scale, SKUs).
+  If a security control, network rule, or architectural
+  pattern exists in production, it MUST exist in staging.
+  Shortcuts, workarounds, or reduced security in staging
+  are prohibited. A change that cannot be validated in
+  staging MUST NOT be promoted to production.
 - **Rollback Capability**: Every deployment MUST support
   rollback to the previous version. Container-based
   deployments MUST use immutable, tagged images — `latest`
