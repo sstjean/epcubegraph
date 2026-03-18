@@ -37,6 +37,11 @@ provider "azurerm" {
     key_vault {
       purge_soft_delete_on_destroy = true
     }
+    # Container Apps creates NSGs on VNet subnets outside Terraform's control.
+    # Allow RG deletion to clean up these platform-managed resources.
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
   }
   storage_use_azuread = true
 }
