@@ -13,12 +13,13 @@ resource "azurerm_log_analytics_workspace" "main" {
 # ── Storage Account for VictoriaMetrics data ──
 
 resource "azurerm_storage_account" "main" {
-  name                      = replace("${var.environment_name}sa", "-", "")
-  resource_group_name       = azurerm_resource_group.main.name
-  location                  = azurerm_resource_group.main.location
-  account_tier              = "Standard"
-  account_replication_type  = "LRS"
-  shared_access_key_enabled = false
+  name                            = replace("${var.environment_name}sa", "-", "")
+  resource_group_name             = azurerm_resource_group.main.name
+  location                        = azurerm_resource_group.main.location
+  account_tier                    = "Standard"
+  account_replication_type        = "LRS"
+  shared_access_key_enabled       = false
+  allow_nested_items_to_be_public = false
 }
 
 resource "azurerm_storage_share" "vm_data" {
