@@ -8,6 +8,10 @@ location         = "eastus"      # Azure region
 epcube_username = "your-email@example.com"
 epcube_password = "your-epcube-password"
 
+# Firewall allowlist — deploy.sh detects your IP automatically.
+# Override only if you need additional IPs (e.g., team members):
+# allowed_ips = ["203.0.113.10", "198.51.100.20"]
+
 # Optional overrides (defaults are usually fine):
 # victoria_metrics_image = "victoriametrics/victoria-metrics:v1.106.1"
 # vmauth_image           = "victoriametrics/vmauth:v1.106.1"

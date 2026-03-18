@@ -70,6 +70,17 @@ require_tfvars() {
 
 # -- Terraform helpers ---------------------------------------------------------
 
+detect_deployer_ip() {
+  info "Detecting your public IP for firewall allowlisting..."
+  DEPLOYER_IP=$(curl -sf https://api.ipify.org) \
+    || die "Cannot detect public IP. Check internet connectivity."
+  ok "Public IP: ${DEPLOYER_IP}"
+}
+
+tf_var_ip() {
+  echo "-var=allowed_ips=[\"${DEPLOYER_IP}\"]"
+}
+
 tf_init() {
   info "Initializing Terraform..."
   cd "$SCRIPT_DIR"
@@ -80,7 +91,7 @@ tf_init() {
 tf_apply() {
   info "Applying Terraform configuration..."
   cd "$SCRIPT_DIR"
-  terraform apply -auto-approve -input=false "$@"
+  terraform apply -auto-approve -input=false "$(tf_var_ip)" "$@"
   ok "Terraform apply complete"
 }
 
@@ -146,6 +157,7 @@ cmd_deploy() {
   require_tools
   require_azure_login
   require_tfvars
+  detect_deployer_ip
 
   # Phase 1: Create all infrastructure (ACR, Container Apps, Entra ID, Key Vault)
   # Container apps using custom images are skipped on first deploy
@@ -184,6 +196,7 @@ cmd_api_only() {
 
   require_tools
   require_azure_login
+  detect_deployer_ip
 
   cd "$SCRIPT_DIR"
   if ! terraform output acr_name >/dev/null 2>&1; then
@@ -214,6 +227,7 @@ cmd_exporter_only() {
 
   require_tools
   require_azure_login
+  detect_deployer_ip
 
   cd "$SCRIPT_DIR"
   if ! terraform output acr_name >/dev/null 2>&1; then
@@ -243,16 +257,18 @@ cmd_plan() {
   require_tools
   require_azure_login
   require_tfvars
+  detect_deployer_ip
   tf_init
 
   info "Planning Terraform changes..."
   cd "$SCRIPT_DIR"
-  terraform plan -input=false
+  terraform plan -input=false "$(tf_var_ip)"
 }
 
 cmd_destroy() {
   require_tools
   require_azure_login
+  detect_deployer_ip
 
   warn "This will DESTROY all Azure resources for EP Cube Graph."
   read -rp "Type 'destroy' to confirm: " confirm
@@ -262,7 +278,7 @@ cmd_destroy() {
   fi
 
   cd "$SCRIPT_DIR"
-  terraform destroy -auto-approve
+  terraform destroy -auto-approve "$(tf_var_ip)"
   rm -f "$SCRIPT_DIR/deploy.auto.tfvars"
   ok "All Azure resources destroyed"
 }
