@@ -94,8 +94,6 @@ jobs:
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
-          echo "Waiting for firewall rule to propagate..."
-          sleep 30
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -107,13 +105,25 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Terraform Init
+      - name: Terraform Init (with firewall retry)
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate"
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate" 2>&1; then
+              echo "\u2713 Terraform init succeeded (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" -eq 10 ]; then
+              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
+              exit 1
+            fi
+            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
+            sleep 30
+          done
 
       # Phase 1: Deploy infrastructure (without container images)
       # Runner IP is passed so Terraform whitelists it on Key Vault and app storage
@@ -306,8 +316,6 @@ jobs:
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
-          echo "Waiting for firewall rule to propagate..."
-          sleep 30
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -319,13 +327,25 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Terraform Init
+      - name: Terraform Init (with firewall retry)
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: terraform init -input=false -backend-config="key=epcubegraph-production.tfstate"
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if terraform init -input=false -backend-config="key=epcubegraph-production.tfstate" 2>&1; then
+              echo "\u2713 Terraform init succeeded (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" -eq 10 ]; then
+              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
+              exit 1
+            fi
+            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
+            sleep 30
+          done
 
       - name: Terraform Apply — Infrastructure
         working-directory: infra
@@ -500,15 +520,13 @@ jobs:
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
-          echo "Waiting for firewall rule to propagate..."
-          sleep 30
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
 
-      - name: Terraform Init
+      - name: Terraform Init (with firewall retry)
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -516,7 +534,18 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           ENV="${{ github.event.inputs.environment || 'staging' }}"
-          terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate"
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate" 2>&1; then
+              echo "\u2713 Terraform init succeeded (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" -eq 10 ]; then
+              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
+              exit 1
+            fi
+            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
+            sleep 30
+          done
 
       - name: Terraform Destroy
         working-directory: infra
