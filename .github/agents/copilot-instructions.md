@@ -21,7 +21,7 @@ api/                    # .NET 10 API (src/ + tests/)
   src/EpCubeGraph.Api/  # Minimal API with PromQL passthrough + device endpoints
   tests/                # xUnit tests (Unit/ + Integration/ with Testcontainers)
 infra/                  # Terraform IaC (Container Apps, Key Vault, ACR, Entra ID)
-local/                  # Docker Compose stack (echonet-exporter + vmagent)
+local/                  # Docker Compose stack (epcube-exporter + vmagent)
 specs/                  # Feature specifications
 scripts/                # Setup and validation scripts
 ```

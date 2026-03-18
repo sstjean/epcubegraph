@@ -75,7 +75,7 @@ locals {
   # Container Apps environment via internal ingress (HTTP port 80 → target 9200)
   promscrape_config = <<-YAML
 scrape_configs:
-  - job_name: echonet
+  - job_name: epcube
     static_configs:
       - targets: ["${var.environment_name}-exporter"]
     metrics_path: /metrics
