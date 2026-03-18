@@ -93,7 +93,7 @@ jobs:
 
       - name: Docker Compose Build (local stack)
         working-directory: local
-        run: docker compose build
+        run: docker compose -f docker-compose.local.yml build
 
   docker-api:
     runs-on: ubuntu-latest
