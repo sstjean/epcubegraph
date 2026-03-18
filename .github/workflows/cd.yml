@@ -104,11 +104,28 @@ jobs:
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
               --output none 2>/dev/null || true
-            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
-            sleep 30
+            echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
+
+      # Wait for firewall rules to propagate (probe tfstate storage directly)
+      - name: Wait for firewall propagation
+        run: |
+          echo "Waiting for tfstate storage firewall propagation..."
+          for attempt in $(seq 1 20); do
+            if az storage container list \
+              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --output none 2>/dev/null; then
+              echo "✓ tfstate storage accessible (attempt $attempt)"
+              exit 0
+            fi
+            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -120,25 +137,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Terraform Init (with firewall retry)
+      - name: Terraform Init
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate" 2>&1; then
-              echo "\u2713 Terraform init succeeded (attempt $attempt)"
-              break
-            fi
-            if [ "$attempt" -eq 10 ]; then
-              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
-              exit 1
-            fi
-            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
-            sleep 30
-          done
+        run: terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate"
 
       # Phase 1: Deploy infrastructure (without container images)
       # Runner IP is passed so Terraform whitelists it on Key Vault and app storage
@@ -347,11 +352,28 @@ jobs:
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
               --output none 2>/dev/null || true
-            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
-            sleep 30
+            echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
+
+      # Wait for firewall rules to propagate (probe tfstate storage directly)
+      - name: Wait for firewall propagation
+        run: |
+          echo "Waiting for tfstate storage firewall propagation..."
+          for attempt in $(seq 1 20); do
+            if az storage container list \
+              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --output none 2>/dev/null; then
+              echo "✓ tfstate storage accessible (attempt $attempt)"
+              exit 0
+            fi
+            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -363,25 +385,13 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Terraform Init (with firewall retry)
+      - name: Terraform Init
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if terraform init -input=false -backend-config="key=epcubegraph-production.tfstate" 2>&1; then
-              echo "\u2713 Terraform init succeeded (attempt $attempt)"
-              break
-            fi
-            if [ "$attempt" -eq 10 ]; then
-              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
-              exit 1
-            fi
-            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
-            sleep 30
-          done
+        run: terraform init -input=false -backend-config="key=epcubegraph-production.tfstate"
 
       - name: Terraform Apply — Infrastructure
         working-directory: infra
@@ -577,18 +587,35 @@ jobs:
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
               --output none 2>/dev/null || true
-            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
-            sleep 30
+            echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping"
           fi
+
+      # Wait for firewall rules to propagate (probe tfstate storage directly)
+      - name: Wait for firewall propagation
+        run: |
+          echo "Waiting for tfstate storage firewall propagation..."
+          for attempt in $(seq 1 20); do
+            if az storage container list \
+              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --output none 2>/dev/null; then
+              echo "✓ tfstate storage accessible (attempt $attempt)"
+              exit 0
+            fi
+            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
 
-      - name: Terraform Init (with firewall retry)
+      - name: Terraform Init
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -596,18 +623,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           ENV="${{ github.event.inputs.environment || 'staging' }}"
-          for attempt in 1 2 3 4 5 6 7 8 9 10; do
-            if terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate" 2>&1; then
-              echo "\u2713 Terraform init succeeded (attempt $attempt)"
-              break
-            fi
-            if [ "$attempt" -eq 10 ]; then
-              echo "::error::Terraform init failed after 10 attempts — firewall rule may not have propagated"
-              exit 1
-            fi
-            echo "Attempt $attempt failed — waiting 30s for firewall propagation..."
-            sleep 30
-          done
+          terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate"
 
       - name: Terraform Destroy
         working-directory: infra
