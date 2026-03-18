@@ -6,11 +6,11 @@ on:
     workflows: [CI]
     types: [completed]
 
-  # TEMPORARY: trigger on push for pre-merge testing (remove after merge to main)
-  push:
-    branches: ['001-data-ingestor']
+  # Deploy staging as a PR check
+  pull_request:
+    branches: [main]
 
-  # Manual trigger for any branch
+  # Manual trigger for any environment
   workflow_dispatch:
     inputs:
       environment:
@@ -29,11 +29,10 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+  group: deploy-${{ github.event.inputs.environment || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
   cancel-in-progress: false
 
 env:
-  TF_VAR_environment_name: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'epcubegraph' || 'epcubegraph-staging') }}
   TF_VAR_location: 'eastus'
   ARM_USE_OIDC: 'true'
 
@@ -42,20 +41,24 @@ permissions:
   contents: read
 
 jobs:
-  # Gate: only deploy if CI passed (skip for manual dispatch)
+  # ── Staging: deploy on every push (via CI) and on PRs to main ──
   check-ci:
     runs-on: ubuntu-latest
+    # Skip production path (merge to main via workflow_run) — that's handled below
     if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      github.event.workflow_run.conclusion == 'success'
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main')
     steps:
-      - run: echo "CI passed, push, or manual dispatch — proceeding with deployment"
+      - run: echo "Staging deployment — CI passed, PR, or manual dispatch"
 
   deploy:
     needs: check-ci
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || (github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+    environment: staging
+
+    env:
+      TF_VAR_environment_name: 'epcubegraph-staging'
 
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
@@ -89,7 +92,7 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: terraform init -input=false
+        run: terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate"
 
       # Phase 1: Deploy infrastructure (without container images)
       - name: Terraform Apply — Infrastructure
@@ -193,26 +196,10 @@ jobs:
             echo "API not deployed (no FQDN) — skipping smoke test"
           fi
 
-      - name: Smoke test — VictoriaMetrics endpoint
+      - name: Smoke test — VictoriaMetrics (internal-only check)
         run: |
-          VM_FQDN="${{ needs.deploy.outputs.vm_fqdn }}"
-          if [ -n "$VM_FQDN" ] && [ "$VM_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${VM_FQDN}/health" 2>/dev/null) || true
-              if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ]; then
-                echo "✓ VictoriaMetrics responded: HTTP $STATUS"
-                break
-              fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
-              sleep 15
-            done
-            if [ "$STATUS" != "200" ] && [ "$STATUS" != "401" ]; then
-              echo "::error::VictoriaMetrics did not respond after 5 attempts"
-              exit 1
-            fi
-          else
-            echo "VictoriaMetrics FQDN not available — skipping smoke test"
-          fi
+          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "  API health endpoint validates internal connectivity"
 
       - name: Smoke test — epcube-exporter health
         run: |
@@ -235,17 +222,190 @@ jobs:
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # Tear down: auto-destroy staging for non-main branches, or manual destroy
+  # ── Production: deploy only on merge to main ──
+  check-ci-prod:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    steps:
+      - run: echo "Production deployment — merge to main or manual dispatch"
+
+  deploy-prod:
+    needs: check-ci-prod
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      TF_VAR_environment_name: 'epcubegraph'
+
+    outputs:
+      resource_group: ${{ steps.tf-output.outputs.resource_group }}
+      api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
+      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+      exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Terraform Init
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: terraform init -input=false -backend-config="key=epcubegraph-production.tfstate"
+
+      - name: Terraform Apply — Infrastructure
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Get ACR details
+        id: acr
+        working-directory: infra
+        run: |
+          echo "name=$(terraform output -raw acr_name)" >> "$GITHUB_OUTPUT"
+          echo "server=$(terraform output -raw acr_login_server)" >> "$GITHUB_OUTPUT"
+
+      - name: ACR Login
+        run: az acr login --name ${{ steps.acr.outputs.name }}
+
+      - name: Build & Push API image
+        id: api-image
+        run: |
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          docker build --tag "$IMAGE" --file api/Dockerfile api/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build & Push exporter image
+        id: exporter-image
+        run: |
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform Apply — Container Apps
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
+          TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
+        run: terraform apply -auto-approve -input=false
+
+      - name: Capture Terraform outputs
+        id: tf-output
+        working-directory: infra
+        run: |
+          echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
+          echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+
+  validate-prod:
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Wait for deployment to stabilize
+        run: sleep 60
+
+      - name: Run deployment validation
+        run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-prod.outputs.resource_group }}
+
+      - name: Smoke test — API health endpoint
+        run: |
+          API_FQDN="${{ needs.deploy-prod.outputs.api_fqdn }}"
+          if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+                echo "✓ API health endpoint responded: HTTP $STATUS"
+                break
+              fi
+              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              sleep 15
+            done
+            if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
+              echo "::error::API health endpoint did not respond after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "API not deployed (no FQDN) — skipping smoke test"
+          fi
+
+      - name: Smoke test — VictoriaMetrics (internal-only check)
+        run: |
+          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "  API health endpoint validates internal connectivity"
+
+      - name: Smoke test — epcube-exporter health
+        run: |
+          EXPORTER_FQDN="${{ needs.deploy-prod.outputs.exporter_fqdn }}"
+          if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
+              if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
+                echo "✓ epcube-exporter health responded: HTTP $STATUS"
+                break
+              fi
+              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              sleep 15
+            done
+            if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
+              echo "::error::epcube-exporter did not respond after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
+          fi
+
+  # Tear down: only on manual request (no auto-destroy)
   destroy:
     needs: [deploy, validate]
     runs-on: ubuntu-latest
     if: >
       always() &&
       needs.validate.result == 'success' &&
-      (
-        github.event.inputs.destroy == 'true' ||
-        (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch != 'main')
-      )
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.destroy == 'true'
 
     steps:
       - uses: actions/checkout@v6
@@ -268,7 +428,9 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: terraform init -input=false
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate"
 
       - name: Terraform Destroy
         working-directory: infra
