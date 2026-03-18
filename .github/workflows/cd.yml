@@ -159,6 +159,14 @@ jobs:
         run: terraform apply -auto-approve -input=false
 
       # Phase 2: Build and push container images
+      # Re-authenticate — OIDC token may have expired during long infrastructure apply
+      - name: Azure Re-Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Get ACR details
         id: acr
         working-directory: infra
@@ -186,6 +194,14 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       # Phase 3: Deploy container apps with built images
+      # Re-authenticate — OIDC token may have expired during Docker builds
+      - name: Azure Re-Login for Phase 3 (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Terraform Apply — Container Apps
         working-directory: infra
         env:
@@ -404,6 +420,14 @@ jobs:
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
+      # Re-authenticate — OIDC token may have expired during long infrastructure apply
+      - name: Azure Re-Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Get ACR details
         id: acr
         working-directory: infra
@@ -429,6 +453,14 @@ jobs:
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Re-authenticate — OIDC token may have expired during Docker builds
+      - name: Azure Re-Login for Container Apps (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Apply — Container Apps
         working-directory: infra
@@ -624,6 +656,14 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment || 'staging' }}"
           terraform init -input=false -backend-config="key=epcubegraph-${ENV}.tfstate"
+
+      # Re-authenticate — OIDC token may have expired during firewall propagation wait
+      - name: Azure Re-Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Terraform Destroy
         working-directory: infra
