@@ -14,4 +14,3 @@ epcube_password = "your-epcube-password"
 
 # Optional overrides (defaults are usually fine):
 # victoria_metrics_image = "victoriametrics/victoria-metrics:v1.106.1"
-# vmauth_image           = "victoriametrics/vmauth:v1.106.1"

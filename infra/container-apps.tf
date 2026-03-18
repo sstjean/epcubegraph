@@ -167,9 +167,8 @@ resource "azurerm_container_app" "api" {
 
       env {
         name = "VictoriaMetrics__Url"
-        # Route through vmauth (port 80 → ingress targetPort 8427 → localhost:8428).
-        # Container Apps inter-app communication only works on port 80/443.
-        # vmauth's unauthorized_user config allows unauthenticated read queries.
+        # Container Apps inter-app communication uses internal ingress on port 80.
+        # VictoriaMetrics runs internal-only (targetPort 8428), reachable via app name.
         value = "http://${azurerm_container_app.vm.name}"
       }
     }

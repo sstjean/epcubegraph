@@ -61,6 +61,5 @@ public class SecurityTests : IClassFixture<TestWebApplicationFactory>
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // prometheus-net exposes process metrics, not telemetry data
         Assert.DoesNotContain("epcube_", content);
-        Assert.DoesNotContain("epcube_", content);
     }
 }

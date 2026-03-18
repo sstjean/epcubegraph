@@ -143,7 +143,7 @@ After 2 scrape cycles (~2 minutes):
 ```bash
 # Query via the API
 API_FQDN=$(cd infra && terraform output -raw api_fqdn)
-curl "https://$API_FQDN/healthz"
+curl "https://$API_FQDN/api/v1/health"
 ```
 
 ### Local Development Stack (Optional)

@@ -8,7 +8,7 @@ namespace EpCubeGraph.Api;
 /// <summary>
 /// Passthrough authentication handler for local development.
 /// Approves all requests with a synthetic identity.
-/// Only active when Authentication:DisableForDevelopment is true AND environment is Development.
+/// Only active when Authentication:DisableAuth (or EPCUBE_DISABLE_AUTH) is true AND environment is Development.
 /// </summary>
 public sealed class NoAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {

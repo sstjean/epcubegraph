@@ -111,10 +111,10 @@ On completion, you'll see:
 # Test the API health endpoint
 cd infra
 API_FQDN=$(terraform output -raw api_fqdn)
-curl -sf "https://$API_FQDN/healthz"
+curl -sf "https://$API_FQDN/api/v1/health"
 ```
 
-A `{"status":"ok"}` response confirms the stack is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
+A `{"status":"healthy"}` response confirms the stack is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
 
 ### What Gets Created
 

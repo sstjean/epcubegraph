@@ -16,7 +16,7 @@ public class ModelSerializationTests
         // Arrange
         var devices = new List<DeviceInfo>
         {
-            new("battery", "storage_battery", "10.0.0.1")
+            new("battery", "storage_battery", Manufacturer: "EpCube")
         };
         var response = new DeviceListResponse(devices);
 
@@ -111,7 +111,7 @@ public class ModelSerializationTests
         // Arrange
         var original = new DeviceListResponse(new List<DeviceInfo>
         {
-            new("d1", "cls", "10.0.0.1", Online: true)
+            new("d1", "cls", Manufacturer: "EpCube", Online: true)
         });
         var json = JsonSerializer.Serialize(original);
 
