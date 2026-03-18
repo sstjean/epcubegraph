@@ -457,15 +457,37 @@ else
     fail "Soft delete not enabled"
   fi
 
-  # Check required secrets exist
+  # Check required secrets exist (may fail if KV firewall blocks runner IP)
   KV_SECRETS=$(az keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv 2>/dev/null || echo "")
-  for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
-    if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
-      pass "Secret '$expected_secret' exists"
+  if [[ -z "$KV_SECRETS" ]]; then
+    # Firewall likely blocking data-plane access — check via Container App secrets instead
+    EXP_CONTAINER_JSON=$(az containerapp show --name "${ENV_NAME}-exporter" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+    if [[ -n "$EXP_CONTAINER_JSON" ]]; then
+      EXP_CA_SECRETS=$(echo "$EXP_CONTAINER_JSON" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+secrets = d['properties']['configuration'].get('secrets',[])
+print(' '.join(s['name'] for s in secrets))
+" 2>/dev/null || echo "")
+      for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
+        if echo "$EXP_CA_SECRETS" | grep -q "$expected_secret"; then
+          pass "Secret '$expected_secret' referenced in Container App (KV data-plane blocked by firewall)"
+        else
+          fail "Secret '$expected_secret' not found in Container App or Key Vault"
+        fi
+      done
     else
-      fail "Secret '$expected_secret' not found"
+      fail "Cannot verify KV secrets (firewall blocks data-plane, exporter not found)"
     fi
-  done
+  else
+    for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
+      if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
+        pass "Secret '$expected_secret' exists"
+      else
+        fail "Secret '$expected_secret' not found"
+      fi
+    done
+  fi
 fi
 
 # ==============================================================================
