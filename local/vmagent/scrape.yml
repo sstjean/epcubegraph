@@ -1,9 +1,0 @@
-# vmagent scrape configuration for epcube-exporter (production)
-
-scrape_configs:
-  - job_name: epcube
-    static_configs:
-      - targets: ["epcube-exporter:9200"]
-    metrics_path: /metrics
-    scrape_interval: 60s
-    scrape_timeout: 30s

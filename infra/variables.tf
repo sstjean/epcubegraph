@@ -47,3 +47,8 @@ variable "epcube_password" {
   sensitive   = true
   default     = ""
 }
+
+variable "allowed_ips" {
+  description = "IP addresses allowed to access Key Vault and storage data plane. Populated automatically: CD pipeline detects runner IP, local deploys detect your IP. No default — deployer must always identify themselves."
+  type        = list(string)
+}

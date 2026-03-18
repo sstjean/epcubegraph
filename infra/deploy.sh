@@ -295,10 +295,6 @@ cmd_output_summary() {
   echo -e "  ${BOLD}Entra ID:${NC}"
   echo -e "    Tenant ID:  $(tf_output -raw entra_tenant_id 2>/dev/null || echo 'pending')"
   echo -e "    Client ID:  $(tf_output -raw entra_app_client_id 2>/dev/null || echo 'pending')"
-  echo ""
-  echo -e "  ${BOLD}Remote Write (external sources):${NC}"
-  echo -e "    URL:   $(tf_output -raw remote_write_url 2>/dev/null || echo 'pending')"
-  echo -e "    Token: run ${BOLD}terraform output -raw remote_write_token${NC}"
   echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
 }
 

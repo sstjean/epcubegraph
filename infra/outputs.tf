@@ -30,12 +30,6 @@ output "acr_name" {
   value       = azurerm_container_registry.main.name
 }
 
-output "remote_write_token" {
-  description = "Remote-write bearer token (for local docker-compose vmagent)"
-  value       = random_password.remote_write_token.result
-  sensitive   = true
-}
-
 output "entra_app_client_id" {
   description = "Entra ID application (client) ID"
   value       = azuread_application.api.client_id

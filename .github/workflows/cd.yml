@@ -35,6 +35,8 @@ concurrency:
 env:
   TF_VAR_location: 'eastus'
   ARM_USE_OIDC: 'true'
+  TFSTATE_STORAGE_ACCOUNT: 'tfstateepcubegraph'
+  TFSTATE_RESOURCE_GROUP: 'tfstate-rg'
 
 permissions:
   id-token: write   # OIDC token for Azure login
@@ -76,6 +78,25 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Zero-trust: detect runner IP and whitelist on tfstate storage
+      - name: Detect runner IP
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::${RUNNER_IP}"
+          echo "✓ Detected runner IP"
+
+      - name: Whitelist runner IP on tfstate storage
+        run: |
+          az storage account network-rule add \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "Waiting for firewall rule to propagate..."
+          sleep 30
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -95,6 +116,7 @@ jobs:
         run: terraform init -input=false -backend-config="key=epcubegraph-staging.tfstate"
 
       # Phase 1: Deploy infrastructure (without container images)
+      # Runner IP is passed so Terraform whitelists it on Key Vault and app storage
       - name: Terraform Apply — Infrastructure
         working-directory: infra
         env:
@@ -103,6 +125,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
       # Phase 2: Build and push container images
@@ -143,6 +166,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
@@ -153,6 +177,17 @@ jobs:
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+
+      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
+      - name: Remove runner IP from tfstate storage
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account network-rule remove \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from tfstate firewall"
 
   validate:
     needs: deploy
@@ -255,6 +290,25 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Zero-trust: detect runner IP and whitelist on tfstate storage
+      - name: Detect runner IP
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::${RUNNER_IP}"
+          echo "✓ Detected runner IP"
+
+      - name: Whitelist runner IP on tfstate storage
+        run: |
+          az storage account network-rule add \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "Waiting for firewall rule to propagate..."
+          sleep 30
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -281,6 +335,7 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
       - name: Get ACR details
@@ -319,6 +374,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
@@ -329,6 +385,17 @@ jobs:
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+
+      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
+      - name: Remove runner IP from tfstate storage
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account network-rule remove \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from tfstate firewall"
 
   validate-prod:
     needs: deploy-prod
@@ -417,6 +484,25 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Zero-trust: detect runner IP and whitelist on tfstate storage
+      - name: Detect runner IP
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::${RUNNER_IP}"
+          echo "✓ Detected runner IP"
+
+      - name: Whitelist runner IP on tfstate storage
+        run: |
+          az storage account network-rule add \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "Waiting for firewall rule to propagate..."
+          sleep 30
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -440,4 +526,16 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform destroy -auto-approve -input=false
+
+      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
+      - name: Remove runner IP from tfstate storage
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account network-rule remove \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from tfstate firewall"

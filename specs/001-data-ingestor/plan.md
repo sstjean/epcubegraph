@@ -17,7 +17,7 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 
 **Language/Version**: C# / .NET 10
 **Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI)
-**Storage**: VictoriaMetrics single-node on Azure Container Apps (Prometheus remote-write ingestion, PromQL queries)
+**Storage**: VictoriaMetrics single-node on Azure Container Apps (promscrape pull ingestion, PromQL queries)
 **Testing**: xUnit, coverlet (coverage), Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory), Testcontainers for .NET (integration tests with VictoriaMetrics)
 **Target Platform**: Azure Container Apps (all services: VictoriaMetrics, epcube-exporter, API)
 **Project Type**: Web service (API) + cloud-deployed data ingestion
@@ -130,11 +130,10 @@ local/
 │   ├── exporter.py          # Cloud API poller + Prometheus metrics server
 │   └── test_exporter.py     # Python test suite (49 tests)
 ├── mock-exporter/           # Mock data for local development
-├── docker-compose.yml             # Legacy local dev stack
 ├── docker-compose.local.yml       # Local dev stack (mock data + VictoriaMetrics)
 ├── docker-compose.prod-local.yml  # Local dev stack (real cloud data)
 └── vmagent/
-    ├── scrape.yml                 # Scrape config for remote-write to Azure
+    ├── scrape-local.yml           # Scrape config for local mock-exporter
     └── scrape-prod-local.yml      # Scrape config for local VictoriaMetrics
 
 # Azure infrastructure (Terraform)

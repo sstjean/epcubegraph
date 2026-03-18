@@ -15,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="${SCRIPT_DIR}"
-COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
+COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.prod-local.yml"
 ENV_FILE="${COMPOSE_DIR}/.env"
 ENV_EXAMPLE="${COMPOSE_DIR}/.env.example"
 
@@ -55,7 +55,7 @@ validate_env() {
     if [[ -f "${ENV_EXAMPLE}" ]]; then
       warn ".env file not found. Creating from .env.example ..."
       cp "${ENV_EXAMPLE}" "${ENV_FILE}"
-      warn "Edit ${ENV_FILE} with your device IPs and remote-write credentials, then re-run."
+      warn "Edit ${ENV_FILE} with your EP Cube credentials, then re-run."
       exit 1
     else
       die ".env file not found and no .env.example available."
@@ -74,8 +74,6 @@ validate_env() {
   local -A required=(
     [EPCUBE_USERNAME]="<"
     [EPCUBE_PASSWORD]="<"
-    [REMOTE_WRITE_URL]="<"
-    [REMOTE_WRITE_TOKEN]="<"
   )
 
   for var in "${!required[@]}"; do
@@ -89,12 +87,6 @@ validate_env() {
       ((errors++))
     fi
   done
-
-  # Validate remote-write URL
-  if [[ -n "${REMOTE_WRITE_URL:-}" && ! "${REMOTE_WRITE_URL}" =~ ^https?:// ]]; then
-    error "REMOTE_WRITE_URL must start with http:// or https://"
-    ((errors++))
-  fi
 
   if ((errors > 0)); then
     die "Fix the ${errors} error(s) above in ${ENV_FILE} and re-run."

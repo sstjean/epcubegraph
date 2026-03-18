@@ -459,7 +459,7 @@ else
 
   # Check required secrets exist
   KV_SECRETS=$(az keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv 2>/dev/null || echo "")
-  for expected_secret in remote-write-token epcube-username epcube-password; do
+  for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
     if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
       pass "Secret '$expected_secret' exists"
     else

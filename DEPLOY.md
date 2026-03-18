@@ -15,14 +15,14 @@ Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure a
 │                                                                      │
 │  ┌───────────────────────────┐  ┌─────────────────────────────────┐  │
 │  │ VictoriaMetrics App       │  │ API App                         │  │
-│  │  vmauth (:8427, ingress)  │  │  ASP.NET Core (:8080)           │  │
-│  │  VictoriaMetrics (:8428)  │──│  Entra ID auth                  │  │
+│  │  VictoriaMetrics (:8428)  │  │  ASP.NET Core (:8080)           │  │
+│  │  (internal-only)          │──│  Entra ID auth                  │  │
 │  │    scrapes ──┐            │  │  PromQL queries ────────────────│──│─► Clients
 │  └──────────────│────────────┘  └─────────────────────────────────┘  │
 │                 │                                                    │
 │  ┌──────────────▼────────────┐                                       │
 │  │ epcube-exporter App       │    Key Vault                          │
-│  │  :9200/metrics (internal) │    (bearer token, credentials)        │
+│  │  :9200/metrics (internal) │    (OAuth secret, credentials)        │
 │  │  polls cloud API ────────────► monitoring-us.epcube.com           │
 │  └───────────────────────────┘                                       │
 │                                                                      │
@@ -69,7 +69,7 @@ epcube_username  = "your-email@example.com"
 epcube_password  = "your-epcube-password"
 ```
 
-All other values (Entra ID app, bearer token, ACR, Key Vault) are auto-generated.
+All other values (Entra ID app, OAuth secret, ACR, Key Vault) are auto-generated.
 
 ### 2. Deploy
 
@@ -108,16 +108,13 @@ On completion, you'll see:
 # Show all outputs
 ./deploy.sh --output
 
-# Test VictoriaMetrics endpoint
+# Test the API health endpoint
 cd infra
-VM_FQDN=$(terraform output -raw vm_fqdn)
-TOKEN=$(terraform output -raw remote_write_token)
-curl -sf -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer $TOKEN" \
-  "https://$VM_FQDN/api/v1/query?query=up"
+API_FQDN=$(terraform output -raw api_fqdn)
+curl -sf "https://$API_FQDN/healthz"
 ```
 
-A `200` response confirms VictoriaMetrics is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
+A `{"status":"ok"}` response confirms the stack is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
 
 ### What Gets Created
 
@@ -125,11 +122,11 @@ A `200` response confirms VictoriaMetrics is running. Telemetry data should appe
 |----------|---------|
 | Resource Group | Container for all resources |
 | Container Apps Environment | Hosting platform with Log Analytics |
-| VictoriaMetrics + vmauth | Time-series DB with bearer-token auth, scrapes epcube-exporter |
+| VictoriaMetrics | Time-series DB (internal-only), scrapes epcube-exporter |
 | epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics (internal) |
 | API Container App | ASP.NET Core service with Entra ID auth |
 | Azure Container Registry | Private Docker image registry |
-| Key Vault | Stores bearer token and EP Cube credentials |
+| Key Vault | Stores EP Cube credentials and OAuth client secret |
 | Storage Account + File Share | Persistent VictoriaMetrics data (50 GB) |
 | Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
 | User-Assigned Managed Identity | ACR pull + Key Vault read access |
