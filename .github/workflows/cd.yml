@@ -113,7 +113,7 @@ jobs:
       - name: Wait for firewall propagation
         run: |
           echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 20); do
+          for attempt in $(seq 1 30); do
             if az storage container list \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
               --auth-mode login \
@@ -121,10 +121,10 @@ jobs:
               echo "✓ tfstate storage accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
           exit 1
 
       - name: Setup Terraform
@@ -377,7 +377,7 @@ jobs:
       - name: Wait for firewall propagation
         run: |
           echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 20); do
+          for attempt in $(seq 1 30); do
             if az storage container list \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
               --auth-mode login \
@@ -385,10 +385,10 @@ jobs:
               echo "✓ tfstate storage accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
           exit 1
 
       - name: Setup Terraform
@@ -578,6 +578,9 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.destroy == 'true'
 
+    env:
+      TF_VAR_environment_name: ${{ github.event.inputs.environment == 'production' && 'epcubegraph' || 'epcubegraph-staging' }}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -628,7 +631,7 @@ jobs:
       - name: Wait for firewall propagation
         run: |
           echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 20); do
+          for attempt in $(seq 1 30); do
             if az storage container list \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
               --auth-mode login \
@@ -636,10 +639,10 @@ jobs:
               echo "✓ tfstate storage accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/20 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 20 attempts (5 min)"
+          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
           exit 1
 
       - name: Setup Terraform
