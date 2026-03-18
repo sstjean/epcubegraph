@@ -246,18 +246,18 @@ List values for a specific label.
 
 ### GET /api/v1/health
 
-Health check endpoint (unauthenticated).
+Health check endpoint (unauthenticated). Currently returns a static response (no runtime dependency check). The 503 path is reserved for a future VictoriaMetrics connectivity check.
 
 **Response**: `200 OK`
 
 ```json
 {
   "status": "healthy",
-  "victoriametrics": "reachable"
+  "victoriametrics": "ok"
 }
 ```
 
-**Response**: `503 Service Unavailable`
+**Response**: `503 Service Unavailable` *(reserved — not currently triggered)*
 
 ```json
 {
@@ -342,33 +342,6 @@ Get the grid energy balance (FR-003a).
 **Sign convention**: Positive = net import from grid (kWh), Negative = net export to grid (kWh).
 
 **Implementation**: Executes PromQL `epcube_grid_import_kwh - epcube_grid_export_kwh`. Grid import and export totals are directly available from the EP Cube cloud API.
-
----
-
-## Remote-Write Ingestion Endpoint (Internal)
-
-This endpoint is served by **vmauth → VictoriaMetrics**, not the C# API.
-
-### POST /api/v1/write
-
-Accepts Prometheus remote-write protocol (protobuf + snappy compressed).
-
-**Authentication**: Pre-shared bearer token (FR-012, FR-013).
-
-```
-Authorization: Bearer <remote-write-token>
-```
-
-**Request body**: Prometheus remote-write protobuf (snappy-compressed `WriteRequest`).
-
-**Response**: `204 No Content` (success, no body)
-
-**Error responses**:
-
-| Status | Condition |
-|--------|-----------|
-| `401 Unauthorized` | Missing or invalid bearer token |
-| `400 Bad Request` | Invalid protobuf or decompression failure |
 
 ---
 

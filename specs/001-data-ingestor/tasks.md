@@ -48,7 +48,7 @@
 
 **Independent Test**: Run `infra/deploy.sh` to verify epcube-exporter Container App deploys, VictoriaMetrics scrapes it, and metrics appear in VictoriaMetrics.
 
-**FRs covered**: FR-015, FR-016, FR-017, FR-018
+**FRs covered**: FR-015, FR-016, FR-017
 
 **Also covers (indirectly)**: FR-001, FR-002 (epcube-exporter polls both EP Cube 1.0 and 2.0 devices via the cloud API), FR-006 (epcube-exporter retries on next poll cycle; VictoriaMetrics handles scrape failures gracefully)
 
@@ -65,22 +65,22 @@
 
 ## Phase 4: User Story 1 — Ingest Telemetry / Azure Infrastructure (Priority: P1)
 
-**Goal**: Deploy VictoriaMetrics + vmauth on Azure Container Apps with bearer-token auth, Key Vault for secrets, 5-year retention, deduplication
+**Goal**: Deploy VictoriaMetrics on Azure Container Apps with internal-only ingress, promscrape scraping epcube-exporter, Key Vault for secrets, 5-year retention, deduplication
 
-**Independent Test**: Deploy Terraform to a resource group. Send a test Prometheus remote-write request with the bearer token and verify VictoriaMetrics stores the data. Verify unauthenticated requests are rejected with 401.
+**Independent Test**: Deploy Terraform to a resource group. Verify VictoriaMetrics is internal-only (no external ingress), verify promscrape scrapes epcube-exporter, and confirm metrics appear in VictoriaMetrics.
 
-**FRs covered**: FR-004, FR-005, FR-007, FR-011, FR-012, FR-013, FR-014
+**FRs covered**: FR-005, FR-007, FR-011, FR-014
 
 **Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). No application-level normalization code is required.
 
 ### Implementation for User Story 1
 
-- [x] T014 [P] [US1] Create Key Vault Terraform module for bearer token secret storage with access policy in infra/keyvault.tf
+- [x] T014 [P] [US1] Create Key Vault Terraform module for EP Cube credential and OAuth secret storage with access policy in infra/keyvault.tf
 - [x] T015 [P] [US1] Create deployment variables file with environment name, location, container image settings in infra/variables.tf
-- [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/container-apps.tf
+- [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume, internal-only ingress on port 8428), promscrape config targeting epcube-exporter, API container placeholder in infra/container-apps.tf
 - [x] T017 [US1] Add Entra ID app registration and managed identity resources in infra/entra.tf for API authentication (FR-010)
 
-**Checkpoint**: `terraform validate` passes. VictoriaMetrics + vmauth accept authenticated remote-write requests.
+**Checkpoint**: `terraform validate` passes. VictoriaMetrics accepts promscrape-based ingestion from epcube-exporter.
 
 ---
 
@@ -118,7 +118,7 @@
 
 ### Endpoints for User Story 2
 
-- [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, checks VictoriaMetrics reachability, returns HealthResponse with 200 or 503) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
+- [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, static HealthResponse("healthy", "ok") with 200 — no VictoriaMetrics dependency) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
 - [x] T028 [US2] Implement QueryEndpoints: GET /api/v1/query, GET /api/v1/query_range, GET /api/v1/series, GET /api/v1/labels, GET /api/v1/label/{name}/values as authenticated PromQL passthrough to VictoriaMetrics in api/src/EpCubeGraph.Api/Endpoints/QueryEndpoints.cs
 - [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries epcube_device_info + epcube_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
 - [x] T030 [US2] Implement GridEndpoints: GET /api/v1/grid (optional start, end, step params, delegates to GridCalculator, returns PromQL range result) in api/src/EpCubeGraph.Api/Endpoints/GridEndpoints.cs
@@ -142,10 +142,10 @@
 **Purpose**: Coverage enforcement, end-to-end validation, security hardening
 
 - [x] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
-- [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
-- [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
-- [x] T044 [P] Create CI pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
-- [x] T050 [P] Create CD pipeline: .github/workflows/cd.yml with OIDC Azure login, Terraform apply (remote state), ACR image build+push, deployment validation via validate-deployment.sh, optional environment teardown. Triggers on CI success for main branch or manual dispatch with environment selection (staging/production)
+- [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate. Also verify SC-001/SC-002 infrastructure: VictoriaMetrics uses persistent Azure File Share, `up` metric is populated after deployment, and ephemeral storage edge case (L2) is mitigated by persistent volume mount
+- [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify VictoriaMetrics is internal-only (no external ingress)
+- [x] T044 [P] Create CI pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest). Pipeline MUST produce zero warnings on a clean run (constitution: CI/CD Zero Warnings)
+- [x] T050 [P] Create CD pipeline: .github/workflows/cd.yml with OIDC Azure login, Terraform apply (remote state), ACR image build+push, deployment validation via validate-deployment.sh, optional environment teardown. Triggers on CI success for main branch or manual dispatch with environment selection (staging/production). Pipeline MUST produce zero warnings on a clean run (constitution: CI/CD Zero Warnings)
 
 ---
 
@@ -157,9 +157,9 @@
 
 - [x] T045 [US3] Add health endpoint to epcube-exporter: GET /health returns 200 {"status":"ok"} when healthy, 503 {"status":"unhealthy","reasons":[...]} when no poll in 5 min or 5+ consecutive errors (FR-022) in local/epcube-exporter/exporter.py
 - [x] T046 [US3] Add debug status page to epcube-exporter: GET / and /status render HTML showing last 10 poll snapshots with per-device tables, uptime, poll count, error count, health chiclet, auto-refresh, browser timezone conversion (FR-023) in local/epcube-exporter/exporter.py
-- [x] T047 [US3] Add JWT auth to epcube-exporter: validate Entra ID JWT (PyJWT + JWKS) on / and /status, bypass with EPCUBE_DISABLE_AUTH=true for local dev, /metrics and /health unauthenticated (FR-023, FR-024) in local/epcube-exporter/exporter.py
-- [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress and AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE env vars (FR-024) in infra/container-apps.tf
-- [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 42 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
+- [x] T047 [US3] Add auth to epcube-exporter: OAuth 2.0 Authorization Code flow with PKCE for browser access (/login → Entra ID → /.auth/callback → session cookie), Bearer JWT validation for API clients, bypass with EPCUBE_DISABLE_AUTH=true for local dev, /metrics and /health unauthenticated (FR-023, FR-024) in local/epcube-exporter/exporter.py
+- [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE, AZURE_CLIENT_SECRET (Key Vault), AZURE_REDIRECT_URI env vars, and Entra ID redirect URI registration (FR-024) in infra/container-apps.tf, infra/entra.tf, infra/keyvault.tf
+- [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 49 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
 
 ---
 

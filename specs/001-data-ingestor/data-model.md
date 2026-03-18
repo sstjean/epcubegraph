@@ -154,7 +154,7 @@ Offline ──scrape success──▶ Online (scrape_success=1)
 
 ## Deduplication
 
-VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If an external remote-write client retries and sends duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
+VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If promscrape retries a scrape or overlapping scrape windows produce duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
 
 ---
 

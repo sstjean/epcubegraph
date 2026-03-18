@@ -39,12 +39,11 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 | — | Platform: Azure | ✅ PASS | VictoriaMetrics + API on Azure Container Apps. Justified exception: VictoriaMetrics is not Azure-native but spec documents the choice (clarification Q3). |
 | — | Platform: Docker | ✅ PASS | All services containerized in Azure Container Apps. Dockerfiles in repo. |
 | — | Security: TLS | ✅ PASS | All endpoints HTTPS. Azure Container Apps provides TLS termination. |
-| — | Security: Auth | ✅ PASS | Remote-write: bearer token from Key Vault (FR-012). API: Entra ID OAuth 2.0 JWT (FR-010). |
+| — | Security: Auth | ✅ PASS | API: Entra ID OAuth 2.0 JWT (FR-010). Exporter debug page: OAuth authorization code flow with session cookies. Health/metrics endpoints unauthenticated (no telemetry data). |
 | — | Security: Authz | ✅ PASS | `user_impersonation` scope required on all telemetry endpoints (FR-010a). Health and metrics endpoints are unauthenticated but expose no telemetry data. |
 | — | Security: Input Validation | ✅ PASS | FR-019 requires param presence/type validation. PromQL passthrough is unrestricted by design (clarification Q9). |
-| — | Security: Zero-Trust | ✅ PASS | Every request authenticated regardless of origin. No implicit trust between tiers. Least privilege via managed identities. |
+| — | Security: Zero-Trust | ⚠ COMPLEXITY | Internal service communication (API→VM queries, promscrape→exporter /metrics) uses no per-request auth. See Complexity Tracking. |
 | — | Security: Secrets | ✅ PASS | Bearer token in Azure Key Vault, injected as Container Apps secret. No secrets in source. |
-| — | Security: Tokens | ⚠ COMPLEXITY | Remote-write uses a pre-shared bearer token (FR-012) — technically a long-lived static token. Constitution prohibits long-lived static tokens. See Complexity Tracking. |
 | — | DevOps: IaC | ✅ PASS | All Azure infrastructure defined in Terraform under `infra/`. No manual portal resource creation. |
 | — | DevOps: CI/CD | ✅ PASS | CI gate enforces full test suite before merge. Pipeline deploys on main branch merge. |
 | — | DevOps: Reproducible | ✅ PASS | Container images built from Dockerfiles in repo. Azure infra from Terraform with variables. Same commit → same deployment. |
@@ -55,9 +54,9 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 
 The constitution requires Azure-native services. VictoriaMetrics is not Azure-native. This is documented as a justified exception per the spec clarification Q3. Azure Monitor Managed Prometheus was evaluated and rejected because VictoriaMetrics is simpler (single container, no Azure-specific config, direct PromQL support, lower cost for single-user scale).
 
-### Complexity Tracking — Remote-Write Bearer Token
+### Complexity Tracking — Internal Service Communication Without Per-Request Auth
 
-The constitution prohibits long-lived static tokens. The remote-write bearer token (FR-012) is a pre-shared secret with no expiry mechanism for external remote-write clients. This is justified because: (1) external remote-write clients (e.g., local vmagent for development) have no built-in OAuth client-credentials flow; (2) the token is stored in Key Vault and can be rotated manually; (3) the simpler alternative (no auth) was rejected as it violates zero-trust. Mitigations: periodic manual rotation via Key Vault policy, and the token scope is limited to write-only on a single VictoriaMetrics instance.
+The constitution's zero-trust principle requires "internal services MUST NOT trust each other without explicit, per-request credential verification" and "Network location MUST NOT be treated as proof of trust." Two internal communication paths have no per-request authentication: (1) API queries VictoriaMetrics via HTTP over the Container Apps internal network, and (2) VictoriaMetrics promscrape scrapes epcube-exporter's `/metrics` endpoint. This is justified because: (1) VictoriaMetrics is internal-only (no external ingress) — unreachable from the internet; (2) `/metrics` and `/health` endpoints expose only operational counters and process metrics, never telemetry data (FR-021, FR-022); (3) the Container Apps environment provides network isolation at the platform level. Alternative rejected: mTLS between all containers adds certificate lifecycle management complexity disproportionate to the threat model of a single-user system with no multi-tenant data.
 
 ## Project Structure
 
@@ -128,7 +127,8 @@ api/
 local/
 ├── epcube-exporter/
 │   ├── Dockerfile           # Built and pushed to ACR by deploy.sh
-│   └── exporter.py          # Cloud API poller + Prometheus metrics server
+│   ├── exporter.py          # Cloud API poller + Prometheus metrics server
+│   └── test_exporter.py     # Python test suite (49 tests)
 ├── mock-exporter/           # Mock data for local development
 ├── docker-compose.yml             # Legacy local dev stack
 ├── docker-compose.local.yml       # Local dev stack (mock data + VictoriaMetrics)
@@ -144,9 +144,9 @@ infra/
 ├── outputs.tf               # Deployment outputs (FQDNs, IDs, URLs)
 ├── entra.tf                 # Entra ID app registration + service principal
 ├── acr.tf                   # Azure Container Registry + AcrPull role
-├── keyvault.tf              # Key Vault for bearer token + EP Cube creds
+├── keyvault.tf              # Key Vault for EP Cube creds + OAuth client secret
 ├── storage.tf               # Log Analytics + storage account + file share
-├── container-apps.tf        # Container Apps: VictoriaMetrics, vmauth, API, epcube-exporter
+├── container-apps.tf        # Container Apps: VictoriaMetrics (internal), API, epcube-exporter
 ├── deploy.sh                # Single-command deployment script
 ├── terraform.tfvars.example # Variable values template
 └── .gitignore               # Excludes .terraform/, state files
@@ -165,5 +165,5 @@ infra/
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
 | VictoriaMetrics (non-Azure-native) | Direct Prometheus remote-write compatibility, PromQL, simple single-container deployment | Azure Monitor Managed Prometheus: more complex config, higher cost at single-user scale, less direct PromQL control |
-| Pre-shared bearer token for remote-write (long-lived) | External remote-write clients have no built-in OAuth client-credentials flow | No auth: violates zero-trust. Mitigated by Key Vault storage and manual rotation policy |
+| Internal service communication without per-request auth (zero-trust) | API→VM and promscrape→exporter use unauthenticated HTTP within Container Apps internal network | mTLS between all containers: adds certificate lifecycle management disproportionate to single-user threat model. Endpoints expose no telemetry data. |
 | API dev auth bypass (`NoAuthHandler.cs`) | Enables local development without Entra ID configuration (`Authentication:DisableAuth` setting) | Requiring Entra ID for local dev adds friction without security benefit (bypass only activates in Development environment) |
