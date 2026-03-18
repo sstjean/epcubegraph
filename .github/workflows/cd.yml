@@ -677,7 +677,15 @@ jobs:
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-        run: terraform destroy -auto-approve -input=false
+        run: |
+          # First attempt may fail due to provider ordering (e.g., Entra app
+          # deleted before its redirect URIs resource). Refresh + retry resolves
+          # stale references in state.
+          if ! terraform destroy -auto-approve -input=false; then
+            echo "⚠ First destroy attempt failed — refreshing state and retrying..."
+            terraform refresh -input=false
+            terraform destroy -auto-approve -input=false
+          fi
 
       # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
       - name: Remove runner IP from firewalls
