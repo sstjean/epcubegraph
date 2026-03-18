@@ -22,12 +22,6 @@ variable "victoria_metrics_image" {
   default     = "victoriametrics/victoria-metrics:v1.106.1"
 }
 
-variable "vmauth_image" {
-  description = "vmauth container image"
-  type        = string
-  default     = "victoriametrics/vmauth:v1.106.1"
-}
-
 variable "api_image" {
   description = "API container image (set by deploy.sh after build; leave empty to skip API deployment)"
   type        = string

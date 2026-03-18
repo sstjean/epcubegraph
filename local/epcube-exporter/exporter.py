@@ -20,13 +20,17 @@ Optional env vars:
 """
 import base64
 import collections
+import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -48,10 +52,18 @@ METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9200"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
 
-# Entra ID JWT validation config (only used when auth is enabled)
+# Entra ID auth config (only used when auth is enabled)
 AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
 AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
 AZURE_AUDIENCE = os.environ.get("AZURE_AUDIENCE", "")
+AZURE_CLIENT_SECRET = os.environ.get("AZURE_CLIENT_SECRET", "")
+AZURE_REDIRECT_URI = os.environ.get("AZURE_REDIRECT_URI", "")
+
+# OAuth session management
+_SESSION_MAX_AGE = 3600  # 1 hour
+_pending_auth = {}  # state -> {code_verifier, timestamp}
+_sessions = {}  # session_id -> {expires, user}
+_auth_lock = threading.Lock()
 
 log = logging.getLogger("epcube-exporter")
 logging.basicConfig(
@@ -596,50 +608,251 @@ document.querySelectorAll('.utctime').forEach(el => {{
 </body></html>"""
 
 
+def _sign_session(session_id):
+    """HMAC-sign a session ID using the client secret."""
+    sig = hmac.new(AZURE_CLIENT_SECRET.encode(), session_id.encode(), hashlib.sha256).hexdigest()
+    return f"{session_id}.{sig}"
+
+
+def _verify_session_cookie(cookie_value):
+    """Verify and return session_id from a signed cookie, or None."""
+    if not cookie_value or "." not in cookie_value:
+        return None
+    session_id, sig = cookie_value.rsplit(".", 1)
+    expected = hmac.new(AZURE_CLIENT_SECRET.encode(), session_id.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return None
+    with _auth_lock:
+        session = _sessions.get(session_id)
+    if not session or session["expires"] < time.time():
+        return None
+    return session_id
+
+
+def _cleanup_expired():
+    """Remove expired sessions and stale auth states."""
+    now = time.time()
+    with _auth_lock:
+        for sid in [k for k, v in _sessions.items() if v["expires"] < now]:
+            del _sessions[sid]
+        for st in [k for k, v in _pending_auth.items() if v["timestamp"] < now - 600]:
+            del _pending_auth[st]
+
+
 class MetricsHandler(BaseHTTPRequestHandler):
     collector = None  # Set by main
     _jwks_client = None  # Lazily initialized
 
+    def _get_cookie(self, name):
+        """Extract a named cookie value from the Cookie header."""
+        cookie_header = self.headers.get("Cookie", "")
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if part.startswith(f"{name}="):
+                return part[len(name) + 1:]
+        return None
+
+    def _is_browser(self):
+        """Heuristic: request came from a browser (Accept contains text/html)."""
+        accept = self.headers.get("Accept", "")
+        return "text/html" in accept
+
     def _check_auth(self):
-        """Validate JWT token. Returns True if authorized, False if rejected."""
+        """Validate auth via session cookie or JWT Bearer token.
+
+        For browser requests without auth, redirects to /login.
+        For API requests without auth, returns 401 JSON.
+        Returns True if authorized, False if rejected (response already sent).
+        """
         if DISABLE_AUTH:
             return True
 
+        # Check session cookie first (browser flow)
+        session_cookie = self._get_cookie("_session")
+        if _verify_session_cookie(session_cookie):
+            return True
+
+        # Check Bearer token (API flow)
         auth_header = self.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter"')
-            self.send_header("Content-Type", "application/json")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                import jwt
+                if MetricsHandler._jwks_client is None:
+                    jwks_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
+                    MetricsHandler._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
+
+                signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(token)
+                jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256"],
+                    audience=AZURE_AUDIENCE,
+                    issuer=f"https://sts.windows.net/{AZURE_TENANT_ID}/",
+                )
+                return True
+            except Exception as e:
+                log.warning("JWT validation failed: %s", e)
+                self.send_response(401)
+                self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter", error="invalid_token"')
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Invalid or expired token"}).encode())
+                return False
+
+        # No valid auth — redirect browsers to login, return 401 for API clients
+        if self._is_browser() and AZURE_REDIRECT_URI:
+            self.send_response(302)
+            self.send_header("Location", "/login")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Missing or invalid Authorization header"}).encode())
             return False
 
-        token = auth_header[7:]
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter"')
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Missing or invalid Authorization header"}).encode())
+        return False
+
+    def _handle_login(self):
+        """Start OAuth 2.0 Authorization Code flow with PKCE."""
+        if not AZURE_REDIRECT_URI or not AZURE_CLIENT_ID:
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OAuth not configured")
+            return
+
+        state = secrets.token_urlsafe(32)
+        code_verifier = secrets.token_urlsafe(64)
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).rstrip(b"=").decode()
+
+        _cleanup_expired()
+        with _auth_lock:
+            _pending_auth[state] = {
+                "code_verifier": code_verifier,
+                "timestamp": time.time(),
+            }
+
+        params = urllib.parse.urlencode({
+            "client_id": AZURE_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": AZURE_REDIRECT_URI,
+            "scope": f"{AZURE_AUDIENCE}/user_impersonation openid",
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        })
+        authorize_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/oauth2/v2.0/authorize?{params}"
+
+        self.send_response(302)
+        self.send_header("Location", authorize_url)
+        self.end_headers()
+
+    def _handle_callback(self):
+        """Handle OAuth 2.0 callback — exchange code for tokens, create session."""
+        parsed = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(parsed.query)
+
+        error = qs.get("error", [None])[0]
+        if error:
+            desc = qs.get("error_description", [error])[0]
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(f"Authentication failed: {desc}".encode())
+            return
+
+        code = qs.get("code", [None])[0]
+        state = qs.get("state", [None])[0]
+        if not code or not state:
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Missing code or state parameter")
+            return
+
+        with _auth_lock:
+            pending = _pending_auth.pop(state, None)
+        if not pending:
+            self.send_response(400)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Invalid or expired state parameter")
+            return
+
+        # Exchange authorization code for tokens
+        token_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/oauth2/v2.0/token"
+        token_data = urllib.parse.urlencode({
+            "client_id": AZURE_CLIENT_ID,
+            "client_secret": AZURE_CLIENT_SECRET,
+            "code": code,
+            "redirect_uri": AZURE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+            "code_verifier": pending["code_verifier"],
+        }).encode()
+
         try:
-            import jwt
+            req = urllib.request.Request(token_url, data=token_data, method="POST")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                token_resp = json.loads(resp.read())
+        except Exception as e:
+            log.error("Token exchange failed: %s", e)
+            self.send_response(500)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Token exchange failed")
+            return
+
+        # Validate the access token (proves the user is authorized)
+        access_token = token_resp.get("access_token", "")
+        try:
+            import jwt as pyjwt
             if MetricsHandler._jwks_client is None:
                 jwks_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
-                MetricsHandler._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
+                MetricsHandler._jwks_client = pyjwt.PyJWKClient(jwks_url, cache_keys=True)
 
-            signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(token)
-            jwt.decode(
-                token,
+            signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(access_token)
+            claims = pyjwt.decode(
+                access_token,
                 signing_key.key,
                 algorithms=["RS256"],
                 audience=AZURE_AUDIENCE,
                 issuer=f"https://sts.windows.net/{AZURE_TENANT_ID}/",
             )
-            return True
+            user = claims.get("preferred_username", claims.get("sub", "unknown"))
         except Exception as e:
-            log.warning("JWT validation failed: %s", e)
+            log.warning("Access token validation failed: %s", e)
             self.send_response(401)
-            self.send_header("WWW-Authenticate", 'Bearer realm="epcube-exporter", error="invalid_token"')
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "text/plain")
             self.end_headers()
-            self.wfile.write(json.dumps({"error": "Invalid or expired token"}).encode())
-            return False
+            self.wfile.write(b"Access token validation failed")
+            return
+
+        # Create session
+        session_id = secrets.token_urlsafe(32)
+        with _auth_lock:
+            _sessions[session_id] = {
+                "expires": time.time() + _SESSION_MAX_AGE,
+                "user": user,
+            }
+
+        signed = _sign_session(session_id)
+        self.send_response(302)
+        self.send_header("Set-Cookie", f"_session={signed}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age={_SESSION_MAX_AGE}")
+        self.send_header("Location", "/status")
+        self.end_headers()
 
     def do_GET(self):
+        if self.path == "/login":
+            self._handle_login()
+            return
+        if self.path.startswith("/.auth/callback"):
+            self._handle_callback()
+            return
         if self.path == "/metrics":
             body = self.collector.get_metrics().encode()
             self.send_response(200)

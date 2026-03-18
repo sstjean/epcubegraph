@@ -38,3 +38,20 @@ resource "azuread_service_principal" "api" {
   client_id = azuread_application.api.client_id
   owners    = [data.azuread_client_config.current.object_id]
 }
+
+# ── Client secret for OAuth authorization code flow (exporter debug page) ──
+
+resource "azuread_application_password" "exporter_oauth" {
+  application_id = azuread_application.api.id
+  display_name   = "exporter-oauth-secret"
+  end_date_relative = "8760h" # 1 year
+}
+
+resource "azuread_application_redirect_uris" "exporter" {
+  application_id = azuread_application.api.id
+  type           = "Web"
+
+  redirect_uris = [
+    "https://${azurerm_container_app.exporter[0].ingress[0].fqdn}/.auth/callback",
+  ]
+}

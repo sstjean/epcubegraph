@@ -20,7 +20,7 @@ resource "azurerm_container_app_environment_storage" "vm" {
   access_mode                  = "ReadWrite"
 }
 
-# ── VictoriaMetrics + vmauth Container App ──
+# ── VictoriaMetrics Container App (internal-only) ──
 
 resource "azurerm_container_app" "vm" {
   name                         = "${var.environment_name}-vm"
@@ -33,15 +33,11 @@ resource "azurerm_container_app" "vm" {
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  secret {
-    name                = "remote-write-token"
-    key_vault_secret_id = azurerm_key_vault_secret.remote_write_token.versionless_id
-    identity            = azurerm_user_assigned_identity.main.id
-  }
-
+  # Internal-only ingress — accessible only to other apps in the environment.
+  # No external traffic; vmauth removed (no internet-facing reads/writes).
   ingress {
-    external_enabled = true
-    target_port      = 8427 # vmauth port
+    external_enabled = false
+    target_port      = 8428
     transport        = "http"
 
     traffic_weight {
@@ -54,20 +50,14 @@ resource "azurerm_container_app" "vm" {
     min_replicas = 1
     max_replicas = 1
 
-    # Init container writes vmauth config and promscrape config to shared
-    # EmptyDir volumes. vmauth's %{ENV_VAR} syntax is used for the token.
+    # Init container writes promscrape config to shared EmptyDir volume.
     init_container {
       name   = "config-init"
       image  = "busybox:1.36"
       cpu    = 0.25
       memory = "0.5Gi"
 
-      command = ["/bin/sh", "-c", "echo '${local.vmauth_config_b64}' | base64 -d > /etc/vmauth/config.yml && echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
-
-      volume_mounts {
-        name = "vmauth-config"
-        path = "/etc/vmauth"
-      }
+      command = ["/bin/sh", "-c", "echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
 
       volume_mounts {
         name = "promscrape-config"
@@ -100,37 +90,10 @@ resource "azurerm_container_app" "vm" {
       }
     }
 
-    container {
-      name   = "vmauth"
-      image  = var.vmauth_image
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      args = [
-        "-auth.config=/etc/vmauth/config.yml",
-        "-httpListenAddr=:8427",
-      ]
-
-      env {
-        name        = "REMOTE_WRITE_TOKEN"
-        secret_name = "remote-write-token"
-      }
-
-      volume_mounts {
-        name = "vmauth-config"
-        path = "/etc/vmauth"
-      }
-    }
-
     volume {
       name         = "vm-data"
       storage_name = azurerm_container_app_environment_storage.vm.name
       storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "vmauth-config"
-      storage_type = "EmptyDir"
     }
 
     volume {
@@ -244,6 +207,12 @@ resource "azurerm_container_app" "exporter" {
     identity            = azurerm_user_assigned_identity.main.id
   }
 
+  secret {
+    name                = "exporter-oauth-secret"
+    key_vault_secret_id = azurerm_key_vault_secret.exporter_oauth_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
   # External ingress — debug page requires JWT auth in code
   # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
@@ -299,7 +268,17 @@ resource "azurerm_container_app" "exporter" {
 
       env {
         name  = "AZURE_AUDIENCE"
-        value = "api://${var.environment_name}"
+        value = "api://${azuread_application.api.client_id}"
+      }
+
+      env {
+        name        = "AZURE_CLIENT_SECRET"
+        secret_name = "exporter-oauth-secret"
+      }
+
+      env {
+        name  = "AZURE_REDIRECT_URI"
+        value = "https://${azurerm_container_app.exporter[0].ingress[0].fqdn}/.auth/callback"
       }
     }
   }

@@ -6,7 +6,7 @@ output "resource_group_name" {
 }
 
 output "vm_fqdn" {
-  description = "FQDN of the VictoriaMetrics container app (remote-write endpoint)"
+  description = "Internal FQDN of the VictoriaMetrics container app"
   value       = azurerm_container_app.vm.ingress[0].fqdn
 }
 
@@ -30,13 +30,8 @@ output "acr_name" {
   value       = azurerm_container_registry.main.name
 }
 
-output "remote_write_url" {
-  description = "Full remote-write URL for external metric sources"
-  value       = "https://${azurerm_container_app.vm.ingress[0].fqdn}/api/v1/write"
-}
-
 output "remote_write_token" {
-  description = "Remote-write bearer token"
+  description = "Remote-write bearer token (for local docker-compose vmagent)"
   value       = random_password.remote_write_token.result
   sensitive   = true
 }

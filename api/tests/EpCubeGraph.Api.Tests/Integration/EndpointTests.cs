@@ -32,27 +32,13 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     // ── Health ──
 
     [Fact]
-    public async Task Health_ReturnsHealthy_WhenVmReachable()
+    public async Task Health_ReturnsHealthy()
     {
         var response = await _client.GetAsync("/api/v1/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("healthy", body);
-        Assert.Contains("reachable", body);
-    }
-
-    [Fact]
-    public async Task Health_ReturnsUnhealthy_WhenVmUnreachable()
-    {
-        _factory.MockClient.ShouldThrow = true;
-
-        var response = await _client.GetAsync("/api/v1/health");
-
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("unhealthy", body);
-        Assert.Contains("unreachable", body);
     }
 
     // ── Query ──

@@ -57,3 +57,11 @@ resource "azurerm_key_vault_secret" "epcube_password" {
   value        = var.epcube_password
   key_vault_id = azurerm_key_vault.main.id
 }
+
+# ── Exporter OAuth client secret (for browser login flow) ──
+
+resource "azurerm_key_vault_secret" "exporter_oauth_secret" {
+  name         = "exporter-oauth-secret"
+  value        = azuread_application_password.exporter_oauth.value
+  key_vault_id = azurerm_key_vault.main.id
+}

@@ -119,28 +119,28 @@ else
     fail "Provisioning state: $VM_STATUS (expected Succeeded)"
   fi
 
-  # Check ingress is external
+  # Check ingress is internal (zero-trust: VM not internet-facing)
   VM_INGRESS_EXT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
-  if [[ "$VM_INGRESS_EXT" == "True" ]]; then
-    pass "Ingress: external enabled"
+  if [[ "$VM_INGRESS_EXT" == "False" ]]; then
+    pass "Ingress: internal only (zero-trust)"
   else
-    fail "Ingress: external=$VM_INGRESS_EXT (expected True)"
+    fail "Ingress: external=$VM_INGRESS_EXT (expected False — VM should not be internet-facing)"
   fi
 
-  # Check target port is 8427 (vmauth)
+  # Check target port is 8428 (VictoriaMetrics direct, no vmauth)
   VM_PORT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$VM_PORT" == "8427" ]]; then
-    pass "Ingress target port: 8427 (vmauth)"
+  if [[ "$VM_PORT" == "8428" ]]; then
+    pass "Ingress target port: 8428 (VictoriaMetrics)"
   else
-    fail "Ingress target port: $VM_PORT (expected 8427)"
+    fail "Ingress target port: $VM_PORT (expected 8428)"
   fi
 
-  # Check FQDN is assigned
+  # Internal apps still get an FQDN (used for inter-app communication)
   VM_FQDN=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
   if [[ -n "$VM_FQDN" ]]; then
-    pass "FQDN assigned: $VM_FQDN"
+    pass "Internal FQDN assigned: $VM_FQDN"
   else
-    fail "No FQDN assigned"
+    fail "No internal FQDN assigned"
   fi
 
   # Check revision mode is Single
@@ -151,7 +151,7 @@ else
     fail "Revision mode: $VM_REV_MODE (expected Single)"
   fi
 
-  # Check containers: expect victoria-metrics and vmauth
+  # Check containers: expect victoria-metrics only (vmauth removed)
   CONTAINER_NAMES=$(echo "$VM_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
@@ -164,9 +164,9 @@ print(' '.join(c['name'] for c in containers))
     fail "Container 'victoria-metrics' missing (found: $CONTAINER_NAMES)"
   fi
   if echo "$CONTAINER_NAMES" | grep -q "vmauth"; then
-    pass "Container 'vmauth' present"
+    fail "Container 'vmauth' still present (should be removed)"
   else
-    fail "Container 'vmauth' missing (found: $CONTAINER_NAMES)"
+    pass "vmauth removed (zero-trust simplification)"
   fi
 
   # Check min/max replicas = 1
@@ -178,17 +178,8 @@ print(' '.join(c['name'] for c in containers))
     fail "Replicas: min=$VM_MIN, max=$VM_MAX (expected 1/1)"
   fi
 
-  # Smoke test: hit the FQDN (expect 401 — vmauth requires bearer token)
-  if [[ -n "$VM_FQDN" ]]; then
-    VM_HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${VM_FQDN}/api/v1/query?query=up" 2>/dev/null) || true
-    if [[ "$VM_HTTP" == "401" ]]; then
-      pass "Remote-write endpoint rejects unauthenticated requests (401)"
-    elif [[ "$VM_HTTP" == "000" || -z "$VM_HTTP" ]]; then
-      skip "Could not reach $VM_FQDN (timeout — may be expected in CI)"
-    else
-      fail "Remote-write endpoint returned HTTP $VM_HTTP (expected 401)"
-    fi
-  fi
+  # VM is internal-only — no external smoke test needed (zero-trust)
+  pass "VM not internet-accessible — no external smoke test"
 fi
 
 # ==============================================================================

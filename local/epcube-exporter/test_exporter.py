@@ -475,15 +475,90 @@ class TestHTTPHandler(unittest.TestCase):
             h = self._make_handler("/")
             h.send_response.assert_called_with(200)
 
-    def test_debug_page_401_without_token(self):
+    def test_debug_page_401_api_client_without_token(self):
+        """API client (no Accept: text/html) gets 401 without auth."""
         with patch.object(exporter, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={})
             h.send_response.assert_called_with(401)
+
+    def test_debug_page_redirects_browser_to_login(self):
+        """Browser (Accept: text/html) without auth gets redirected to /login."""
+        with patch.object(exporter, "DISABLE_AUTH", False), \
+             patch.object(exporter, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"):
+            h = self._make_handler("/", headers={"Accept": "text/html"})
+            h.send_response.assert_called_with(302)
+            h.send_header.assert_any_call("Location", "/login")
 
     def test_debug_page_401_with_bad_bearer(self):
         with patch.object(exporter, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={"Authorization": "Bearer bad-token"})
             h.send_response.assert_called_with(401)
+
+    def test_login_redirects_to_microsoft(self):
+        """GET /login redirects to Microsoft authorization endpoint."""
+        with patch.object(exporter, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"), \
+             patch.object(exporter, "AZURE_CLIENT_ID", "test-client-id"), \
+             patch.object(exporter, "AZURE_TENANT_ID", "test-tenant"), \
+             patch.object(exporter, "AZURE_AUDIENCE", "api://test"):
+            h = self._make_handler("/login")
+            h.send_response.assert_called_with(302)
+            location_calls = [c for c in h.send_header.call_args_list if c[0][0] == "Location"]
+            self.assertTrue(len(location_calls) > 0)
+            url = location_calls[0][0][1]
+            self.assertIn("login.microsoftonline.com/test-tenant/oauth2/v2.0/authorize", url)
+            self.assertIn("client_id=test-client-id", url)
+
+    def test_login_returns_500_when_not_configured(self):
+        """GET /login returns 500 when OAuth is not configured."""
+        with patch.object(exporter, "AZURE_REDIRECT_URI", ""), \
+             patch.object(exporter, "AZURE_CLIENT_ID", ""):
+            h = self._make_handler("/login")
+            h.send_response.assert_called_with(500)
+
+    def test_callback_returns_400_without_params(self):
+        """GET /.auth/callback without code/state returns 400."""
+        h = self._make_handler("/.auth/callback")
+        h.send_response.assert_called_with(400)
+
+    def test_callback_returns_400_with_invalid_state(self):
+        """GET /.auth/callback with unknown state returns 400."""
+        h = self._make_handler("/.auth/callback?code=test&state=invalid")
+        h.send_response.assert_called_with(400)
+
+    def test_session_cookie_grants_access(self):
+        """Valid session cookie grants access to debug page."""
+        with patch.object(exporter, "DISABLE_AUTH", False), \
+             patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
+            # Create a session
+            session_id = "test-session-123"
+            with exporter._auth_lock:
+                exporter._sessions[session_id] = {
+                    "expires": time.time() + 3600,
+                    "user": "test@example.com",
+                }
+            signed = exporter._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(200)
+            # Cleanup
+            with exporter._auth_lock:
+                exporter._sessions.pop(session_id, None)
+
+    def test_expired_session_denied(self):
+        """Expired session cookie is rejected."""
+        with patch.object(exporter, "DISABLE_AUTH", False), \
+             patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
+            session_id = "expired-session"
+            with exporter._auth_lock:
+                exporter._sessions[session_id] = {
+                    "expires": time.time() - 1,  # already expired
+                    "user": "test@example.com",
+                }
+            signed = exporter._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(401)
+            # Cleanup
+            with exporter._auth_lock:
+                exporter._sessions.pop(session_id, None)
 
     def test_status_alias_works(self):
         with patch.object(exporter, "DISABLE_AUTH", True):
