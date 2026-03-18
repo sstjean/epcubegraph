@@ -95,6 +95,21 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
+      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
+      - name: Whitelist runner IP on Key Vault
+        run: |
+          KV_NAME="epcubegraph-staging-kv"
+          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault network-rule add \
+              --name "$KV_NAME" \
+              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+              --output none 2>/dev/null || true
+            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
+            sleep 30
+          else
+            echo "Key Vault does not exist yet — skipping (first deploy)"
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -188,8 +203,8 @@ jobs:
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
-      - name: Remove runner IP from tfstate storage
+      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
           az storage account network-rule remove \
@@ -198,6 +213,12 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
+          KV_NAME="epcubegraph-staging-kv"
+          az keyvault network-rule remove \
+            --name "$KV_NAME" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from Key Vault firewall"
 
   validate:
     needs: deploy
@@ -317,6 +338,21 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
+      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
+      - name: Whitelist runner IP on Key Vault
+        run: |
+          KV_NAME="epcubegraph-kv"
+          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault network-rule add \
+              --name "$KV_NAME" \
+              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+              --output none 2>/dev/null || true
+            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
+            sleep 30
+          else
+            echo "Key Vault does not exist yet — skipping (first deploy)"
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -406,8 +442,8 @@ jobs:
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
-      - name: Remove runner IP from tfstate storage
+      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
           az storage account network-rule remove \
@@ -416,6 +452,12 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
+          KV_NAME="epcubegraph-kv"
+          az keyvault network-rule remove \
+            --name "$KV_NAME" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from Key Vault firewall"
 
   validate-prod:
     needs: deploy-prod
@@ -521,6 +563,26 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
+      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
+      - name: Whitelist runner IP on Key Vault
+        run: |
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          if [ "$ENV" = "production" ]; then
+            KV_NAME="epcubegraph-kv"
+          else
+            KV_NAME="epcubegraph-${ENV}-kv"
+          fi
+          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault network-rule add \
+              --name "$KV_NAME" \
+              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+              --output none 2>/dev/null || true
+            echo "✓ Runner IP added to Key Vault firewall — waiting for propagation"
+            sleep 30
+          else
+            echo "Key Vault does not exist yet — skipping"
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
@@ -558,8 +620,8 @@ jobs:
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform destroy -auto-approve -input=false
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage (always runs)
-      - name: Remove runner IP from tfstate storage
+      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
           az storage account network-rule remove \
@@ -568,3 +630,14 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
+          ENV="${{ github.event.inputs.environment || 'staging' }}"
+          if [ "$ENV" = "production" ]; then
+            KV_NAME="epcubegraph-kv"
+          else
+            KV_NAME="epcubegraph-${ENV}-kv"
+          fi
+          az keyvault network-rule remove \
+            --name "$KV_NAME" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from Key Vault firewall"
