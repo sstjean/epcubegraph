@@ -34,8 +34,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Health_ReturnsHealthy()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/health");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("healthy", body);
@@ -46,8 +48,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsOk_WithValidQuery()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
         Assert.Equal("success", body.RootElement.GetProperty("status").GetString());
@@ -56,16 +60,20 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsOk_WithQueryAndTime()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up&time=1709827200");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Query_ReturnsBadRequest_WhenQueryMissing()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("'query' is required", body);
@@ -74,8 +82,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsBadRequest_WhenTimeInvalid()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up&time=not-a-time");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("'time'", body);
@@ -84,10 +94,13 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("error", body);
@@ -98,83 +111,102 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task QueryRange_ReturnsOk_WithValidParams()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenQueryMissing()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStartMissing()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenEndMissing()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStepMissing()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=2000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStepInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=2000&step=abc");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStartInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=not-a-time&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenEndInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=not-a-time&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -183,25 +215,31 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Series_ReturnsOk_WithMatchParam()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/series?match[]=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsOk_WithStartAndEnd()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&start=1000&end=2000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsBadRequest_WhenMatchMissing()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/series");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("match[]", body);
@@ -210,28 +248,35 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Series_ReturnsBadRequest_WhenStartInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&start=not-a-time");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsBadRequest_WhenEndInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&end=not-a-time");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/series?match[]=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -240,18 +285,23 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Labels_ReturnsOk()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/labels");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Labels_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/labels");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -260,26 +310,33 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task LabelValues_ReturnsOk()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/label/device/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task LabelValues_ReturnsBadRequest_WhenNameInvalid()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/label/some-bad-name!/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task LabelValues_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/label/device/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -288,9 +345,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_WithEmptyList()
     {
-        // Default mock returns empty series data
+        // Act — default mock returns empty series data
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("devices", body);
@@ -299,6 +357,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_WithDeviceData()
     {
+        // Arrange
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -329,8 +388,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("epcube_battery", body);
@@ -341,6 +402,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_WithDeviceMissingOptionalFields()
     {
+        // Arrange
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -363,8 +425,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("epcube_solar", body);
@@ -373,7 +437,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_ScrapeSuccessOffline()
     {
-        // Device with scrape_success = 0 should be offline
+        // Arrange — device with scrape_success = 0 should be offline
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -401,18 +465,23 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Devices_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -421,6 +490,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task DeviceMetrics_ReturnsOk_WithMetrics()
     {
+        // Arrange
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -432,8 +502,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("epcube_battery", body);
@@ -444,9 +516,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task DeviceMetrics_ReturnsNotFound_WhenNoMetrics()
     {
-        // Default mock returns empty data array
+        // Act — default mock returns empty data array
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("not_found", body);
@@ -455,25 +528,30 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task DeviceMetrics_ReturnsBadRequest_WhenDeviceInvalid()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/bad-device!/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task DeviceMetrics_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
     [Fact]
     public async Task DeviceMetrics_HandlesSeriesWithoutName()
     {
-        // Series entry without __name__ should be skipped
+        // Arrange — series entry without __name__ should be skipped
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -484,8 +562,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("epcube_battery_soc", body);
@@ -496,56 +576,68 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Grid_ReturnsOk_WithValidParams()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsOk_WithDefaults()
     {
-        // All params optional — GridCalculator uses defaults
+        // Act — all params optional, GridCalculator uses defaults
         var response = await _client.GetAsync("/api/v1/grid");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStartInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=not-a-time&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenEndInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=1000&end=not-a-time&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStepInvalid()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=1000&end=2000&step=abc");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_Returns422_WhenVmFails()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
 
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
@@ -554,9 +646,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsBadRequest_WhenQueryIsEmptyString()
     {
-        // query= (empty value) should trigger Required validation
+        // Act — query= (empty value) should trigger Required validation
         var response = await _client.GetAsync("/api/v1/query?query=");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("'query' is required", body);
@@ -565,27 +658,32 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsBadRequest_WhenQueryIsWhitespace()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=%20%20%20");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Query_ReturnsOk_WithRfc3339Time()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query?query=up&time=2026-03-07T00:00:00Z");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Query_ReturnsOk_WithSpecialCharactersInQuery()
     {
-        // PromQL with curly braces and quotes
+        // Act — PromQL with curly braces and quotes
         var response = await _client.GetAsync(
             "/api/v1/query?query=rate(http_requests_total%7Bjob%3D%22api%22%7D%5B5m%5D)");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -594,36 +692,44 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task QueryRange_ReturnsOk_WithRfc3339Timestamps()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=2026-03-07T00:00:00Z&end=2026-03-08T00:00:00Z&step=5m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenQueryIsEmptyString()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=&start=1000&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStartIsEmptyString()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=&end=2000&step=1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task QueryRange_ReturnsBadRequest_WhenStepIsNegative()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/query_range?query=up&start=1000&end=2000&step=-1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -632,37 +738,44 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Series_ReturnsOk_WithMultipleMatchValues()
     {
-        // Only the first match[] value is used per the endpoint implementation
+        // Act — only the first match[] value is used per the endpoint implementation
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&match[]=down");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsOk_WithOnlyStart()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&start=1000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsOk_WithOnlyEnd()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&end=2000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Series_ReturnsOk_WithRfc3339Timestamps()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/series?match[]=up&start=2026-03-07T00:00:00Z&end=2026-03-08T00:00:00Z");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -671,24 +784,30 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task LabelValues_ReturnsOk_WithUnderscorePrefixedName()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/label/__name__/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task LabelValues_ReturnsBadRequest_WhenNameStartsWithNumber()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/label/123name/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task LabelValues_ReturnsBadRequest_WhenNameHasDots()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/label/some.label/values");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -697,6 +816,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_WithMultipleDevices_MixedOnlineStatus()
     {
+        // Arrange
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -738,8 +858,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         // Battery is online (value=1), solar is offline (value=0), meter has no scrape entry
@@ -751,7 +873,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Devices_ReturnsOk_WhenScrapeResultMissingMetricProperty()
     {
-        // Scrape results where items don't have the expected "metric" property
+        // Arrange — scrape results where items don't have the expected "metric" property
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -778,16 +900,17 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
-        // Should not crash; device just won't be in onlineDevices set
+        // Assert — should not crash; device just won't be in onlineDevices set
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Devices_ReturnsOk_WhenScrapeResultMissingDeviceInMetric()
     {
-        // Scrape result has "metric" but no "device" within it
+        // Arrange — scrape result has "metric" but no "device" within it
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -815,15 +938,17 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Devices_ReturnsOk_WhenScrapeDataPropertyMissing()
     {
-        // Query response doesn't have "data" at top level
+        // Arrange — query response doesn't have "data" at top level
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -842,25 +967,27 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
-        // No scrape data → all devices offline
+        // Assert — no scrape data → all devices offline
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Devices_ReturnsOk_WhenInfoDataPropertyMissing()
     {
-        // Series response doesn't have "data" at top level
+        // Arrange — series response doesn't have "data" at top level
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success"
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices");
 
-        // No device info → empty list
+        // Assert — no device info → empty list
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("devices", body);
@@ -871,7 +998,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task DeviceMetrics_DeduplicatesMetricNames()
     {
-        // All three entries have the same metric name → should only appear once
+        // Arrange — all three entries have the same metric name → should only appear once
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -883,8 +1010,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
         var metrics = doc.RootElement.GetProperty("metrics");
@@ -894,24 +1023,28 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task DeviceMetrics_ReturnsBadRequest_WhenDeviceIsSqlInjection()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/devices/'; DROP TABLE users; --/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task DeviceMetrics_ReturnsBadRequest_WhenDeviceHasDots()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/device.name/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task DeviceMetrics_ReturnsNotFound_WhenAllSeriesLackName()
     {
-        // All series entries lack __name__ → metrics list empty → 404
+        // Arrange — all series entries lack __name__ → metrics list empty → 404
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success",
@@ -922,23 +1055,27 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
     public async Task DeviceMetrics_ReturnsNotFound_WhenDataPropertyMissing()
     {
-        // Series response has no "data" property → empty metrics → 404
+        // Arrange — series response has no "data" property → empty metrics → 404
         _factory.MockClient.SeriesResponse = """
             {
                 "status": "success"
             }
             """;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/devices/epcube_battery/metrics");
 
+        // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -947,41 +1084,51 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Grid_ReturnsOk_WithOnlyStart()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/grid?start=1000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsOk_WithOnlyEnd()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/grid?end=2000");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsOk_WithOnlyStep()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/grid?step=5m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsOk_WithRfc3339Timestamps()
     {
+        // Act
         var response = await _client.GetAsync(
             "/api/v1/grid?start=2026-03-07T00:00:00Z&end=2026-03-08T00:00:00Z&step=1h");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStepIsNegative()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/grid?step=-1m");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -990,8 +1137,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Health_DoesNotRequireAuth()
     {
-        // Health endpoint is explicitly AllowAnonymous
+        // Act — health endpoint is explicitly AllowAnonymous
         var response = await _client.GetAsync("/api/v1/health");
+
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
@@ -1000,8 +1149,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Query_ReturnsJsonContentType()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("application/json", response.Content.Headers.ContentType?.ToString());
     }
@@ -1009,8 +1160,10 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Health_ReturnsJsonContentType()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/health");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Contains("application/json", response.Content.Headers.ContentType?.ToString());
     }
@@ -1018,11 +1171,14 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task ErrorResponse_Returns422WithJsonContentType()
     {
+        // Arrange
         _factory.MockClient.ShouldThrow = true;
         _factory.MockClient.ThrowMessage = "Connection refused";
 
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("Connection refused", body);

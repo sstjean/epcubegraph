@@ -21,26 +21,24 @@ public class VictoriaMetricsIntegrationTests : IClassFixture<VictoriaMetricsFixt
     [Fact]
     public async Task QueryRangeAsync_ReturnsCorrectTimeSeries_AfterInsertingData()
     {
-        // Insert test data via Prometheus import API
+        // Arrange
         var now = DateTimeOffset.UtcNow;
         var timestamp = now.ToUnixTimeMilliseconds();
         var lines = new StringBuilder();
         lines.AppendLine($"test_metric{{device=\"battery\"}} 42 {timestamp}");
-
         await ImportPrometheusData(lines.ToString());
-
-        // Wait for data to be indexed
         await Task.Delay(1000);
-
-        // Query the data
         var start = now.AddMinutes(-5).ToUnixTimeSeconds().ToString();
         var end = now.AddMinutes(5).ToUnixTimeSeconds().ToString();
+
+        // Act
         var result = await _client.QueryRangeAsync(
             "test_metric{device=\"battery\"}",
             start,
             end,
             "1m");
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
         var data = result.GetProperty("data");
         Assert.Equal("matrix", data.GetProperty("resultType").GetString());
@@ -49,16 +47,19 @@ public class VictoriaMetricsIntegrationTests : IClassFixture<VictoriaMetricsFixt
     [Fact]
     public async Task QueryRangeAsync_EmptyRange_ReturnsEmptyResult()
     {
-        // Query a metric that doesn't exist
+        // Arrange
         var now = DateTimeOffset.UtcNow;
         var start = now.AddMinutes(-5).ToUnixTimeSeconds().ToString();
         var end = now.AddMinutes(5).ToUnixTimeSeconds().ToString();
+
+        // Act
         var result = await _client.QueryRangeAsync(
             "nonexistent_metric_abc{device=\"nothing\"}",
             start,
             end,
             "1m");
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
         var data = result.GetProperty("data");
         Assert.Equal("matrix", data.GetProperty("resultType").GetString());
@@ -68,13 +69,16 @@ public class VictoriaMetricsIntegrationTests : IClassFixture<VictoriaMetricsFixt
     [Fact]
     public async Task QueryAsync_ReturnsInstantVector_AfterInsertingData()
     {
+        // Arrange
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var lines = $"integration_test_instant{{job=\"test\"}} 99 {timestamp}";
         await ImportPrometheusData(lines);
         await Task.Delay(1000);
 
+        // Act
         var result = await _client.QueryAsync("integration_test_instant{job=\"test\"}");
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
         Assert.Equal("vector", result.GetProperty("data").GetProperty("resultType").GetString());
     }
@@ -82,21 +86,26 @@ public class VictoriaMetricsIntegrationTests : IClassFixture<VictoriaMetricsFixt
     [Fact]
     public async Task SeriesAsync_ReturnsMatchingSeries()
     {
+        // Arrange
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var lines = $"series_test_metric{{env=\"prod\"}} 1 {timestamp}";
         await ImportPrometheusData(lines);
         await Task.Delay(1000);
 
+        // Act
         var result = await _client.SeriesAsync("series_test_metric");
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
     }
 
     [Fact]
     public async Task LabelsAsync_ReturnsLabelNames()
     {
+        // Act
         var result = await _client.LabelsAsync();
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
         Assert.True(result.GetProperty("data").GetArrayLength() >= 0);
     }
@@ -104,13 +113,16 @@ public class VictoriaMetricsIntegrationTests : IClassFixture<VictoriaMetricsFixt
     [Fact]
     public async Task LabelValuesAsync_ReturnsValues()
     {
+        // Arrange
         var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var lines = $"label_test_metric{{color=\"blue\"}} 1 {timestamp}";
         await ImportPrometheusData(lines);
         await Task.Delay(1000);
 
+        // Act
         var result = await _client.LabelValuesAsync("color");
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
     }
 

@@ -36,13 +36,16 @@ public class ProgramMiddlewareTests : IDisposable
     [Fact]
     public async Task GlobalExceptionHandler_Returns500Json_InProduction()
     {
+        // Arrange
         // Make the mock throw InvalidOperationException (not HttpRequestException).
         // Query endpoints only catch HttpRequestException, so this propagates
         // to the global exception handler registered in Program.cs.
         _factory.MockClient.ThrowUnhandled = true;
 
+        // Act
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(body);
@@ -54,8 +57,10 @@ public class ProgramMiddlewareTests : IDisposable
     [Fact]
     public async Task Production_DoesNotExposeSwagger()
     {
+        // Act
         var response = await _client.GetAsync("/swagger/v1/swagger.json");
 
+        // Assert
         // Swagger is development-only; in Production it should 404
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -63,8 +68,10 @@ public class ProgramMiddlewareTests : IDisposable
     [Fact]
     public async Task Production_HealthEndpoint_StillWorks()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/health");
 
+        // Assert
         // Health endpoint should still work in Production
         Assert.True(
             response.StatusCode == HttpStatusCode.OK ||
@@ -114,17 +121,21 @@ public class NoAuthBypassTests : IDisposable
     [Fact]
     public async Task NoAuth_AuthenticatedEndpoints_Return200_WithoutToken()
     {
+        // Act
         // With NoAuthHandler active, requests should succeed without any JWT
         var response = await _client.GetAsync("/api/v1/query?query=up");
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task NoAuth_HealthEndpoint_StillWorks()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/health");
 
+        // Assert
         Assert.True(
             response.StatusCode == HttpStatusCode.OK ||
             response.StatusCode == HttpStatusCode.ServiceUnavailable,

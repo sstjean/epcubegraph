@@ -7,6 +7,7 @@ public class GridCalculatorTests
     [Fact]
     public void GridPromqlExpression_ContainsGridImportMinusExport()
     {
+        // Assert
         // The grid PromQL should compute: grid import - grid export
         // Positive = net import, Negative = net export
         Assert.Equal(
@@ -17,11 +18,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_UsesDefaultTimeRange_WhenNotProvided()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync();
 
+        // Assert
         Assert.NotNull(mockClient.LastQuery);
         Assert.Equal(GridCalculator.GridPromqlExpression, mockClient.LastQuery);
         Assert.NotNull(mockClient.LastStart);
@@ -32,11 +36,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_UsesProvidedTimeRange()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync("1000", "2000", "5m");
 
+        // Assert
         Assert.Equal("1000", mockClient.LastStart);
         Assert.Equal("2000", mockClient.LastEnd);
         Assert.Equal("5m", mockClient.LastStep);
@@ -45,11 +52,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_ReturnsVictoriaMetricsResponse()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         var result = await calculator.CalculateAsync();
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
     }
 
@@ -60,7 +70,10 @@ public class GridCalculatorTests
     [Fact]
     public void SignConvention_PositiveImport_NegativeExport()
     {
+        // Act
         var expr = GridCalculator.GridPromqlExpression;
+
+        // Assert
         Assert.StartsWith("epcube_grid_import", expr);
         Assert.Contains(" - ", expr);
         Assert.Contains("grid_export", expr);
@@ -71,11 +84,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_WithOnlyStart_UsesDefaultEndAndStep()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync(start: "1000");
 
+        // Assert
         Assert.Equal("1000", mockClient.LastStart);
         Assert.NotNull(mockClient.LastEnd); // defaulted
         Assert.Equal("1m", mockClient.LastStep);
@@ -84,11 +100,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_WithOnlyEnd_UsesDefaultStartAndStep()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync(end: "2000");
 
+        // Assert
         Assert.NotNull(mockClient.LastStart); // defaulted
         Assert.Equal("2000", mockClient.LastEnd);
         Assert.Equal("1m", mockClient.LastStep);
@@ -97,11 +116,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_WithOnlyStep_UsesDefaultStartAndEnd()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync(step: "5m");
 
+        // Assert
         Assert.NotNull(mockClient.LastStart); // defaulted
         Assert.NotNull(mockClient.LastEnd); // defaulted
         Assert.Equal("5m", mockClient.LastStep);
@@ -110,11 +132,14 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_DefaultStart_Is24HoursBeforeDefaultEnd()
     {
+        // Arrange
         var mockClient = new MockVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act
         await calculator.CalculateAsync();
 
+        // Assert
         var start = long.Parse(mockClient.LastStart!);
         var end = long.Parse(mockClient.LastEnd!);
         var diffHours = (end - start) / 3600.0;
@@ -126,18 +151,22 @@ public class GridCalculatorTests
     [Fact]
     public async Task CalculateAsync_PropagatesHttpRequestException()
     {
+        // Arrange
         var mockClient = new ThrowingVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act & Assert
         await Assert.ThrowsAsync<HttpRequestException>(() => calculator.CalculateAsync());
     }
 
     [Fact]
     public async Task CalculateAsync_PropagatesCancellation()
     {
+        // Arrange
         var mockClient = new CancellingVictoriaMetricsClient();
         var calculator = new GridCalculator(mockClient);
 
+        // Act & Assert
         await Assert.ThrowsAsync<OperationCanceledException>(
             () => calculator.CalculateAsync(ct: new CancellationToken(true)));
     }

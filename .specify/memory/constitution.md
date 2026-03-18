@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.7.0 → 1.8.0
+  Version change: 1.8.0 → 1.9.0
   Modified sections:
-    - DevOps — strengthened Environment Parity to NON-NEGOTIABLE
+    - TDD (Principle III) — added Arrange-Act-Assert (AAA) mandate
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -14,7 +14,8 @@
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Dependent specs:
     - specs/001-data-ingestor/plan.md             ✅ no changes needed
-  Follow-up TODOs: none
+  Follow-up TODOs:
+    - Retrofit existing tests with // Arrange, // Act, // Assert comments
 -->
 
 # EP Cube Graph Constitution
@@ -64,6 +65,16 @@ test surface, and obscure the intent of the codebase.
   achieve 100% code coverage. No production code may exist
   without a corresponding test that exercises it. Coverage
   MUST be measured and enforced in the CI gate.
+- **Arrange-Act-Assert (AAA)**: All tests MUST follow the
+  Arrange-Act-Assert pattern. Each test method MUST contain
+  exactly three clearly separated sections marked with
+  `// Arrange`, `// Act`, and `// Assert` comments. The
+  Arrange section sets up preconditions and inputs. The Act
+  section invokes the behaviour under test. The Assert section
+  verifies the expected outcome. Sections MAY be omitted only
+  when they would be genuinely empty (e.g., no arrangement
+  needed for a static method with no dependencies), but the
+  remaining sections MUST still be commented.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.
@@ -254,4 +265,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.7.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-17
+**Version**: 1.9.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-18
