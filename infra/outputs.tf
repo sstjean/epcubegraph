@@ -49,3 +49,13 @@ output "managed_identity_client_id" {
   description = "Managed identity client ID"
   value       = azurerm_user_assigned_identity.main.client_id
 }
+
+output "api_image" {
+  description = "Current API container image (empty if not deployed)"
+  value       = var.api_image
+}
+
+output "exporter_image" {
+  description = "Current exporter container image (empty if not deployed)"
+  value       = var.epcube_image
+}

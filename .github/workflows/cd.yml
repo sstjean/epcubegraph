@@ -145,7 +145,33 @@ jobs:
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
-      # Phase 1: Deploy infrastructure (without container images)
+      # Preserve existing container app images so the infra phase doesn't
+      # destroy them (count goes to 0 when image vars are empty).
+      # Reads directly from state resources (not outputs) to avoid bootstrap issues.
+      - name: Preserve existing container images from state
+        id: existing-images
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          STATE=$(terraform show -json 2>/dev/null) || STATE="{}"
+          API_IMG=$(echo "$STATE" | jq -r '
+            .values.root_module.resources[]?
+            | select(.address == "azurerm_container_app.api[0]")
+            | .values.template[0].container[0].image' 2>/dev/null) || API_IMG=""
+          EXPORTER_IMG=$(echo "$STATE" | jq -r '
+            .values.root_module.resources[]?
+            | select(.address == "azurerm_container_app.exporter[0]")
+            | .values.template[0].container[0].image' 2>/dev/null) || EXPORTER_IMG=""
+          [ "$API_IMG" = "null" ] && API_IMG=""
+          [ "$EXPORTER_IMG" = "null" ] && EXPORTER_IMG=""
+          echo "api_image=${API_IMG}" >> "$GITHUB_OUTPUT"
+          echo "epcube_image=${EXPORTER_IMG}" >> "$GITHUB_OUTPUT"
+          echo "✓ Existing images: api=${API_IMG:-none} exporter=${EXPORTER_IMG:-none}"
+
+      # Phase 1: Deploy infrastructure (preserving existing container apps)
       # Runner IP is passed so Terraform whitelists it on Key Vault and app storage
       - name: Terraform Apply — Infrastructure
         working-directory: infra
@@ -155,6 +181,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
+          TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
@@ -416,6 +444,32 @@ jobs:
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
+      # Preserve existing container app images so the infra phase doesn't
+      # destroy them (count goes to 0 when image vars are empty).
+      # Reads directly from state resources (not outputs) to avoid bootstrap issues.
+      - name: Preserve existing container images from state
+        id: existing-images
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          STATE=$(terraform show -json 2>/dev/null) || STATE="{}"
+          API_IMG=$(echo "$STATE" | jq -r '
+            .values.root_module.resources[]?
+            | select(.address == "azurerm_container_app.api[0]")
+            | .values.template[0].container[0].image' 2>/dev/null) || API_IMG=""
+          EXPORTER_IMG=$(echo "$STATE" | jq -r '
+            .values.root_module.resources[]?
+            | select(.address == "azurerm_container_app.exporter[0]")
+            | .values.template[0].container[0].image' 2>/dev/null) || EXPORTER_IMG=""
+          [ "$API_IMG" = "null" ] && API_IMG=""
+          [ "$EXPORTER_IMG" = "null" ] && EXPORTER_IMG=""
+          echo "api_image=${API_IMG}" >> "$GITHUB_OUTPUT"
+          echo "epcube_image=${EXPORTER_IMG}" >> "$GITHUB_OUTPUT"
+          echo "✓ Existing images: api=${API_IMG:-none} exporter=${EXPORTER_IMG:-none}"
+
       - name: Terraform Apply — Infrastructure
         working-directory: infra
         env:
@@ -424,6 +478,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
+          TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: terraform apply -auto-approve -input=false
 
