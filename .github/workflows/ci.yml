@@ -84,6 +84,24 @@ jobs:
           name: coverage-report
           path: api/TestResults/**/coverage.cobertura.xml
 
+  exporter-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install opencv-python-headless pycryptodome numpy PyJWT pytest
+
+      - name: Run exporter tests
+        working-directory: local/epcube-exporter
+        run: pytest test_exporter.py -v
+
   docker-local:
     runs-on: ubuntu-latest
 
