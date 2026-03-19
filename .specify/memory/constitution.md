@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.8.0 → 1.9.0
+  Version change: 1.9.0 → 1.10.0
   Modified sections:
-    - TDD (Principle III) — added Arrange-Act-Assert (AAA) mandate
+    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -214,6 +214,12 @@ and protecting data across all client platforms.
   informational, or reduced to a warning under any
   circumstance. Lowering the threshold requires a constitution
   amendment (MAJOR version bump).
+- **CI Test Coverage (NON-NEGOTIABLE)**: All tests across all
+  components (API, exporter, etc.) MUST be executed during
+  branch CI on every push. Smoke tests MUST be run against
+  production after each deployment. No test suite may exist
+  in the repository without a corresponding CI job that
+  executes it.
 - **Environment Parity (NON-NEGOTIABLE)**: Staging and
   production environments MUST be identical in architecture,
   security posture, network topology, and configuration —
