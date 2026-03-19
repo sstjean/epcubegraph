@@ -271,3 +271,4 @@ Go to **Settings → Environments** and create:
 | API returns 401 | Token expired or wrong audience — re-acquire via `az account get-access-token` |
 | API returns 403 | Token missing `user_impersonation` scope — check Entra app registration |
 | VictoriaMetrics returns empty results | Wait 2+ minutes for data to flow; check VictoriaMetrics container logs for scrape errors |
+  
