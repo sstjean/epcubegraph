@@ -1,12 +1,7 @@
 name: CD
 
 on:
-  # Deploy after CI passes on any branch
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-
-  # Deploy staging as a PR check
+  # Deploy staging on PRs to main
   pull_request:
     branches: [main]
 
@@ -29,7 +24,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event.inputs.environment || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && 'production' || 'staging') }}
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -43,16 +38,14 @@ permissions:
   contents: read
 
 jobs:
-  # ── Staging: deploy on every push (via CI) and on PRs to main ──
+  # ── Staging: deploy on PRs to main or manual dispatch ──
   check-ci:
     runs-on: ubuntu-latest
-    # Skip production path (merge to main via workflow_run) — that's handled below
     if: >
       github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     steps:
-      - run: echo "Staging deployment — CI passed, PR, or manual dispatch"
+      - run: echo "Staging deployment — PR or manual dispatch"
 
   deploy:
     needs: check-ci
@@ -317,14 +310,13 @@ jobs:
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # ── Production: deploy only on merge to main ──
+  # ── Production: deploy only via manual dispatch ──
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+      github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
     steps:
-      - run: echo "Production deployment — merge to main or manual dispatch"
+      - run: echo "Production deployment — manual dispatch"
 
   deploy-prod:
     needs: check-ci-prod
