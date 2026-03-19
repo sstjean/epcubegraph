@@ -14,8 +14,7 @@
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Dependent specs:
     - specs/001-data-ingestor/plan.md             ✅ no changes needed
-  Follow-up TODOs:
-    - Retrofit existing tests with // Arrange, // Act, // Assert comments
+  Follow-up TODOs: none (all completed)
 -->
 
 # EP Cube Graph Constitution

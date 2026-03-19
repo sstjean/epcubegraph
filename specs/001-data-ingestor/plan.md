@@ -149,6 +149,7 @@ infra/
 ├── network.tf               # VNet, subnets, private endpoints + DNS for KV and Storage
 ├── container-apps.tf        # Container Apps (VNet-integrated): VictoriaMetrics, API, exporter
 ├── deploy.sh                # Single-command deployment script
+├── validate-deployment.sh   # Post-deployment resource validation (deploy.sh --validate)
 ├── terraform.tfvars.example # Variable values template
 └── .gitignore               # Excludes .terraform/, state files
 
@@ -170,3 +171,4 @@ infra/
 | VNet + Private Endpoints for KV and Storage | Container Apps must access Key Vault secrets via managed identity through private network; data-plane firewalls stay at Deny. Also required for Storage file share mount. | Passing secrets as direct Terraform values: violates constitution (secrets MUST use Key Vault). Adding Container Apps outbound IPs to firewall: unreliable — Consumption plan IPs are dynamic and shared. |
 | Storage file share access_key (zero-trust: Explicit Verification) | `azurerm_container_app_environment_storage` requires `access_key` — Azure Container Apps has no managed identity option for file share mounts. This is an Azure platform limitation. Private endpoint ensures traffic stays on private network; access_key provides authentication (not identity-based). | No alternative exists: NFS shares also require access_key in Terraform; Azure Disk not supported in Consumption workload profile; ephemeral volumes lose data on restart. Tracked for remediation when Azure adds identity-based file mount support. |
 | API dev auth bypass (`NoAuthHandler.cs`) | Enables local development without Entra ID configuration (`Authentication:DisableAuth` setting) | Requiring Entra ID for local dev adds friction without security benefit (bypass only activates in Development environment) |
+| Single environment (Environment Parity deferral) | Only one Azure environment exists during 001-data-ingestor. Constitution's Environment Parity (NON-NEGOTIABLE) is trivially satisfied with one environment but requires staging/production parity when multi-environment support is added. | Deferred to Phase 8 / Issue [#12](https://github.com/sstjean/epcubegraph/issues/12). Adding a second environment before the initial feature is complete adds scope without benefit. |

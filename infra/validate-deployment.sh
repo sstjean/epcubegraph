@@ -388,13 +388,28 @@ print(' '.join(s['name'] for s in secrets))
     fi
 
     # Metrics endpoint should be unauthenticated
-    EXP_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/metrics" 2>/dev/null) || true
-    if [[ "$EXP_METRICS" == "200" ]]; then
+    EXP_METRICS_BODY=$(curl -s --max-time 10 "https://${EXP_FQDN}/metrics" 2>/dev/null) || true
+    EXP_METRICS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${EXP_FQDN}/metrics" 2>/dev/null) || true
+    if [[ "$EXP_METRICS_CODE" == "200" ]]; then
       pass "Metrics endpoint accessible without auth (200)"
-    elif [[ "$EXP_METRICS" == "000" || -z "$EXP_METRICS" ]]; then
+    elif [[ "$EXP_METRICS_CODE" == "000" || -z "$EXP_METRICS_CODE" ]]; then
       skip "Could not reach /metrics (timeout)"
     else
-      fail "Metrics endpoint returned HTTP $EXP_METRICS (expected 200)"
+      fail "Metrics endpoint returned HTTP $EXP_METRICS_CODE (expected 200)"
+    fi
+
+    # Spot-check FR-003 metric names in /metrics output (data-model.md)
+    if [[ -n "$EXP_METRICS_BODY" && "$EXP_METRICS_CODE" == "200" ]]; then
+      for metric in epcube_battery_state_of_capacity_percent epcube_solar_instantaneous_generation_watts \
+                    epcube_grid_import_kwh epcube_grid_export_kwh epcube_device_info epcube_scrape_success; do
+        if echo "$EXP_METRICS_BODY" | grep -q "^${metric}"; then
+          pass "Metric '$metric' present in /metrics"
+        else
+          fail "Metric '$metric' missing from /metrics (FR-003)"
+        fi
+      done
+    elif [[ "$EXP_METRICS_CODE" == "200" && -z "$EXP_METRICS_BODY" ]]; then
+      skip "Metrics endpoint returned 200 but no body (exporter may still be initializing)"
     fi
 
     # Debug page should require auth (401 without token)

@@ -61,7 +61,7 @@ The API supports querying by time range, device, and measurement type. All reque
 
 1. **Given** telemetry data exists in the store, **When** an authenticated client queries the API for a specific device and time range, **Then** the correct readings are returned.
 2. **Given** an unauthenticated request is made to the API, **When** the server processes it, **Then** the request is rejected with HTTP 401 (missing/invalid token) or HTTP 403 (valid token, insufficient scope).
-3. **Given** the API is queried for a time range with no data, **When** the response is returned, **Then** it clearly indicates an empty result set (not an error).
+3. **Given** the API is queried for a time range with no data, **When** the response is returned, **Then** it returns HTTP 200 with an empty `data` array in the VictoriaMetrics response format (not an error).
 
 ---
 

@@ -164,6 +164,8 @@
 - [x] T047 [US3] Add auth to epcube-exporter: OAuth 2.0 Authorization Code flow with PKCE for browser access (/login → Entra ID → /.auth/callback → session cookie), Bearer JWT validation for API clients, bypass with EPCUBE_DISABLE_AUTH=true for local dev, /metrics and /health unauthenticated (FR-023, FR-024) in local/epcube-exporter/exporter.py
 - [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE, AZURE_CLIENT_SECRET (Key Vault), AZURE_REDIRECT_URI env vars, and Entra ID redirect URI registration (FR-024) in infra/container-apps.tf, infra/entra.tf, infra/keyvault.tf
 - [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 49 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
+- [x] T054 [P] [US2] Write endpoint integration tests (all API routes: query, query_range, series, labels, label values, devices, device metrics, grid, health — success and error paths) in api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs (added retroactively — 76 tests)
+- [x] T055 [P] [US2] Write Program.cs middleware integration tests (Swagger, CORS, JSON serialization, exception handling, metrics endpoint) in api/tests/EpCubeGraph.Api.Tests/Integration/ProgramMiddlewareTests.cs (added retroactively — 5 tests)
 
 ---
 
