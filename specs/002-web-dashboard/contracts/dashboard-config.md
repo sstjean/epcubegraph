@@ -115,11 +115,11 @@ datasources:
 ### Query Examples
 
 **Instant query (current readings)**:
-- URL: `/query?query=echonet_battery_state_of_capacity_percent`
+- URL: `/query?query=epcube_battery_state_of_capacity_percent`
 - Parser: JSONata or UQL to extract `data.result[0].value[1]`
 
 **Range query (time series)**:
-- URL: `/query_range?query=echonet_solar_instantaneous_generation_watts&start=$__from&end=$__to&step=1m`
+- URL: `/query_range?query=epcube_solar_instantaneous_generation_watts&start=$__from&end=$__to&step=1m`
 - Parser: Extract `data.result[0].values` as time-series
 
 ### Required Grafana Plugin

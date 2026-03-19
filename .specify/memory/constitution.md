@@ -1,9 +1,10 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.9.0 → 1.10.0
+  Version change: 1.9.0 → 1.11.0
   Modified sections:
-    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle
+    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle (1.10.0)
+    - DevOps — restored Remote Terraform State principle (1.11.0)
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -247,6 +248,13 @@ and protecting data across all client platforms.
   complete with zero warnings and zero errors. Persistent
   warnings that cannot be fixed MUST be suppressed with an
   inline justification comment explaining why.
+- **Remote Terraform State**: Terraform state MUST be stored
+  remotely in Azure Blob Storage with Azure AD authentication.
+  Local state files are prohibited for shared or deployed
+  environments. The backend configuration MUST be defined in
+  a version-controlled `backend.hcl.example` template. CI/CD
+  pipelines MUST use OIDC-based authentication for state
+  access.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -270,4 +278,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.9.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-18
+**Version**: 1.11.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-19

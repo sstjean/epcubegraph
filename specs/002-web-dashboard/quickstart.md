@@ -184,7 +184,7 @@ https://<environment-name>-grafana.<region>.azurecontainerapps.io
 1. Log in with admin credentials (password from Key Vault: `grafana-admin-password`)
 2. The Infinity data source is auto-provisioned (connects to the REST API with OAuth2) — verify at Settings → Data Sources
 3. Create a new dashboard → Add panel → Select "EP Cube Graph API" data source
-4. Set URL to `/query_range?query=echonet_battery_state_of_capacity_percent&start=$__from&end=$__to&step=1m`
+4. Set URL to `/query_range?query=epcube_battery_state_of_capacity_percent&start=$__from&end=$__to&step=1m`
 5. Configure the parser to extract `data.result[0].values` as time-series data
 
 ---

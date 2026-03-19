@@ -2,7 +2,7 @@
 
 **Feature Branch**: `002-web-dashboard`  
 **Created**: 2026-03-07  
-**Status**: Draft  
+**Status**: Revised  
 **Input**: User description: "Web dashboard for viewing EP Cube energy telemetry data with Grafana integration"
 
 ## User Scenarios & Testing *(mandatory)*
@@ -59,6 +59,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 1. **Given** Grafana is configured with the Infinity plugin to connect to the telemetry REST API, **When** I open a Grafana dashboard, **Then** I can visualise the same telemetry data with Grafana's charting tools.
 2. **Given** I create a Grafana panel for solar generation over the last 7 days, **When** the panel renders, **Then** the data matches what the native web dashboard shows for the same range.
 3. **Given** Grafana is connected, **When** I set up an alert threshold on battery level, **Then** Grafana can trigger alerts based on the telemetry data.
+4. **Given** Grafana is configured with the Infinity plugin, **When** the data source connection is tested in Grafana Settings, **Then** the connection test succeeds and returns sample data.
 
 ---
 
@@ -66,7 +67,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 
 - What happens when the API is unreachable from the browser? The dashboard must display a clear connectivity error and offer a retry option.
 - What happens when the data store contains gaps (e.g., from gateway downtime)? Graphs must render gaps as broken lines (discontinuous segments) rather than interpolating false data.
-- What happens when the user's browser session expires? The dashboard must redirect to re-authentication without losing the current view state.
+- What happens when the user's browser session expires? The dashboard must redirect to re-authentication without losing the current view state. Note: "offline" in the dashboard context is a data-staleness indicator (no recent data received from the API for that device), not a direct device connectivity probe.
 - What happens when a very large time range is selected (e.g., 1 year)? The dashboard automatically downsamples to the appropriate resolution tier based on range duration and displays a notice that data is aggregated. Custom date ranges are not capped — they use the same tiered auto-selection as presets.
 
 ## Requirements *(mandatory)*
@@ -85,7 +86,8 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - **FR-010**: All dashboard access MUST be authenticated per the constitution's security requirements.
 - **FR-011**: Dashboard MUST consume data exclusively through the versioned API from feature 001-data-ingestor.
 - **FR-012**: Dashboard MUST automatically poll for updated readings at half the collection interval (default: every 30 seconds) to keep displayed data current without manual refresh.
-- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level.
+- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level. Note: "calendar month intervals" uses a 30-day fixed step (2592000s) for VictoriaMetrics compatibility. When data is downsampled, VictoriaMetrics applies its default aggregation (last value per step for gauge metrics). No custom aggregation function is specified.
+- **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 
 ### Key Entities
 
@@ -110,6 +112,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - A single user (the system owner) is the primary consumer; multi-user dashboards are not required.
 - Grafana will be self-hosted or hosted on Azure alongside the server components.
 - The native web dashboard and Grafana are complementary — the user may use either or both.
+- Grafana service principal client secret rotation is managed outside the dashboard feature scope. Key Vault expiry monitoring should be configured as part of the operational runbook.
 
 ## Clarifications
 

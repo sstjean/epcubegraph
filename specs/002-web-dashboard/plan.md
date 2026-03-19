@@ -33,7 +33,7 @@ The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.j
 |---|-----------|--------|-------|
 | I | Simplicity | ✅ PASS | Preact (3KB) over React/Angular, uPlot (canvas) over Chart.js/Recharts, Azure SWA Free tier (1 resource). Fewest moving parts. |
 | II | YAGNI | ✅ PASS | No state management library, no SSR, no multi-user support, no plugin system. Every component maps to a current FR. |
-| III | Testing Standards | ✅ PASS | Vitest + @testing-library/preact + happy-dom. 100% coverage enforced via vitest.config.ts thresholds. Unit + component tests for all code. |
+| III | Test-Driven Development (NON-NEGOTIABLE) | ✅ PASS | Vitest + @testing-library/preact + happy-dom. TDD Red-Green-Refactor cycle enforced. AAA pattern (Arrange-Act-Assert) with section comments. 100% coverage enforced via vitest.config.ts thresholds. Unit + component tests for all code. |
 | — | Dev Workflow | ✅ PASS | Feature branch `002-web-dashboard`, atomic commits, CI gate with full test suite. |
 | — | Performance | ✅ PASS | uPlot handles 30d data at 1-min resolution (~43K points) within 2s. Tiered downsampling (FR-013) reduces data for weekly/monthly/yearly views. |
 | — | Platform: Azure | ✅ PASS | Azure Static Web Apps (Azure-native) for hosting. Grafana on Azure Container Apps (existing environment). |

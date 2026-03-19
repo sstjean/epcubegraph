@@ -20,7 +20,6 @@ The dashboard does not define new data entities — it consumes the data model d
 interface Device {
   device: string;       // Unique identifier (e.g., "epcube_battery")
   class: string;        // "storage_battery" or "home_solar"
-  ip: string;           // LAN IP address
   manufacturer?: string;
   product_code?: string;
   uid?: string;
@@ -56,10 +55,10 @@ interface InstantQueryResponse {
 ```
 
 **Dashboard usage**: Current readings view (US1). Dashboard issues instant queries for the latest values of key metrics per device:
-- `echonet_battery_state_of_capacity_percent` — Battery SOC (%)
-- `echonet_battery_charge_discharge_power_watts` — Battery power (W)
-- `echonet_solar_instantaneous_generation_watts` — Solar generation (W)
-- `grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
+- `epcube_battery_state_of_capacity_percent` — Battery SOC (%)
+- `epcube_battery_power_watts` — Battery power (W)
+- `epcube_solar_instantaneous_generation_watts` — Solar generation (W)
+- `epcube_grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
 
 ---
 
@@ -112,7 +111,7 @@ function toUPlotData(result: RangeQueryResult): uPlot.AlignedData {
 
 **Source**: `GET /api/v1/grid?start=<ts>&end=<ts>&step=<duration>` → derived grid metric
 
-Same response format as `RangeQueryResponse`. Sign convention: positive = export to grid, negative = import from grid.
+Same response format as `RangeQueryResponse`. Sign convention: positive = net import from grid (kWh), negative = net export to grid (kWh).
 
 **Dashboard usage**: Both current readings (latest grid value) and historical graphs (grid power over time).
 
