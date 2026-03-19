@@ -84,7 +84,11 @@ tf_var_ip() {
 tf_init() {
   info "Initializing Terraform..."
   cd "$SCRIPT_DIR"
-  terraform init -upgrade -input=false
+  if [[ -f "$SCRIPT_DIR/backend.hcl" ]]; then
+    terraform init -upgrade -input=false -backend-config="$SCRIPT_DIR/backend.hcl"
+  else
+    terraform init -upgrade -input=false
+  fi
   ok "Terraform initialized"
 }
 

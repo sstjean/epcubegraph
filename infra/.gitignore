@@ -14,3 +14,4 @@ deploy.auto.tfvars
 
 # User config (may contain secrets)
 terraform.tfvars
+backend.hcl

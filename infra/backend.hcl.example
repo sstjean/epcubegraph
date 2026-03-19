@@ -1,0 +1,8 @@
+# Backend config for local deploys (Azure CLI auth).
+# Copy to backend.hcl and update values for your environment.
+# Used by: deploy.sh → terraform init -backend-config=backend.hcl
+resource_group_name  = "tfstate-rg"
+storage_account_name = "<your-tfstate-storage-account>"
+container_name       = "tfstate"
+key                  = "epcubegraph.tfstate"
+use_azuread_auth     = true

@@ -19,17 +19,10 @@ terraform {
     }
   }
 
-  # Remote state in Azure Blob Storage — required for CI/CD deployments.
-  # The storage account must be pre-created (see DEPLOY.md § CI/CD Setup).
-  # For local-only usage, comment this block and state is stored locally.
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstateepcubegraph"
-    container_name       = "tfstate"
-    key                  = "epcubegraph.tfstate"
-    use_oidc             = true
-    use_azuread_auth     = true
-  }
+  # Remote state in Azure Blob Storage.
+  # Config values loaded from backend.hcl (local) or -backend-config flags (CI/CD).
+  # See DEPLOY.md for setup and backend.hcl.example for the template.
+  backend "azurerm" {}
 }
 
 provider "azurerm" {
