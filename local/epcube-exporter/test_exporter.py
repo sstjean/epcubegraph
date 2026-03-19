@@ -751,6 +751,7 @@ class TestPrometheusMetrics(unittest.TestCase):
             "epcube_grid_import_kwh",
             "epcube_grid_export_kwh",
             "epcube_battery_stored_kwh",
+            "epcube_battery_peak_stored_kwh",
             "epcube_home_supply_cumulative_kwh",
             "epcube_scrape_success",
             "epcube_device_info",
@@ -850,6 +851,54 @@ class TestPrometheusMetrics(unittest.TestCase):
         self.assertTrue(len(info_lines) >= 2)
         for line in info_lines:
             self.assertIn('ress_count="3"', line)
+
+    def test_battery_peak_stored_kwh_exported(self):
+        """Peak battery stored tracks max and is exported as a Prometheus metric."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
+
+        # Act — first poll sets peak to 20.0
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home1)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_battery_peak_stored_kwh", metrics)
+        line = [l for l in metrics.splitlines()
+                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
+        self.assertIn('device="epcube1234_battery"', line)
+        self.assertTrue(line.endswith("20.0"))
+
+    def test_battery_peak_retains_max_in_metric(self):
+        """After discharge, peak metric still reflects the day's high-water mark."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+
+        # Act — first poll at 20 kWh, second at 15 kWh
+        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home1)):
+            c.poll()
+        c._history[-1]["time_minute"] = "old"  # force new snapshot
+
+        home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home2)):
+            c.poll()
+
+        # Assert — peak should still be 20.0
+        metrics = c.get_metrics()
+        line = [l for l in metrics.splitlines()
+                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
+        self.assertTrue(line.endswith("20.0"))
 
 
 # ---------------------------------------------------------------------------

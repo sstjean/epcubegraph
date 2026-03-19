@@ -372,6 +372,9 @@ class EpCubeCollector:
             else:
                 self._bat_peak[dev_id] = {"date": today_str, "peak": bat_stored_kwh}
             bat_peak_kwh = self._bat_peak[dev_id]["peak"]
+            lines.append("# HELP epcube_battery_peak_stored_kwh Peak battery energy level today")
+            lines.append("# TYPE epcube_battery_peak_stored_kwh gauge")
+            lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
             ress_count = data.get("ressNumber", "?")
             # Derive battery kW from energy balance (API batteryPower is unreliable)
             # positive = charging, negative = discharging
