@@ -16,6 +16,7 @@ The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.j
 ## Technical Context
 
 **Language/Version**: TypeScript 5.8 / Preact 10.x (SPA); C# / .NET 10 (API — already exists from Feature 001)
+**Build Runtime**: Node.js 22 (CI and local development)
 **Primary Dependencies**: Preact, preact-router, @azure/msal-browser (MSAL.js), uPlot (charting), Vite (build)
 **Storage**: N/A — stateless SPA; all data fetched from Feature 001 API at runtime
 **Testing**: Vitest 3.x, @testing-library/preact, happy-dom, @vitest/coverage-v8 (100% coverage)
@@ -84,6 +85,7 @@ dashboard/
 ├── src/
 │   ├── main.tsx                 # Bootstrap, MSAL init, render
 │   ├── App.tsx                  # Router: / (current) and /history
+│   ├── vite-env.d.ts            # Vite client type declarations
 │   ├── api.ts                   # API client (fetch + bearer token)
 │   ├── auth.ts                  # MSAL.js init, token acquisition
 │   ├── types.ts                 # TypeScript interfaces for API responses
@@ -110,6 +112,7 @@ dashboard/
         ├── api.test.ts
         ├── auth.test.ts
         ├── formatting.test.ts
+        ├── main.test.tsx
         └── polling.test.ts
 
 # Azure infrastructure additions (Terraform)
