@@ -50,3 +50,4 @@ docker-compose.override.yml
 # Temporary
 *.tmp
 *.log
+*.pyc
