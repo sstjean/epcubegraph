@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: ['**']
+    paths-ignore:
+      - 'specs/**'
+      - '.specify/**'
+      - '**/*.md'
   workflow_dispatch:
 
 env:
