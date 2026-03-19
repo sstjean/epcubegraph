@@ -42,9 +42,9 @@ resource "azuread_service_principal" "api" {
 # ── Client secret for OAuth authorization code flow (exporter debug page) ──
 
 resource "azuread_application_password" "exporter_oauth" {
-  application_id = azuread_application.api.id
-  display_name   = "exporter-oauth-secret"
-  end_date       = timeadd(plantimestamp(), "8760h") # 1 year
+  application_id    = azuread_application.api.id
+  display_name      = "exporter-oauth-secret"
+  end_date_relative = "8760h" # 1 year from creation
 }
 
 resource "azuread_application_redirect_uris" "exporter" {
