@@ -175,62 +175,56 @@ class TestEnergyBalance(unittest.TestCase):
         self.assertEqual(net, 0.0)
 
     def test_calculation_in_poll(self):
-        """Verify the actual poll method calculates bat_current_kwh correctly."""
+        """Verify the actual poll method derives battery_kw and tracks bat_peak_kwh."""
         c = _make_collector()
         dev = _make_device()
         c._devices = [dev]
         c._token = "fake-token"
 
-        elec_data = _make_electricity_data(
-            solarElectricity=10.0,
-            gridElectricityFrom=5.0,
-            gridElectricityTo=2.0,
-            backUpElectricity=8.0,
+        home_info = _make_home_device_info(
+            solarPower=3.0,
+            gridPower=-1.0,  # API convention: negative = import
+            backUpPower=2.0,
+            batteryCurrentElectricity="15.5",
         )
 
         with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for([dev], elec_data=elec_data)):
+                          side_effect=_mock_api_for([dev], home_info=home_info)):
             c.poll()
 
-        # First poll: no previous value, so bat_current_kwh = 0.0
         snap = c._history[-1]
         device_snap = snap["devices"][0]
-        self.assertEqual(device_snap["bat_current_kwh"], 0.0)
+        # battery_kw = solar + grid - load = 3.0 + 1.0 - 2.0 = 2.0 (charging)
+        self.assertAlmostEqual(device_snap["battery_kw"], 2.0)
+        # grid negated: -(-1.0) = 1.0 (importing)
+        self.assertAlmostEqual(device_snap["grid_kw"], 1.0)
+        # bat_peak_kwh tracks high-water mark
+        self.assertAlmostEqual(device_snap["bat_peak_kwh"], 15.5)
 
-    def test_period_delta_second_poll(self):
-        """Second poll shows the change since the first poll."""
+    def test_bat_peak_tracks_max(self):
+        """bat_peak_kwh retains the highest value seen for the day."""
         c = _make_collector()
         dev = _make_device()
         c._devices = [dev]
         c._token = "fake-token"
 
-        # First poll: bat_net = 10 + 5 - 8 - 2 = 5.0
-        elec1 = _make_electricity_data(
-            solarElectricity=10.0,
-            gridElectricityFrom=5.0,
-            gridElectricityTo=2.0,
-            backUpElectricity=8.0,
-        )
+        # First poll: battery at 20.0 kWh
+        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
         with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for([dev], elec_data=elec1)):
+                          side_effect=_mock_api_for([dev], home_info=home1)):
             c.poll()
 
         c._history[-1]["time_minute"] = "old"  # force new snapshot
 
-        # Second poll: bat_net = 12 + 6 - 9 - 2 = 7.0
-        elec2 = _make_electricity_data(
-            solarElectricity=12.0,
-            gridElectricityFrom=6.0,
-            gridElectricityTo=2.0,
-            backUpElectricity=9.0,
-        )
+        # Second poll: battery discharged to 15.0 kWh
+        home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
         with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for([dev], elec_data=elec2)):
+                          side_effect=_mock_api_for([dev], home_info=home2)):
             c.poll()
 
-        # Delta: 7.0 - 5.0 = 2.0
         snap = c._history[-1]
-        self.assertEqual(snap["devices"][0]["bat_current_kwh"], 2.0)
+        # Peak should still be 20.0, not 15.0
+        self.assertAlmostEqual(snap["devices"][0]["bat_peak_kwh"], 20.0)
 
 
 # ---------------------------------------------------------------------------
@@ -368,16 +362,18 @@ class TestRenderStatusPage(unittest.TestCase):
                 "id": "1234",
                 "solar_kw": 3.5,
                 "battery_soc": 75,
+                "battery_kw": -1.5,
+                "grid_kw": 0.0,
                 "backup_kw": 1.2,
                 "self_sufficiency": 85,
                 "system_status": "Normal (4)",
                 "bat_stored_kwh": 15.5,
+                "bat_peak_kwh": 15.5,
                 "ress_count": 2,
                 "solar_kwh": 12.5,
                 "grid_import_kwh": 3.0,
                 "grid_export_kwh": 1.5,
                 "backup_kwh": 10.0,
-                "bat_current_kwh": 4.0,
             }],
         }
         status = self._make_status(history=[snap])
@@ -388,6 +384,68 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn("EP Cube", html)
         self.assertIn("3.50", html)  # solar_kw
         self.assertIn("75%", html)   # battery_soc
+        self.assertIn("-1.50", html)  # battery_kw (discharging)
+        self.assertIn("Battery kW", html)
+        self.assertIn("Grid kW", html)
+        self.assertIn("Current Activity", html)
+        self.assertIn("Daily Totals", html)
+        self.assertIn("section-instant", html)
+        self.assertIn("section-daily", html)
+
+    def test_energy_balance_ok_no_warning(self):
+        """Balanced row (solar covers load) should NOT be flagged."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 3.0, "battery_kw": 0.0, "grid_kw": 0.0,
+                "backup_kw": 3.0, "battery_soc": 80, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertNotIn('class="imbalance"', html)
+        self.assertNotIn("\u26a0", html)  # no warning symbol
+
+    def test_energy_balance_mismatch_flagged(self):
+        """Load with zero supply should be flagged."""
+        snap = {
+            "time": "2026-03-17T22:00:00Z",
+            "time_minute": "2026-03-17T22:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": 0.0, "grid_kw": 0.0,
+                "backup_kw": 1.23, "battery_soc": 52, "self_sufficiency": 48,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="imbalance"', html)
+        self.assertIn("\u26a0", html)  # warning symbol
+        self.assertIn("Supply 0.00 kW", html)  # tooltip
+
+    def test_energy_balance_all_zeros_no_warning(self):
+        """All zeros (idle system) should NOT be flagged."""
+        snap = {
+            "time": "2026-03-17T03:00:00Z",
+            "time_minute": "2026-03-17T03:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": 0.0, "grid_kw": 0.0,
+                "backup_kw": 0.0, "battery_soc": 50, "self_sufficiency": 0,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertNotIn('class="imbalance"', html)
+        self.assertNotIn("\u26a0", html)
 
     def test_uptime_formatting(self):
         html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())
@@ -416,10 +474,11 @@ class TestRenderStatusPage(unittest.TestCase):
             "time_minute": "2026-03-17T15:00Z",
             "devices": [{
                 "name": "Dev", "id": "1", "solar_kw": 0, "battery_soc": 0,
+                "battery_kw": 0, "grid_kw": 0,
                 "backup_kw": 0, "self_sufficiency": 0, "system_status": "?",
                 "bat_stored_kwh": 0, "ress_count": 1,
                 "solar_kwh": 0, "grid_import_kwh": 0, "grid_export_kwh": 0,
-                "backup_kwh": 0, "bat_current_kwh": 0,
+                "backup_kwh": 0,
             }],
         }
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
@@ -620,17 +679,20 @@ class TestSnapshotData(unittest.TestCase):
         self.assertAlmostEqual(d["solar_kw"], 4.0)
         self.assertAlmostEqual(d["battery_soc"], 60)
         self.assertAlmostEqual(d["backup_kw"], 2.0)
+        # battery_kw derived: solar(4) + grid(0) - load(2) = 2.0
+        self.assertAlmostEqual(d["battery_kw"], 2.0)
+        # gridPower=0 negated = 0
+        self.assertAlmostEqual(d["grid_kw"], 0)
         self.assertAlmostEqual(d["self_sufficiency"], 90.0)
         self.assertIn("Self-Use", d["system_status"])
         self.assertAlmostEqual(d["bat_stored_kwh"], 12.0)
+        self.assertAlmostEqual(d["bat_peak_kwh"], 12.0)
         self.assertEqual(d["ress_count"], 1)
         # Daily totals
         self.assertAlmostEqual(d["solar_kwh"], 8.0)
         self.assertAlmostEqual(d["grid_import_kwh"], 2.0)
         self.assertAlmostEqual(d["grid_export_kwh"], 0.5)
         self.assertAlmostEqual(d["backup_kwh"], 6.0)
-        # bat_net total = 8.0 + 2.0 - 6.0 - 0.5 = 3.5; first poll so delta = 0.0
-        self.assertAlmostEqual(d["bat_current_kwh"], 0.0)
 
     def test_offline_device_skipped(self):
         c = _make_collector()
@@ -681,12 +743,13 @@ class TestPrometheusMetrics(unittest.TestCase):
         expected_metrics = [
             "epcube_solar_instantaneous_generation_watts",
             "epcube_battery_state_of_capacity_percent",
+            "epcube_battery_power_watts",
+            "epcube_grid_power_watts",
             "epcube_home_load_power_watts",
             "epcube_self_sufficiency_rate",
             "epcube_solar_cumulative_generation_kwh",
             "epcube_grid_import_kwh",
             "epcube_grid_export_kwh",
-            "epcube_battery_net_kwh",
             "epcube_scrape_success",
             "epcube_device_info",
         ]

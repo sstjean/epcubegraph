@@ -236,7 +236,7 @@ class EpCubeCollector:
         self._poll_count = 0
         self._poll_errors = 0
         self._consecutive_errors = 0
-        self._prev_bat_net = {}  # device_id → previous bat_net_kwh total
+        self._bat_peak = {}  # device_id → {date: str, peak: float}
         self._start_time = time.time()
 
     def _ensure_auth(self):
@@ -324,6 +324,19 @@ class EpCubeCollector:
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
             lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
+            battery_kw = float(data.get("batteryPower", 0))
+            battery_w = round(battery_kw * 1000, 1)
+            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
+            lines.append("# TYPE epcube_battery_power_watts gauge")
+            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
+
+            # ── Grid metrics ── (API uses opposite sign: negate so positive=import)
+            grid_kw = -float(data.get("gridPower", 0))
+            grid_w = round(grid_kw * 1000, 1)
+            lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
+            lines.append("# TYPE epcube_grid_power_watts gauge")
+            lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_w}")
+
             # ── Backup/home load metrics ──
             backup_kw = float(data.get("backUpPower", 0))
             backup_w = round(backup_kw * 1000, 1)
@@ -346,23 +359,36 @@ class EpCubeCollector:
             raw_status = data.get("systemStatus", "?")
             system_status = f"{_STATUS_MAP.get(raw_status, raw_status)} ({raw_status})"
             bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
+            # Track peak battery stored for the day (resets at midnight)
+            today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
+            peak_entry = self._bat_peak.get(dev_id)
+            if peak_entry and peak_entry["date"] == today_str:
+                peak_entry["peak"] = max(peak_entry["peak"], bat_stored_kwh)
+            else:
+                self._bat_peak[dev_id] = {"date": today_str, "peak": bat_stored_kwh}
+            bat_peak_kwh = self._bat_peak[dev_id]["peak"]
             ress_count = data.get("ressNumber", "?")
+            # Derive battery kW from energy balance (API batteryPower is unreliable)
+            # positive = charging, negative = discharging
+            battery_kw_derived = round(solar_kw + grid_kw - backup_kw, 2)
             snapshot["devices"].append({
                 "name": dev_name,
                 "id": dev_id,
                 "solar_kw": solar_kw,
                 "battery_soc": soc,
+                "battery_kw": battery_kw_derived,
+                "grid_kw": grid_kw,
                 "backup_kw": backup_kw,
                 "self_sufficiency": self_help,
                 "system_status": system_status,
                 "bat_stored_kwh": bat_stored_kwh,
+                "bat_peak_kwh": bat_peak_kwh,
                 "ress_count": ress_count,
                 # daily totals filled in below
                 "solar_kwh": 0.0,
                 "grid_import_kwh": 0.0,
                 "grid_export_kwh": 0.0,
                 "backup_kwh": 0.0,
-                "bat_current_kwh": 0.0,
             })
 
             # ── Scrape health ──
@@ -411,19 +437,6 @@ class EpCubeCollector:
 
                 backup_kwh = float(edata.get("backUpElectricity", 0))
 
-                # Calculate battery net from energy balance:
-                # Solar + Grid Import = House Load + Grid Export + Net Battery Charge
-                bat_net_kwh = round(solar_kwh + grid_from - backup_kwh - grid_to, 2)
-                lines.append("# HELP epcube_battery_net_kwh Net battery energy today (positive=charge, negative=discharge)")
-                lines.append("# TYPE epcube_battery_net_kwh gauge")
-                lines.append(f"epcube_battery_net_kwh{{{bl}}} {bat_net_kwh}")
-
-                # Period delta: change since last poll
-                dev_id_key = dev["id"]
-                prev = self._prev_bat_net.get(dev_id_key)
-                bat_current_kwh = round(bat_net_kwh - prev, 2) if prev is not None else 0.0
-                self._prev_bat_net[dev_id_key] = bat_net_kwh
-
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])
                 if snap_dev:
@@ -431,7 +444,6 @@ class EpCubeCollector:
                     snap_dev["grid_import_kwh"] = grid_from
                     snap_dev["grid_export_kwh"] = grid_to
                     snap_dev["backup_kwh"] = backup_kwh
-                    snap_dev["bat_current_kwh"] = bat_current_kwh
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -521,20 +533,27 @@ def _render_status_page(status, health):
                 for dev in snap["devices"]:
                     if dev["id"] != dev_id:
                         continue
+                    supply = dev["solar_kw"] + abs(dev.get("battery_kw", 0)) + abs(dev.get("grid_kw", 0))
+                    load = dev["backup_kw"]
+                    imbalance = abs(supply - load)
+                    row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.1 else ''
+                    warn_td = f' title="Supply {supply:.2f} kW ≠ Load {load:.2f} kW"' if load > 0 and imbalance > 0.1 else ''
                     rows.append(
-                        f'<tr>'
+                        f'<tr{row_cls}>'
                         f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
                         f'<td style="text-align:right">{dev["solar_kw"]:.2f}</td>'
+                        f'<td style="text-align:right">{dev.get("battery_kw", 0):+.2f}</td>'
+                        f'<td style="text-align:right">{dev.get("grid_kw", 0):+.2f}</td>'
+                        f'<td style="text-align:right"{warn_td}>{dev["backup_kw"]:.2f}{" ⚠" if row_cls else ""}</td>'
                         f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
-                        f'<td style="text-align:right">{dev["backup_kw"]:.2f}</td>'
                         f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
-                        f'<td style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
+                        f'<td class="section-divider" style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_import_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_export_kwh", 0):.1f}</td>'
-                        f'<td style="text-align:right">{dev.get("bat_current_kwh", 0):+.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("bat_peak_kwh", dev.get("bat_stored_kwh", 0)):.1f}</td>'
                         f'</tr>'
                     )
-            row_html = "\n".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;color:#888">No data</td></tr>'
+            row_html = "\n".join(rows) if rows else '<tr><td colspan="11" style="text-align:center;color:#888">No data</td></tr>'
             # Get latest snapshot values for this device
             latest_status = "?"
             latest_backup_kwh = 0.0
@@ -558,10 +577,15 @@ def _render_status_page(status, health):
                 f' <span class="badge">Battery level: {latest_bat_stored:.1f} kWh</span>'
                 f' <span class="badge">Home Supply (total): {latest_backup_kwh:.1f} kWh</span>'
                 f'</h2>\n'
-                f'<table>\n<tr>'
-                f'<th>Time</th><th>Solar kW</th><th>Battery SoC</th>'
-                f'<th>Load kW</th><th>Self-Suff</th>'
-                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Current kWh</th>'
+                f'<table>\n'
+                f'<tr class="section-header">'
+                f'<th></th>'
+                f'<th colspan="6" class="section-instant">Current Activity</th>'
+                f'<th colspan="4" class="section-daily section-divider">Daily Totals</th>'
+                f'</tr>\n<tr>'
+                f'<th>Time</th><th>Solar kW</th><th>Battery kW</th><th>Grid kW</th>'
+                f'<th>Load kW</th><th>SoC</th><th>Self-Suff</th>'
+                f'<th class="section-divider">Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Peak kWh</th>'
                 f'</tr>\n{row_html}\n</table>'
             )
         tables_html = "\n".join(tables)
@@ -582,6 +606,12 @@ def _render_status_page(status, health):
   table {{ border-collapse: collapse; width: 100%; font-size: 0.85em; margin-bottom: 0.5em; }}
   th, td {{ padding: 0.5em 0.8em; border: 1px solid #2a2a4a; }}
   th {{ background: #16213e; text-align: left; position: sticky; top: 0; }}
+  .section-header th {{ text-align: center; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 2px solid #2a2a4a; }}
+  .section-instant {{ color: #00d4aa; }}
+  .section-daily {{ color: #ffc107; }}
+  .section-divider {{ border-left: 3px solid #444; }}
+  tr.imbalance {{ background: #3a2000; }}
+  tr.imbalance:hover {{ background: #4a2800; }}
   tr:hover {{ background: #16213e; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
 </style>
