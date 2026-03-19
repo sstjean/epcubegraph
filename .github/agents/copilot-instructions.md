@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2025-06-23
 - Docker Compose for local ingestion stack (local/)
 - C# / .NET 10 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI) (001-data-ingestor)
 - VictoriaMetrics single-node on Azure Container Apps (Prometheus remote-write ingestion, PromQL queries) (001-data-ingestor)
+- TypeScript 5.8 / Preact 10.x (SPA); C# / .NET 10 (API — already exists from Feature 001) + Preact, preact-router, @azure/msal-browser (MSAL.js), uPlot (charting), Vite (build) (002-web-dashboard)
+- N/A — stateless SPA; all data fetched from Feature 001 API at runtime (002-web-dashboard)
 
 ## Project Structure
 
@@ -43,6 +45,7 @@ cd local && docker compose up -d                  # Start local ingestion
 - No `:latest` container tags in production
 
 ## Recent Changes
+- 002-web-dashboard: Added TypeScript 5.8 / Preact 10.x (SPA); C# / .NET 10 (API — already exists from Feature 001) + Preact, preact-router, @azure/msal-browser (MSAL.js), uPlot (charting), Vite (build)
 - 001-data-ingestor: Added C# / .NET 10 + ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI)
 - 001-data-ingestor: C# / .NET 10 Minimal API with PromQL passthrough endpoints, device discovery, VictoriaMetrics time-series backend, Terraform IaC on Azure Container Apps
 

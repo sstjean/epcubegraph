@@ -88,6 +88,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - **FR-012**: Dashboard MUST automatically poll for updated readings at half the collection interval (default: every 30 seconds) to keep displayed data current without manual refresh.
 - **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level. Note: "calendar month intervals" uses a 30-day fixed step (2592000s) for VictoriaMetrics compatibility. When data is downsampled, VictoriaMetrics applies its default aggregation (last value per step for gauge metrics). No custom aggregation function is specified.
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
+- **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast for readability. No formal WCAG audit or automated accessibility test suite is required.
 
 ### Key Entities
 
@@ -123,6 +124,10 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - Q: How should data gaps be visualized in historical graphs? → A: Broken line (discontinuous segments, no connection across gaps)
 - Q: What Grafana data source type should be used? → A: Existing REST API via Grafana Infinity plugin (generic JSON/REST)
 - Q: How should large time ranges beyond 30 days be handled? → A: Tiered downsampling — daily at collection interval, weekly at hourly, monthly at daily, yearly/custom >30d at calendar month — with visible aggregation notice. Custom ranges are unrestricted and auto-select the closest tier.
+
+### Session 2026-03-19
+
+- Q: What level of accessibility should the dashboard meet? → A: Basic accessibility — semantic HTML, keyboard navigable, sufficient color contrast. No formal WCAG audit or automated a11y test suite (single-user personal tool).
 
 ## Dependencies
 

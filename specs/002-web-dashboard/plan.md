@@ -1,15 +1,15 @@
 # Implementation Plan: Web Dashboard for Energy Telemetry
 
-**Branch**: `002-web-dashboard` | **Date**: 2026-03-16 | **Spec**: [spec.md](spec.md)
+**Branch**: `002-web-dashboard` | **Date**: 2026-03-19 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/002-web-dashboard/spec.md`
 
 ## Summary
 
 Build a web dashboard (Preact SPA) for viewing EP Cube energy telemetry data in a browser. The dashboard:
 
-1. **Current readings** (US1): Displays live solar, battery, and grid metrics per device, auto-polling every 30 seconds (half the 1-minute collection interval), with stale/offline indicators when data exceeds 3 minutes old.
-2. **Historical graphs** (US2): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, monthly for yearly). Data gaps rendered as broken lines.
-3. **Grafana integration** (US3): Existing API is consumed by Grafana via the Infinity plugin (generic JSON/REST) — no separate Grafana-specific endpoint.
+1. **Current readings** (US1, #33): Displays live solar, battery, and grid metrics per device, auto-polling every 30 seconds (half the 1-minute collection interval), with stale/offline indicators when data exceeds 3 minutes old.
+2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, 30d step for yearly). Data gaps rendered as broken lines.
+3. **Grafana integration** (US3, #35): Existing API is consumed by Grafana via the Infinity plugin (generic JSON/REST) — no separate Grafana-specific endpoint.
 
 The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.js + Entra ID (PKCE), and consumes the Feature 001 REST API exclusively.
 
@@ -44,10 +44,13 @@ The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.j
 | — | Security: Zero-Trust | ✅ PASS | Dashboard never trusts client state for auth decisions. All API requests authenticated. Server enforces authorization via `user_impersonation` scope. |
 | — | Security: Secrets | ✅ PASS | No secrets in SPA. Client ID and tenant ID are public identifiers. No client secret (PKCE flow). |
 | — | DevOps: IaC | ✅ PASS | SWA + dashboard Entra app registration defined in Terraform (`infra/static-web-app.tf`, `infra/entra.tf`). |
-| — | DevOps: Remote State | ✅ PASS | Existing Terraform remote state in Azure Blob Storage. |
+| — | DevOps: Remote State | ✅ PASS | Existing Terraform remote state in Azure Blob Storage with Azure AD auth. CI/CD uses OIDC. |
 | — | DevOps: CI/CD | ✅ PASS | GitHub Actions deploys via `Azure/static-web-apps-deploy@v1`. CI gate runs full Vitest suite with 100% coverage. |
-| — | DevOps: Rollback | ✅ PASS | SWA maintains deployment history. Previous deployments redeployable via GitHub Actions. |
-| — | Grafana Auth | ⚠ NOTE | Grafana uses Infinity plugin against the authenticated API. Infinity plugin must be configured with OAuth2 credentials or service account token to authenticate. See Complexity Tracking. |
+| — | DevOps: CI Test Coverage (NON-NEGOTIABLE) | ✅ PASS | Dashboard CI job runs `npm run test:coverage` with 100% threshold. Added to `ci.yml` alongside API and exporter jobs. |
+| — | DevOps: CI/CD Zero Warnings | ✅ PASS | All CI/CD steps configured to fail on warnings. |
+| — | DevOps: Environment Parity (NON-NEGOTIABLE) | ✅ PASS | Staging and production SWA + Grafana resources identical in architecture; differ only in parameter values (environment name, SKUs). |
+| — | DevOps: Rollback | ✅ PASS | SWA maintains deployment history. Previous deployments redeployable via GitHub Actions. Grafana uses immutable tagged image. |
+| — | Grafana Auth | ⚠ NOTE | Grafana uses Infinity plugin against the authenticated API. Infinity plugin must be configured with OAuth2 credentials via service principal. See Complexity Tracking. |
 
 ## Project Structure
 
@@ -61,6 +64,8 @@ specs/002-web-dashboard/
 ├── quickstart.md        # Phase 1 output
 ├── contracts/           # Phase 1 output
 │   └── dashboard-config.md
+├── checklists/
+│   └── requirements.md
 └── tasks.md             # Phase 2 output (/speckit.tasks command)
 ```
 
@@ -111,7 +116,10 @@ dashboard/
 infra/
 ├── static-web-app.tf           # azurerm_static_web_app (dashboard hosting)
 ├── entra.tf                    # + azuread_application.dashboard (SPA public client)
-└── grafana.tf                  # azurerm_container_app.grafana (Grafana on Container Apps)
+├── grafana.tf                  # azurerm_container_app.grafana (Grafana on Container Apps)
+├── keyvault.tf                 # + Grafana admin password + service principal secret
+├── variables.tf                # + grafana_image variable
+└── outputs.tf                  # + swa_default_hostname, swa_deployment_token, grafana_fqdn, dashboard_client_id
 ```
 
 **Structure Decision**: The dashboard is a standalone SPA under `dashboard/` — separate from the API (`api/`) since they have different runtimes, build tools, and deployment targets (SWA vs Container Apps). Infrastructure additions in `infra/` extend the existing Terraform configuration. This mirrors Feature 001's structure pattern.
