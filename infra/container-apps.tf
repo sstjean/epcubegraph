@@ -8,6 +8,13 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   infrastructure_subnet_id   = azurerm_subnet.infrastructure.id
+
+  # Azure auto-populates these; ignore to prevent unnecessary force-replacement.
+  lifecycle {
+    ignore_changes = [
+      infrastructure_resource_group_name,
+    ]
+  }
 }
 
 # ── Mount Azure File Share for VictoriaMetrics persistent storage ──
