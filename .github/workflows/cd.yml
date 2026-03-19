@@ -1,6 +1,10 @@
 name: CD
 
 on:
+  # Deploy to production on merge to main
+  push:
+    branches: [main]
+
   # Deploy staging on PRs to main
   pull_request:
     branches: [main]
@@ -24,7 +28,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ github.event_name == 'push' && 'production' || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -342,9 +346,10 @@ jobs:
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     steps:
-      - run: echo "Production deployment — manual dispatch"
+      - run: echo "Production deployment — push to main or manual dispatch"
 
   deploy-prod:
     needs: check-ci-prod
