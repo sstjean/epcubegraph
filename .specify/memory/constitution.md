@@ -1,10 +1,11 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.9.0 → 1.11.0
+  Version change: 1.9.0 → 1.12.0
   Modified sections:
     - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle (1.10.0)
     - DevOps — restored Remote Terraform State principle (1.11.0)
+    - DevOps — added Tool Sync (NON-NEGOTIABLE) principle (1.12.0)
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -255,6 +256,16 @@ and protecting data across all client platforms.
   a version-controlled `backend.hcl.example` template. CI/CD
   pipelines MUST use OIDC-based authentication for state
   access.
+- **Tool Sync (NON-NEGOTIABLE)**: The canonical tool list in
+  `scripts/tools.json` MUST be kept in sync with all
+  development setup scripts (`scripts/setup-macos.sh`,
+  `scripts/setup-windows.ps1`) and documentation
+  (`DEVELOP.md`). When a tool is added to or removed from
+  the project, all setup scripts and documentation MUST be
+  updated in the same commit. CI runs
+  `scripts/validate-tool-sync.sh` to enforce this — the
+  build MUST fail if any drift is detected. Introducing a
+  tool without updating all setup artifacts is prohibited.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -278,4 +289,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.11.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-19
+**Version**: 1.12.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-19
