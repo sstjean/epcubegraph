@@ -575,7 +575,12 @@ def _render_status_page(status, health):
                 f' <span class="badge">Battery level: {latest_bat_stored:.1f} kWh</span>'
                 f' <span class="badge">Home Supply (total): {latest_backup_kwh:.1f} kWh</span>'
                 f'</h2>\n'
-                f'<table>\n<tr>'
+                f'<table>\n'
+                f'<tr class="section-header">'
+                f'<th></th>'
+                f'<th colspan="6" class="section-instant">Instantaneous</th>'
+                f'<th colspan="4" class="section-daily">Daily Totals</th>'
+                f'</tr>\n<tr>'
                 f'<th>Time</th><th>Solar kW</th><th>Battery kW</th><th>Grid kW</th>'
                 f'<th>Load kW</th><th>SoC</th><th>Self-Suff</th>'
                 f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Net kWh</th>'
@@ -599,6 +604,9 @@ def _render_status_page(status, health):
   table {{ border-collapse: collapse; width: 100%; font-size: 0.85em; margin-bottom: 0.5em; }}
   th, td {{ padding: 0.5em 0.8em; border: 1px solid #2a2a4a; }}
   th {{ background: #16213e; text-align: left; position: sticky; top: 0; }}
+  .section-header th {{ text-align: center; font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 2px solid #2a2a4a; }}
+  .section-instant {{ color: #00d4aa; }}
+  .section-daily {{ color: #ffc107; }}
   tr:hover {{ background: #16213e; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
 </style>

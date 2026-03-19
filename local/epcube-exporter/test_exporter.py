@@ -392,6 +392,10 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn("-1.50", html)  # battery_kw (discharging)
         self.assertIn("Battery kW", html)
         self.assertIn("Grid kW", html)
+        self.assertIn("Instantaneous", html)
+        self.assertIn("Daily Totals", html)
+        self.assertIn("section-instant", html)
+        self.assertIn("section-daily", html)
 
     def test_uptime_formatting(self):
         html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())
