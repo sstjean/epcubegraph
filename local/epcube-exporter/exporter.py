@@ -351,6 +351,12 @@ class EpCubeCollector:
             lines.append("# TYPE epcube_self_sufficiency_rate gauge")
             lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_help}")
 
+            # ── Battery stored energy ──
+            bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
+            lines.append("# HELP epcube_battery_stored_kwh Current battery energy level")
+            lines.append("# TYPE epcube_battery_stored_kwh gauge")
+            lines.append(f"epcube_battery_stored_kwh{{{bl}}} {bat_stored_kwh}")
+
             # ── Capture snapshot for debug UI ──
             _STATUS_MAP = {
                 0: "Standby", 1: "Self-Use", 2: "Backup",
@@ -358,7 +364,6 @@ class EpCubeCollector:
             }
             raw_status = data.get("systemStatus", "?")
             system_status = f"{_STATUS_MAP.get(raw_status, raw_status)} ({raw_status})"
-            bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
             # Track peak battery stored for the day (resets at midnight)
             today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
             peak_entry = self._bat_peak.get(dev_id)
@@ -399,12 +404,15 @@ class EpCubeCollector:
                 lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
 
             # ── Device info ──
+            status_label = _STATUS_MAP.get(raw_status, str(raw_status))
             for dl in [bat_labels, sol_labels]:
                 info_labels = {
                     **dl,
                     "manufacturer": "Canadian Solar",
                     "product_code": f"EP Cube (devType={dev_type})",
                     "uid": sg_sn,
+                    "system_status": status_label,
+                    "ress_count": str(ress_count),
                 }
                 il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
                 lines.append(f"epcube_device_info{{{il}}} 1")
@@ -436,6 +444,9 @@ class EpCubeCollector:
                 lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_to}")
 
                 backup_kwh = float(edata.get("backUpElectricity", 0))
+                lines.append("# HELP epcube_home_supply_cumulative_kwh Daily cumulative home supply")
+                lines.append("# TYPE epcube_home_supply_cumulative_kwh gauge")
+                lines.append(f"epcube_home_supply_cumulative_kwh{{{bl}}} {backup_kwh}")
 
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])

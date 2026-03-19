@@ -750,6 +750,8 @@ class TestPrometheusMetrics(unittest.TestCase):
             "epcube_solar_cumulative_generation_kwh",
             "epcube_grid_import_kwh",
             "epcube_grid_export_kwh",
+            "epcube_battery_stored_kwh",
+            "epcube_home_supply_cumulative_kwh",
             "epcube_scrape_success",
             "epcube_device_info",
         ]
@@ -769,6 +771,85 @@ class TestPrometheusMetrics(unittest.TestCase):
         self.assertIn('device="epcube9999_battery"', metrics)
         self.assertIn('device="epcube9999_solar"', metrics)
         self.assertIn('ip="cloud"', metrics)
+
+    def test_battery_stored_kwh_exported(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(batteryCurrentElectricity="15.5")
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_battery_stored_kwh", metrics)
+        self.assertIn('epcube_battery_stored_kwh{device="epcube1234_battery"', metrics)
+        self.assertIn("15.5", metrics.split("epcube_battery_stored_kwh{")[1].split("\n")[0])
+
+    def test_home_supply_cumulative_kwh_exported(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        elec_data = _make_electricity_data(backUpElectricity=10.0)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, elec_data=elec_data)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_home_supply_cumulative_kwh", metrics)
+        self.assertIn('epcube_home_supply_cumulative_kwh{device="epcube1234_battery"', metrics)
+        self.assertIn("10.0", metrics.split("epcube_home_supply_cumulative_kwh{")[1].split("\n")[0])
+
+    def test_device_info_includes_system_status_label(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(systemStatus=1)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        # system_status label should appear on epcube_device_info lines
+        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
+        self.assertTrue(len(info_lines) >= 2)  # battery + solar
+        for line in info_lines:
+            self.assertIn('system_status="Self-Use"', line)
+
+    def test_device_info_includes_ress_count_label(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(ressNumber=3)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
+        self.assertTrue(len(info_lines) >= 2)
+        for line in info_lines:
+            self.assertIn('ress_count="3"', line)
 
 
 # ---------------------------------------------------------------------------
