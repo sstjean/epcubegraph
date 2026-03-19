@@ -324,6 +324,19 @@ class EpCubeCollector:
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
             lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
+            battery_kw = float(data.get("batteryPower", 0))
+            battery_w = round(battery_kw * 1000, 1)
+            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
+            lines.append("# TYPE epcube_battery_power_watts gauge")
+            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
+
+            # ── Grid metrics ──
+            grid_kw = float(data.get("gridPower", 0))
+            grid_w = round(grid_kw * 1000, 1)
+            lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
+            lines.append("# TYPE epcube_grid_power_watts gauge")
+            lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_w}")
+
             # ── Backup/home load metrics ──
             backup_kw = float(data.get("backUpPower", 0))
             backup_w = round(backup_kw * 1000, 1)
@@ -352,6 +365,8 @@ class EpCubeCollector:
                 "id": dev_id,
                 "solar_kw": solar_kw,
                 "battery_soc": soc,
+                "battery_kw": battery_kw,
+                "grid_kw": grid_kw,
                 "backup_kw": backup_kw,
                 "self_sufficiency": self_help,
                 "system_status": system_status,
@@ -362,7 +377,7 @@ class EpCubeCollector:
                 "grid_import_kwh": 0.0,
                 "grid_export_kwh": 0.0,
                 "backup_kwh": 0.0,
-                "bat_current_kwh": 0.0,
+                "bat_net_kwh": 0.0,
             })
 
             # ── Scrape health ──
@@ -431,7 +446,7 @@ class EpCubeCollector:
                     snap_dev["grid_import_kwh"] = grid_from
                     snap_dev["grid_export_kwh"] = grid_to
                     snap_dev["backup_kwh"] = backup_kwh
-                    snap_dev["bat_current_kwh"] = bat_current_kwh
+                    snap_dev["bat_net_kwh"] = bat_net_kwh
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -525,16 +540,18 @@ def _render_status_page(status, health):
                         f'<tr>'
                         f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
                         f'<td style="text-align:right">{dev["solar_kw"]:.2f}</td>'
-                        f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
+                        f'<td style="text-align:right">{dev.get("battery_kw", 0):+.2f}</td>'
+                        f'<td style="text-align:right">{dev.get("grid_kw", 0):+.2f}</td>'
                         f'<td style="text-align:right">{dev["backup_kw"]:.2f}</td>'
+                        f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
                         f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
                         f'<td style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_import_kwh", 0):.1f}</td>'
                         f'<td style="text-align:right">{dev.get("grid_export_kwh", 0):.1f}</td>'
-                        f'<td style="text-align:right">{dev.get("bat_current_kwh", 0):+.1f}</td>'
+                        f'<td style="text-align:right">{dev.get("bat_net_kwh", 0):+.1f}</td>'
                         f'</tr>'
                     )
-            row_html = "\n".join(rows) if rows else '<tr><td colspan="9" style="text-align:center;color:#888">No data</td></tr>'
+            row_html = "\n".join(rows) if rows else '<tr><td colspan="11" style="text-align:center;color:#888">No data</td></tr>'
             # Get latest snapshot values for this device
             latest_status = "?"
             latest_backup_kwh = 0.0
@@ -559,9 +576,9 @@ def _render_status_page(status, health):
                 f' <span class="badge">Home Supply (total): {latest_backup_kwh:.1f} kWh</span>'
                 f'</h2>\n'
                 f'<table>\n<tr>'
-                f'<th>Time</th><th>Solar kW</th><th>Battery SoC</th>'
-                f'<th>Load kW</th><th>Self-Suff</th>'
-                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Current kWh</th>'
+                f'<th>Time</th><th>Solar kW</th><th>Battery kW</th><th>Grid kW</th>'
+                f'<th>Load kW</th><th>SoC</th><th>Self-Suff</th>'
+                f'<th>Solar kWh</th><th>Grid In kWh</th><th>Grid Out kWh</th><th>Bat Net kWh</th>'
                 f'</tr>\n{row_html}\n</table>'
             )
         tables_html = "\n".join(tables)

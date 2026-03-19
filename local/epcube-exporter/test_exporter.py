@@ -175,7 +175,7 @@ class TestEnergyBalance(unittest.TestCase):
         self.assertEqual(net, 0.0)
 
     def test_calculation_in_poll(self):
-        """Verify the actual poll method calculates bat_current_kwh correctly."""
+        """Verify the actual poll method calculates bat_net_kwh correctly."""
         c = _make_collector()
         dev = _make_device()
         c._devices = [dev]
@@ -192,13 +192,13 @@ class TestEnergyBalance(unittest.TestCase):
                           side_effect=_mock_api_for([dev], elec_data=elec_data)):
             c.poll()
 
-        # First poll: no previous value, so bat_current_kwh = 0.0
+        # bat_net = 10 + 5 - 8 - 2 = 5.0
         snap = c._history[-1]
         device_snap = snap["devices"][0]
-        self.assertEqual(device_snap["bat_current_kwh"], 0.0)
+        self.assertEqual(device_snap["bat_net_kwh"], 5.0)
 
     def test_period_delta_second_poll(self):
-        """Second poll shows the change since the first poll."""
+        """Second poll updates bat_net_kwh to reflect new cumulative total."""
         c = _make_collector()
         dev = _make_device()
         c._devices = [dev]
@@ -228,9 +228,8 @@ class TestEnergyBalance(unittest.TestCase):
                           side_effect=_mock_api_for([dev], elec_data=elec2)):
             c.poll()
 
-        # Delta: 7.0 - 5.0 = 2.0
         snap = c._history[-1]
-        self.assertEqual(snap["devices"][0]["bat_current_kwh"], 2.0)
+        self.assertEqual(snap["devices"][0]["bat_net_kwh"], 7.0)
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +367,8 @@ class TestRenderStatusPage(unittest.TestCase):
                 "id": "1234",
                 "solar_kw": 3.5,
                 "battery_soc": 75,
+                "battery_kw": -1.5,
+                "grid_kw": 0.0,
                 "backup_kw": 1.2,
                 "self_sufficiency": 85,
                 "system_status": "Normal (4)",
@@ -377,7 +378,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_import_kwh": 3.0,
                 "grid_export_kwh": 1.5,
                 "backup_kwh": 10.0,
-                "bat_current_kwh": 4.0,
+                "bat_net_kwh": 4.0,
             }],
         }
         status = self._make_status(history=[snap])
@@ -388,6 +389,9 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn("EP Cube", html)
         self.assertIn("3.50", html)  # solar_kw
         self.assertIn("75%", html)   # battery_soc
+        self.assertIn("-1.50", html)  # battery_kw (discharging)
+        self.assertIn("Battery kW", html)
+        self.assertIn("Grid kW", html)
 
     def test_uptime_formatting(self):
         html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())
@@ -416,10 +420,11 @@ class TestRenderStatusPage(unittest.TestCase):
             "time_minute": "2026-03-17T15:00Z",
             "devices": [{
                 "name": "Dev", "id": "1", "solar_kw": 0, "battery_soc": 0,
+                "battery_kw": 0, "grid_kw": 0,
                 "backup_kw": 0, "self_sufficiency": 0, "system_status": "?",
                 "bat_stored_kwh": 0, "ress_count": 1,
                 "solar_kwh": 0, "grid_import_kwh": 0, "grid_export_kwh": 0,
-                "backup_kwh": 0, "bat_current_kwh": 0,
+                "backup_kwh": 0, "bat_net_kwh": 0,
             }],
         }
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
@@ -620,6 +625,8 @@ class TestSnapshotData(unittest.TestCase):
         self.assertAlmostEqual(d["solar_kw"], 4.0)
         self.assertAlmostEqual(d["battery_soc"], 60)
         self.assertAlmostEqual(d["backup_kw"], 2.0)
+        self.assertAlmostEqual(d["battery_kw"], 0)
+        self.assertAlmostEqual(d["grid_kw"], 0)
         self.assertAlmostEqual(d["self_sufficiency"], 90.0)
         self.assertIn("Self-Use", d["system_status"])
         self.assertAlmostEqual(d["bat_stored_kwh"], 12.0)
@@ -629,8 +636,8 @@ class TestSnapshotData(unittest.TestCase):
         self.assertAlmostEqual(d["grid_import_kwh"], 2.0)
         self.assertAlmostEqual(d["grid_export_kwh"], 0.5)
         self.assertAlmostEqual(d["backup_kwh"], 6.0)
-        # bat_net total = 8.0 + 2.0 - 6.0 - 0.5 = 3.5; first poll so delta = 0.0
-        self.assertAlmostEqual(d["bat_current_kwh"], 0.0)
+        # bat_net total = 8.0 + 2.0 - 6.0 - 0.5 = 3.5
+        self.assertAlmostEqual(d["bat_net_kwh"], 3.5)
 
     def test_offline_device_skipped(self):
         c = _make_collector()
@@ -681,6 +688,8 @@ class TestPrometheusMetrics(unittest.TestCase):
         expected_metrics = [
             "epcube_solar_instantaneous_generation_watts",
             "epcube_battery_state_of_capacity_percent",
+            "epcube_battery_power_watts",
+            "epcube_grid_power_watts",
             "epcube_home_load_power_watts",
             "epcube_self_sufficiency_rate",
             "epcube_solar_cumulative_generation_kwh",
