@@ -1,9 +1,9 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.6.1 → 1.6.2
+  Version change: 1.9.0 → 1.10.0
   Modified sections:
-    - DevOps — added CI Coverage Gate rule (NON-NEGOTIABLE)
+    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -14,7 +14,7 @@
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Dependent specs:
     - specs/001-data-ingestor/plan.md             ✅ no changes needed
-  Follow-up TODOs: none
+  Follow-up TODOs: none (all completed)
 -->
 
 # EP Cube Graph Constitution
@@ -64,6 +64,16 @@ test surface, and obscure the intent of the codebase.
   achieve 100% code coverage. No production code may exist
   without a corresponding test that exercises it. Coverage
   MUST be measured and enforced in the CI gate.
+- **Arrange-Act-Assert (AAA)**: All tests MUST follow the
+  Arrange-Act-Assert pattern. Each test method MUST contain
+  exactly three clearly separated sections marked with
+  `// Arrange`, `// Act`, and `// Assert` comments. The
+  Arrange section sets up preconditions and inputs. The Act
+  section invokes the behaviour under test. The Assert section
+  verifies the expected outcome. Sections MAY be omitted only
+  when they would be genuinely empty (e.g., no arrangement
+  needed for a static method with no dependencies), but the
+  remaining sections MUST still be commented.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.
@@ -119,7 +129,7 @@ silent regressions.
   versioned API contract. Direct database access from clients
   is prohibited.
 - **Local Data Ingestion Containerization**: All local data
-  ingestion services (e.g., echonet-exporter, vmagent) MUST
+  ingestion services (e.g., epcube-exporter, vmagent) MUST
   be packaged and deployed as Docker containers. Container
   images MUST be reproducible from a Dockerfile in the
   repository. Bare-metal or manual installation of ingestion
@@ -204,10 +214,21 @@ and protecting data across all client platforms.
   informational, or reduced to a warning under any
   circumstance. Lowering the threshold requires a constitution
   amendment (MAJOR version bump).
-- **Environment Parity**: Development, staging (if present),
-  and production environments MUST be provisioned from the
-  same infrastructure-as-code templates, differing only in
-  parameter values.
+- **CI Test Coverage (NON-NEGOTIABLE)**: All tests across all
+  components (API, exporter, etc.) MUST be executed during
+  branch CI on every push. Smoke tests MUST be run against
+  production after each deployment. No test suite may exist
+  in the repository without a corresponding CI job that
+  executes it.
+- **Environment Parity (NON-NEGOTIABLE)**: Staging and
+  production environments MUST be identical in architecture,
+  security posture, network topology, and configuration —
+  differing only in parameter values (names, scale, SKUs).
+  If a security control, network rule, or architectural
+  pattern exists in production, it MUST exist in staging.
+  Shortcuts, workarounds, or reduced security in staging
+  are prohibited. A change that cannot be validated in
+  staging MUST NOT be promoted to production.
 - **Rollback Capability**: Every deployment MUST support
   rollback to the previous version. Container-based
   deployments MUST use immutable, tagged images — `latest`
@@ -219,6 +240,13 @@ and protecting data across all client platforms.
   environment-specific values (e.g., device IPs, tokens) via
   a configuration file or environment variables; all other
   steps MUST be automated.
+- **CI/CD Zero Warnings**: All errors and warnings reported
+  by GitHub Actions during push and pull request workflows
+  MUST be analyzed and resolved. Warnings MUST NOT be
+  ignored or allowed to accumulate. Each CI/CD run MUST
+  complete with zero warnings and zero errors. Persistent
+  warnings that cannot be fixed MUST be suppressed with an
+  inline justification comment explaining why.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -242,4 +270,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.6.2 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-08
+**Version**: 1.9.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-18

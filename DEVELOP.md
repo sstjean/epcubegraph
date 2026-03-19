@@ -47,7 +47,7 @@ Use `--check` (macOS) or `-Check` (Windows) to see what's missing without instal
 
 You also need:
 - An Azure subscription with Owner or Contributor + User Access Administrator role
-- EP Cube gateway device(s) on your LAN
+- EP Cube cloud account credentials (for `monitoring-us.epcube.com`)
 
 ---
 

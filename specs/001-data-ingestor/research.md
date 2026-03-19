@@ -189,7 +189,7 @@ builder.Services.AddHttpClient<IVictoriaMetricsClient, VictoriaMetricsClient>(cl
 Key advantages:
 - **Zero additional dependencies**: `HttpClient` is built into .NET. No NuGet packages needed for HTTP calls.
 - **IHttpClientFactory integration**: ASP.NET Core's `AddHttpClient<T>` provides connection pooling, DNS refresh, and typed client DI — all for free.
-- **Full control**: The API service needs to construct PromQL queries with device/metric filters (e.g., `echonet_battery_state_of_capacity_percent{device="epcube_battery"}`). Direct HTTP calls give full control over query construction, timeout handling, and error mapping.
+- **Full control**: The API service needs to construct PromQL queries with device/metric filters (e.g., `epcube_battery_state_of_capacity_percent{device="epcube_battery"}`). Direct HTTP calls give full control over query construction, timeout handling, and error mapping.
 - **Async-native**: `HttpClient` is fully async, consistent with ASP.NET Core's async pipeline.
 - **Thin wrapper**: The `VictoriaMetricsClient` class is ~60–80 lines of code covering `QueryAsync`, `QueryRangeAsync`, and `SeriesAsync` — trivially testable by mocking `HttpMessageHandler`.
 - **VictoriaMetrics compatibility**: VictoriaMetrics is 100% compatible with the Prometheus HTTP API. No VictoriaMetrics-specific client is needed.
@@ -204,154 +204,51 @@ Key advantages:
 
 ---
 
-## Topic 4: Docker Multi-Arch Builds for echonet-exporter
+## Topic 4: epcube-exporter — Cloud API Poller
 
-echonet-exporter is a Go binary that must run on AMD64 (NAS) and ARM64 (Raspberry Pi) per FR-015 and the spec assumptions.
+> **Updated 2026-03-16**: Originally researched Docker multi-arch builds for echonet-exporter (a Go-based ECHONET Lite poller). The EP Cube gateways were discovered to have no local protocol support. The system now uses epcube-exporter, a Python-based poller that authenticates with the EP Cube cloud API (monitoring-us.epcube.com) and exposes the same `epcube_*` Prometheus metrics.
 
 ### Decision
 
-**Use Docker buildx with Go cross-compilation** (`GOOS`/`GOARCH`) in a multi-stage Dockerfile. Base image: `alpine:3.19` (or latest stable).
+**Custom Python exporter** that polls the EP Cube cloud API and exposes Prometheus metrics on `:9200/metrics`. Deployed as an Azure Container App with internal-only ingress, scraped directly by VictoriaMetrics via `-promscrape.config`.
 
-### Rationale
+### Key Details
 
-Go has first-class cross-compilation support. Combined with Docker buildx's `--platform` flag and BuildKit's pre-defined `BUILDPLATFORM`/`TARGETOS`/`TARGETARCH` args, a single Dockerfile produces multi-arch images without QEMU emulation:
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS build
-ARG TARGETOS
-ARG TARGETARCH
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w" -o /echonet-exporter ./cmd/echonet-exporter
-
-FROM alpine:3.19
-RUN apk add --no-cache ca-certificates tzdata
-COPY --from=build /echonet-exporter /usr/local/bin/echonet-exporter
-EXPOSE 9191
-ENTRYPOINT ["echonet-exporter"]
-```
-
-Build command:
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t ghcr.io/styygeli/echonet-exporter:latest --push .
-```
-
-Key advantages:
-- **Native-speed builds**: Go cross-compiles natively — no QEMU emulation needed for the compilation step. Only the final `alpine` stage needs multi-arch support (which Alpine provides natively).
-- **`CGO_ENABLED=0`**: echonet-exporter is pure Go (UDP networking, HTTP server). Static binary with no C dependencies, so cross-compilation works perfectly.
-- **Small image**: Alpine base (~7 MB) + static Go binary (~10–15 MB). Total image ~20 MB.
-- **`ca-certificates` + `tzdata`**: Included for HTTPS (if needed for future features) and correct timezone handling for UTC normalization (FR-011).
-- **`-ldflags="-s -w"`**: Strips debug symbols, reducing binary size by ~30%.
-
-### Base Image Choice
-
-| Option | Size | Why Chosen/Rejected |
-|---|---|---|
-| **`alpine:3.19`** | ~7 MB | **Chosen**. Minimal, multi-arch (amd64, arm64, arm/v7), well-maintained, includes `apk` for adding `ca-certificates` and `tzdata`. |
-| **`scratch`** | 0 MB | Rejected. No shell for debugging, no `ca-certificates` (need to copy from builder), no timezone data. Marginal size savings (~7 MB) not worth the debuggability trade-off for an IoT edge device. |
-| **`distroless`** | ~20 MB | Rejected. Larger than alpine, no shell for debugging, Google-maintained (not Alpine ecosystem). |
-| **`debian:bookworm-slim`** | ~80 MB | Rejected. Unnecessarily large for a static Go binary. |
-
-### Alternatives Considered
-
-| Alternative | Why Rejected |
-|---|---|
-| **QEMU emulation (no cross-compilation)** | Docker buildx supports QEMU for emulating arm64 on amd64 hosts. However, QEMU-emulated Go compilation is 5–10x slower than native cross-compilation. For a project with regular CI builds, this wastes significant time. Go's built-in cross-compilation eliminates the need for QEMU entirely. |
-| **Separate Dockerfiles per arch** | Maintainability nightmare. The multi-stage cross-compilation approach produces a single Dockerfile for all platforms. |
-| **Pre-built binaries (no Docker build)** | The spec (FR-015) requires Dockerfiles in the repo. The image must be buildable from source via `docker compose build` (FR-018). |
+- **Authentication**: AJ-Captcha (blockPuzzle) auto-solved via OpenCV contour matching + AES-ECB encryption. Auto-re-authenticates on HTTP 401.
+- **Dockerfile**: `python:3.12-slim` + `opencv-python-headless` + `pycryptodome` + `numpy`
+- **Deployment**: Built by `infra/deploy.sh`, pushed to ACR, deployed as a Container App
+- **Credentials**: EP Cube cloud username/password stored in Azure Key Vault, injected as Container App secrets
 
 ---
 
-## Topic 5: vmagent Configuration for Remote-Write with Bearer Token
+## Topic 5: VictoriaMetrics Direct Scraping (promscrape)
 
-vmagent must include a bearer token in the `Authorization` header when remote-writing to the Azure-hosted VictoriaMetrics endpoint (FR-012, FR-016).
+> **Updated 2026-03-16**: Originally researched vmagent configuration for remote-write with bearer token from a local Docker Compose stack. The ingestion tier now runs entirely in Azure Container Apps, so VictoriaMetrics scrapes epcube-exporter directly — no vmagent intermediary needed.
 
 ### Decision
 
-**Use the `-remoteWrite.bearerToken` command-line flag** (or `-remoteWrite.bearerTokenFile` for file-based injection), configured via environment variable in Docker Compose.
+**Use VictoriaMetrics built-in `-promscrape.config`** to scrape the epcube-exporter Container App directly within the Container Apps environment.
 
 ### Rationale
 
-vmagent has built-in, first-class support for bearer token authentication on remote-write. The relevant flags are:
-
-```
--remoteWrite.bearerToken array
-    Optional bearer auth token to use for the corresponding -remoteWrite.url
-
--remoteWrite.bearerTokenFile array
-    Optional path to bearer token file to use for the corresponding -remoteWrite.url.
-    The token is re-read from the file every second
-```
-
-When `-remoteWrite.bearerToken=MY_TOKEN` is set, vmagent automatically sends:
-```
-Authorization: Bearer MY_TOKEN
-```
-with every remote-write request to the corresponding `-remoteWrite.url`.
-
-Docker Compose configuration:
-```yaml
-services:
-  vmagent:
-    image: victoriametrics/vmagent:v1.106.1
-    command:
-      - "-promscrape.config=/etc/vmagent/scrape.yml"
-      - "-remoteWrite.url=${REMOTE_WRITE_URL}"
-      - "-remoteWrite.bearerToken=${REMOTE_WRITE_TOKEN}"
-      - "-remoteWrite.tmpDataPath=/vmagent-data"
-      - "-remoteWrite.maxDiskUsagePerURL=1GB"
-    env_file: .env
-    volumes:
-      - ./vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro
-      - vmagent-data:/vmagent-data
-    restart: unless-stopped
-```
-
-`.env` file:
-```bash
-REMOTE_WRITE_URL=https://epcubegraph-vm.azurecontainerapps.io/api/v1/write
-REMOTE_WRITE_TOKEN=<token-from-key-vault>
-```
-
-### Key Configuration Details
-
-| Flag | Purpose | Notes |
-|---|---|---|
-| `-remoteWrite.bearerToken` | Injects bearer token in Authorization header | Supports `%{ENV_VAR}` substitution in command-line args. Can also use env var directly via Docker Compose `command:` interpolation. |
-| `-remoteWrite.bearerTokenFile` | Reads token from a file, re-reads every second | Useful for token rotation without container restart. File can be mounted via Docker secret or volume. |
-| `-remoteWrite.tmpDataPath` | WAL (write-ahead log) directory for buffering | Essential for SC-002 (zero data loss during Azure outages). Must be a persistent volume. |
-| `-remoteWrite.maxDiskUsagePerURL` | Maximum WAL size | Prevents disk exhaustion on the Docker host. 1 GB is sufficient for days of buffering at ~28K points/day. |
-| `-remoteWrite.headers` | Custom HTTP headers | Alternative to `-remoteWrite.bearerToken`. Can set `Authorization: Bearer <token>` directly: `-remoteWrite.headers='Authorization: Bearer MY_TOKEN'`. Less ergonomic but equivalent. |
-
-### Alternatives Considered
-
-| Alternative | Why Rejected |
-|---|---|
-| **`-remoteWrite.headers`** | Functionally equivalent (`-remoteWrite.headers='Authorization: Bearer TOKEN'`) but less idiomatic. The dedicated `-remoteWrite.bearerToken` flag is clearer in intent and masks the token value in logs/metrics by default (vmagent hides `-remoteWrite.url` secrets). |
-| **`-remoteWrite.basicAuth.*`** | Sends Basic Auth header, not Bearer token. vmauth on the Azure side is configured for bearer token validation, not Basic Auth. Protocol mismatch. |
-| **`-remoteWrite.oauth2.*`** | vmagent supports OAuth2 client-credentials flow (`-remoteWrite.oauth2.clientID`, `-remoteWrite.oauth2.clientSecret`, `-remoteWrite.oauth2.tokenUrl`). This would allow vmagent to obtain short-lived tokens from Entra ID. However, this adds significant complexity (Entra app registration for vmagent, token endpoint configuration) for a single-user system where a pre-shared token is sufficient. Noted in the plan's Complexity Tracking as a justified exception. |
-| **`-remoteWrite.bearerTokenFile` as primary** | Better for token rotation (re-reads every second). However, for Docker Compose on an edge device, injecting via environment variable is simpler. Can be switched to file-based if rotation policy requires it later. YAGNI for now. |
-
-### Scrape Configuration
-
-The vmagent scrape config (`scrape.yml`) for echonet-exporter:
+Since epcube-exporter runs in the same Container Apps environment as VictoriaMetrics, there is no network boundary to bridge. VictoriaMetrics single-node has built-in Prometheus scraping support via the `-promscrape.config` flag, eliminating the need for vmagent entirely.
 
 ```yaml
+# promscrape config (generated by Terraform, mounted via init container)
 scrape_configs:
-  - job_name: echonet
+  - job_name: epcube
     static_configs:
-      - targets: ["echonet-exporter:9191"]
+      - targets: ["<environment_name>-exporter"]
     metrics_path: /metrics
     scrape_interval: 60s
     scrape_timeout: 30s
 ```
 
-Note: `echonet-exporter` is resolved via Docker Compose service name networking. The scrape interval aligns with echonet-exporter's detached scraping (default 1-minute interval).
+The epcube-exporter Container App has internal-only ingress on port 9200. Within the Container Apps environment, VictoriaMetrics reaches it via `http://<app-name>` (port 80, which maps to target port 9200).
+
+### Notes on vmauth (retained)
+
+vmauth remains as a sidecar in the VictoriaMetrics Container App for external remote-write access. This allows additional metric sources to push data via bearer-token-authenticated HTTPS. The primary epcube-exporter data flow bypasses vmauth entirely (VictoriaMetrics scrapes directly).
 
 ---
 
@@ -598,7 +495,7 @@ Key advantages:
 | 1 | Remote-write auth proxy | vmauth sidecar with bearer token config | `victoriametrics/vmauth` Docker image |
 | 2 | ASP.NET Core + Entra ID JWT + scope | `Microsoft.Identity.Web` with `RequireScope("user_impersonation")` default policy | `Microsoft.Identity.Web` (NuGet) |
 | 3 | PromQL queries from C# | Direct `HttpClient` async client (~70 LOC) | `HttpClient` (built-in .NET) |
-| 4 | Docker multi-arch builds | `docker buildx` + Go cross-compilation, `alpine:3.19` base | `golang:1.22-alpine` (build), `alpine:3.19` (runtime) |
-| 5 | vmagent bearer token | `-remoteWrite.bearerToken` flag via env var | `victoriametrics/vmagent` Docker image |
+| 4 | epcube-exporter cloud API poller | Custom Python exporter deployed as Azure Container App | `python:3.12-slim` + `opencv-python-headless` + `pycryptodome` |
+| 5 | VictoriaMetrics direct scraping | `-promscrape.config` within Container Apps environment | VictoriaMetrics built-in (no vmagent needed) |
 | 6 | Prometheus self-monitoring | `prometheus-net.AspNetCore` v8.2.1 (2-line setup) | `prometheus-net.AspNetCore` (NuGet) |
 | 7 | Input validation | Static `Validate` helper class with 4 methods | None (built-in .NET) |

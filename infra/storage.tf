@@ -18,6 +18,19 @@ resource "azurerm_storage_account" "main" {
   location                 = azurerm_resource_group.main.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
+  # CONSTITUTION DEVIATION: Zero-trust requires identity-based verification at
+  # every boundary, but azurerm_container_app_environment_storage has no managed
+  # identity option — access_key is the only supported auth for file share mounts.
+  # Tracked in plan.md Complexity Tracking. Remediate when Azure adds support.
+  shared_access_key_enabled       = true
+  allow_nested_items_to_be_public = false
+  public_network_access_enabled   = true
+
+  network_rules {
+    default_action = "Deny"
+    bypass         = ["AzureServices"]
+    ip_rules       = var.allowed_ips
+  }
 }
 
 resource "azurerm_storage_share" "vm_data" {

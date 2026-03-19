@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# EP Cube Graph — Local Ingestion Stack Deployment
-# Deploys echonet-exporter + vmagent via Docker Compose
+# EP Cube Graph — Local Development Stack Deployment
+# For local testing with Docker Compose. Production runs entirely in Azure
+# via infra/deploy.sh — this script is NOT needed for production.
 #
 # Usage:
 #   ./deploy.sh              # Build and start (or update) the stack
@@ -14,7 +15,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_DIR="${SCRIPT_DIR}"
-COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
+COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.prod-local.yml"
 ENV_FILE="${COMPOSE_DIR}/.env"
 ENV_EXAMPLE="${COMPOSE_DIR}/.env.example"
 
@@ -54,7 +55,7 @@ validate_env() {
     if [[ -f "${ENV_EXAMPLE}" ]]; then
       warn ".env file not found. Creating from .env.example ..."
       cp "${ENV_EXAMPLE}" "${ENV_FILE}"
-      warn "Edit ${ENV_FILE} with your device IPs and remote-write credentials, then re-run."
+      warn "Edit ${ENV_FILE} with your EP Cube credentials, then re-run."
       exit 1
     else
       die ".env file not found and no .env.example available."
@@ -71,10 +72,8 @@ validate_env() {
 
   # Required variables and their placeholder patterns
   local -A required=(
-    [EPCUBE1_IP]="<"
-    [EPCUBE2_IP]="<"
-    [REMOTE_WRITE_URL]="<"
-    [REMOTE_WRITE_TOKEN]="<"
+    [EPCUBE_USERNAME]="<"
+    [EPCUBE_PASSWORD]="<"
   )
 
   for var in "${!required[@]}"; do
@@ -88,21 +87,6 @@ validate_env() {
       ((errors++))
     fi
   done
-
-  # Validate IP addresses are plausible
-  for ip_var in EPCUBE1_IP EPCUBE2_IP; do
-    val="${!ip_var:-}"
-    if [[ -n "${val}" && ! "${val}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-      error "${ip_var} does not look like a valid IP address: ${val}"
-      ((errors++))
-    fi
-  done
-
-  # Validate remote-write URL
-  if [[ -n "${REMOTE_WRITE_URL:-}" && ! "${REMOTE_WRITE_URL}" =~ ^https?:// ]]; then
-    error "REMOTE_WRITE_URL must start with http:// or https://"
-    ((errors++))
-  fi
 
   if ((errors > 0)); then
     die "Fix the ${errors} error(s) above in ${ENV_FILE} and re-run."
@@ -143,11 +127,11 @@ cmd_status() {
 
   echo ""
 
-  # Check if echonet-exporter metrics endpoint is reachable
-  if curl -sf http://localhost:9191/metrics >/dev/null 2>&1; then
-    ok "echonet-exporter metrics endpoint is reachable at http://localhost:9191/metrics"
+  # Check if epcube-exporter metrics endpoint is reachable
+  if curl -sf http://localhost:9200/metrics >/dev/null 2>&1; then
+    ok "epcube-exporter metrics endpoint is reachable at http://localhost:9200/metrics"
   else
-    warn "echonet-exporter metrics endpoint is not reachable at http://localhost:9191/metrics"
+    warn "epcube-exporter metrics endpoint is not reachable at http://localhost:9200/metrics"
   fi
 }
 

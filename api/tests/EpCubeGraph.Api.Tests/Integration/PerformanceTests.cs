@@ -20,12 +20,10 @@ public class PerformanceTests : IClassFixture<VictoriaMetricsFixture>
     [Fact]
     public async Task QueryRange_30DaysData_CompletesWithin2Seconds()
     {
+        // Arrange
         // SC-003: Seed 30 days of synthetic data, assert query returns within 2s
         var now = DateTimeOffset.UtcNow;
         var startTime = now.AddDays(-30);
-
-        // Seed data: one sample per minute for 30 days = 43200 samples
-        // Insert in batches to avoid timeouts
         var batchSize = 1000;
         var totalSamples = 30 * 24 * 60; // 43200 samples (1 per minute for 30 days)
 
@@ -45,13 +43,11 @@ public class PerformanceTests : IClassFixture<VictoriaMetricsFixture>
             await ImportPrometheusData(lines.ToString());
         }
 
-        // Allow indexing
         await Task.Delay(2000);
-
-        // Time the query
         var queryStart = now.AddDays(-30).ToUnixTimeSeconds().ToString();
         var queryEnd = now.ToUnixTimeSeconds().ToString();
 
+        // Act
         var sw = Stopwatch.StartNew();
         var result = await _client.QueryRangeAsync(
             "perf_test_solar_watts{device=\"solar\"}",
@@ -60,6 +56,7 @@ public class PerformanceTests : IClassFixture<VictoriaMetricsFixture>
             "1m");
         sw.Stop();
 
+        // Assert
         Assert.Equal("success", result.GetProperty("status").GetString());
         Assert.True(sw.Elapsed.TotalSeconds < 2.0,
             $"Query took {sw.Elapsed.TotalSeconds:F2}s, expected < 2.0s (SC-003)");

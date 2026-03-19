@@ -22,14 +22,34 @@ variable "victoria_metrics_image" {
   default     = "victoriametrics/victoria-metrics:v1.106.1"
 }
 
-variable "vmauth_image" {
-  description = "vmauth container image"
-  type        = string
-  default     = "victoriametrics/vmauth:v1.106.1"
-}
-
 variable "api_image" {
   description = "API container image (set by deploy.sh after build; leave empty to skip API deployment)"
   type        = string
   default     = ""
+}
+
+variable "epcube_image" {
+  description = "epcube-exporter container image (set by deploy.sh after build; leave empty to skip exporter deployment)"
+  type        = string
+  default     = ""
+}
+
+variable "epcube_username" {
+  description = "EP Cube cloud account email (monitoring-us.epcube.com)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "epcube_password" {
+  description = "EP Cube cloud account password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "allowed_ips" {
+  description = "IP addresses allowed to access Key Vault and storage data plane. Populated automatically: CD pipeline detects runner IP, deploy.sh detects your public IP."
+  type        = list(string)
+  default     = []
 }

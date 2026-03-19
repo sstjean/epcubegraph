@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EpCubeGraph.Api;
 using EpCubeGraph.Api.Endpoints;
 using EpCubeGraph.Api.Services;
 using Microsoft.AspNetCore.Authentication;
@@ -11,18 +12,31 @@ var builder = WebApplication.CreateBuilder(args);
 // Structured JSON logging (T042)
 builder.Logging.AddJsonConsole();
 
-// Authentication — Entra ID JWT validation (T006)
-builder.Services
-    .AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
-
-// Authorization — require user_impersonation scope as default policy (T006)
-builder.Services.AddAuthorization(options =>
+// Authentication & Authorization
+var disableAuth = string.Equals(builder.Configuration["Authentication:DisableAuth"], "true", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(Environment.GetEnvironmentVariable("EPCUBE_DISABLE_AUTH"), "true", StringComparison.OrdinalIgnoreCase);
+if (builder.Environment.IsDevelopment() && disableAuth)
 {
-    options.DefaultPolicy = new AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .RequireScope("user_impersonation")
-        .Build();
-});
+    // Local development: skip Entra ID, allow all requests
+    builder.Services.AddAuthentication("NoAuth")
+        .AddScheme<AuthenticationSchemeOptions, NoAuthHandler>("NoAuth", null);
+    builder.Services.AddAuthorization();
+}
+else
+{
+    // Production: Entra ID JWT validation (T006)
+    builder.Services
+        .AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
+
+    // Require user_impersonation scope as default policy (T006)
+    builder.Services.AddAuthorization(options =>
+    {
+        options.DefaultPolicy = new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .RequireScope("user_impersonation")
+            .Build();
+    });
+}
 
 // Service registration (T031)
 builder.Services
@@ -30,6 +44,7 @@ builder.Services
     {
         var url = builder.Configuration["VictoriaMetrics:Url"] ?? "http://localhost:8428";
         client.BaseAddress = new Uri(url);
+        client.Timeout = TimeSpan.FromSeconds(10);
     });
 builder.Services.AddScoped<GridCalculator>();
 

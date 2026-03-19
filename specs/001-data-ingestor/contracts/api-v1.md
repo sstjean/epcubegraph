@@ -42,7 +42,7 @@ Authorization: Bearer <entra-id-jwt>
 
 List all known devices with their metadata.
 
-**Description**: Returns device identity information from `echonet_device_info` metrics stored in VictoriaMetrics. Each device entry includes the labels exposed by echonet-exporter.
+**Description**: Returns device identity information from `epcube_device_info` metrics stored in VictoriaMetrics. Each device entry includes the labels exposed by epcube-exporter.
 
 **Response**: `200 OK`
 
@@ -52,7 +52,6 @@ List all known devices with their metadata.
     {
       "device": "epcube_battery",
       "class": "storage_battery",
-      "ip": "192.168.1.10",
       "manufacturer": "Canadian Solar",
       "product_code": "EP Cube 2.0",
       "uid": "ABC123",
@@ -61,7 +60,6 @@ List all known devices with their metadata.
     {
       "device": "epcube_solar",
       "class": "home_solar",
-      "ip": "192.168.1.10",
       "manufacturer": "Canadian Solar",
       "product_code": "EP Cube 2.0",
       "uid": "ABC123",
@@ -71,7 +69,7 @@ List all known devices with their metadata.
 }
 ```
 
-**Implementation**: Queries `echonet_device_info` and `echonet_scrape_success` from VictoriaMetrics.
+**Implementation**: Queries `epcube_device_info` and `epcube_scrape_success` from VictoriaMetrics.
 
 ---
 
@@ -96,10 +94,9 @@ Execute an instant PromQL query against VictoriaMetrics (FR-008).
     "result": [
       {
         "metric": {
-          "__name__": "echonet_battery_state_of_capacity_percent",
+          "__name__": "epcube_battery_state_of_capacity_percent",
           "device": "epcube_battery",
-          "class": "storage_battery",
-          "ip": "192.168.1.10"
+          "class": "storage_battery"
         },
         "value": [1709827200, "85"]
       }
@@ -133,7 +130,7 @@ Execute a range PromQL query for time-series data (FR-008, FR-009).
 **Example request**:
 
 ```
-GET /api/v1/query_range?query=echonet_battery_state_of_capacity_percent{device="epcube_battery"}&start=2026-03-06T00:00:00Z&end=2026-03-07T00:00:00Z&step=5m
+GET /api/v1/query_range?query=epcube_battery_state_of_capacity_percent{device="epcube_battery"}&start=2026-03-06T00:00:00Z&end=2026-03-07T00:00:00Z&step=5m
 ```
 
 **Response**: `200 OK`
@@ -146,10 +143,9 @@ GET /api/v1/query_range?query=echonet_battery_state_of_capacity_percent{device="
     "result": [
       {
         "metric": {
-          "__name__": "echonet_battery_state_of_capacity_percent",
+          "__name__": "epcube_battery_state_of_capacity_percent",
           "device": "epcube_battery",
-          "class": "storage_battery",
-          "ip": "192.168.1.10"
+          "class": "storage_battery"
         },
         "values": [
           [1709683200, "72"],
@@ -191,7 +187,7 @@ Find metric series matching a set of label matchers.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `match[]` | string | yes | Series selector (repeatable). E.g., `echonet_battery_state_of_capacity_percent{device="epcube_battery"}` |
+| `match[]` | string | yes | Series selector (repeatable). E.g., `epcube_battery_state_of_capacity_percent{device="epcube_battery"}` |
 | `start` | string | no | Start timestamp |
 | `end` | string | no | End timestamp |
 
@@ -202,10 +198,9 @@ Find metric series matching a set of label matchers.
   "status": "success",
   "data": [
     {
-      "__name__": "echonet_battery_state_of_capacity_percent",
+      "__name__": "epcube_battery_state_of_capacity_percent",
       "device": "epcube_battery",
-      "class": "storage_battery",
-      "ip": "192.168.1.10"
+      "class": "storage_battery"
     }
   ]
 }
@@ -222,7 +217,7 @@ List all label names.
 ```json
 {
   "status": "success",
-  "data": ["__name__", "class", "device", "ip", "manufacturer", "product_code", "uid"]
+  "data": ["__name__", "class", "device", "manufacturer", "product_code", "uid"]
 }
 ```
 
@@ -251,18 +246,18 @@ List values for a specific label.
 
 ### GET /api/v1/health
 
-Health check endpoint (unauthenticated).
+Health check endpoint (unauthenticated). Currently returns a static response (no runtime dependency check). The 503 path is reserved for a future VictoriaMetrics connectivity check.
 
 **Response**: `200 OK`
 
 ```json
 {
   "status": "healthy",
-  "victoriametrics": "reachable"
+  "victoriametrics": "ok"
 }
 ```
 
-**Response**: `503 Service Unavailable`
+**Response**: `503 Service Unavailable` *(reserved — not currently triggered)*
 
 ```json
 {
@@ -293,14 +288,12 @@ List available metrics for a specific device.
 {
   "device": "epcube_battery",
   "metrics": [
-    "echonet_battery_state_of_capacity_percent",
-    "echonet_battery_charge_discharge_power_watts",
-    "echonet_battery_remaining_capacity_wh",
-    "echonet_battery_chargeable_capacity_wh",
-    "echonet_battery_dischargeable_capacity_wh",
-    "echonet_battery_cumulative_charge_wh",
-    "echonet_battery_cumulative_discharge_wh",
-    "echonet_battery_working_operation_state"
+    "epcube_battery_state_of_capacity_percent",
+    "epcube_battery_net_kwh",
+    "epcube_home_load_power_watts",
+    "epcube_self_sufficiency_rate",
+    "epcube_grid_import_kwh",
+    "epcube_grid_export_kwh"
   ]
 }
 ```
@@ -315,7 +308,7 @@ List available metrics for a specific device.
 
 ### GET /api/v1/grid
 
-Get the derived grid power (FR-003a).
+Get the grid energy balance (FR-003a).
 
 **Query parameters**:
 
@@ -334,13 +327,11 @@ Get the derived grid power (FR-003a).
     "resultType": "matrix",
     "result": [
       {
-        "metric": {
-          "__name__": "grid_power_watts"
-        },
+        "metric": {},
         "values": [
-          [1709683200, "350"],
-          [1709683500, "-120"],
-          [1709683800, "500"]
+          [1709683200, "3.5"],
+          [1709683500, "4.2"],
+          [1709683800, "5.1"]
         ]
       }
     ]
@@ -348,36 +339,9 @@ Get the derived grid power (FR-003a).
 }
 ```
 
-**Sign convention**: Positive = export to grid, Negative = import from grid.
+**Sign convention**: Positive = net import from grid (kWh), Negative = net export to grid (kWh).
 
-**Implementation**: Executes PromQL `echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts`.
-
----
-
-## Remote-Write Ingestion Endpoint (Internal)
-
-This endpoint is served by **vmauth → VictoriaMetrics**, not the C# API.
-
-### POST /api/v1/write
-
-Accepts Prometheus remote-write protocol (protobuf + snappy compressed).
-
-**Authentication**: Pre-shared bearer token (FR-012, FR-013).
-
-```
-Authorization: Bearer <remote-write-token>
-```
-
-**Request body**: Prometheus remote-write protobuf (snappy-compressed `WriteRequest`).
-
-**Response**: `204 No Content` (success, no body)
-
-**Error responses**:
-
-| Status | Condition |
-|--------|-----------|
-| `401 Unauthorized` | Missing or invalid bearer token |
-| `400 Bad Request` | Invalid protobuf or decompression failure |
+**Implementation**: Executes PromQL `epcube_grid_import_kwh - epcube_grid_export_kwh`. Grid import and export totals are directly available from the EP Cube cloud API.
 
 ---
 
@@ -406,7 +370,6 @@ using System.Text.Json.Serialization;
 public record DeviceInfo(
     [property: JsonPropertyName("device")] string Device,
     [property: JsonPropertyName("class")] string DeviceClass,  // "storage_battery" or "home_solar"
-    [property: JsonPropertyName("ip")] string Ip,
     [property: JsonPropertyName("manufacturer")] string? Manufacturer = null,
     [property: JsonPropertyName("product_code")] string? ProductCode = null,
     [property: JsonPropertyName("uid")] string? Uid = null,

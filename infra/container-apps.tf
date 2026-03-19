@@ -7,6 +7,15 @@ resource "azurerm_container_app_environment" "main" {
   location                   = azurerm_resource_group.main.location
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+  infrastructure_subnet_id   = azurerm_subnet.infrastructure.id
+
+  # Azure auto-populates these; ignore to prevent unnecessary force-replacement or drift.
+  lifecycle {
+    ignore_changes = [
+      infrastructure_resource_group_name,
+      workload_profile,
+    ]
+  }
 }
 
 # ── Mount Azure File Share for VictoriaMetrics persistent storage ──
@@ -20,28 +29,25 @@ resource "azurerm_container_app_environment_storage" "vm" {
   access_mode                  = "ReadWrite"
 }
 
-# ── VictoriaMetrics + vmauth Container App ──
+# ── VictoriaMetrics Container App (internal-only) ──
 
 resource "azurerm_container_app" "vm" {
   name                         = "${var.environment_name}-vm"
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
-  secret {
-    name                = "remote-write-token"
-    key_vault_secret_id = azurerm_key_vault_secret.remote_write_token.versionless_id
-    identity            = azurerm_user_assigned_identity.main.id
-  }
-
+  # Internal-only ingress — accessible only to other apps in the environment.
+  # No external traffic; vmauth removed (no internet-facing reads/writes).
   ingress {
-    external_enabled = true
-    target_port      = 8427 # vmauth port
+    external_enabled = false
+    target_port      = 8428
     transport        = "http"
 
     traffic_weight {
@@ -54,20 +60,18 @@ resource "azurerm_container_app" "vm" {
     min_replicas = 1
     max_replicas = 1
 
-    # Init container writes vmauth config file to shared EmptyDir volume.
-    # The config uses vmauth's %{ENV_VAR} syntax — vmauth substitutes
-    # REMOTE_WRITE_TOKEN from its own environment at startup.
+    # Init container writes promscrape config to shared EmptyDir volume.
     init_container {
-      name   = "vmauth-config-init"
+      name   = "config-init"
       image  = "busybox:1.36"
       cpu    = 0.25
       memory = "0.5Gi"
 
-      command = ["/bin/sh", "-c", "echo '${local.vmauth_config_b64}' | base64 -d > /etc/vmauth/config.yml"]
+      command = ["/bin/sh", "-c", "echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
 
       volume_mounts {
-        name = "vmauth-config"
-        path = "/etc/vmauth"
+        name = "promscrape-config"
+        path = "/etc/promscrape"
       }
     }
 
@@ -82,33 +86,17 @@ resource "azurerm_container_app" "vm" {
         "-dedup.minScrapeInterval=1m",
         "-storageDataPath=/victoria-metrics-data",
         "-httpListenAddr=:8428",
+        "-promscrape.config=/etc/promscrape/config.yml",
       ]
 
       volume_mounts {
         name = "vm-data"
         path = "/victoria-metrics-data"
       }
-    }
-
-    container {
-      name   = "vmauth"
-      image  = var.vmauth_image
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      args = [
-        "-auth.config=/etc/vmauth/config.yml",
-        "-httpListenAddr=:8427",
-      ]
-
-      env {
-        name        = "REMOTE_WRITE_TOKEN"
-        secret_name = "remote-write-token"
-      }
 
       volume_mounts {
-        name = "vmauth-config"
-        path = "/etc/vmauth"
+        name = "promscrape-config"
+        path = "/etc/promscrape"
       }
     }
 
@@ -119,7 +107,7 @@ resource "azurerm_container_app" "vm" {
     }
 
     volume {
-      name         = "vmauth-config"
+      name         = "promscrape-config"
       storage_type = "EmptyDir"
     }
   }
@@ -134,6 +122,7 @@ resource "azurerm_container_app" "api" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
@@ -183,16 +172,124 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "AzureAd__Audience"
-        value = "api://${var.environment_name}"
+        value = "api://${azuread_application.api.client_id}"
       }
 
       env {
         name = "VictoriaMetrics__Url"
-        # Query VictoriaMetrics directly on port 8428 within the Container Apps
-        # environment. This bypasses vmauth (which enforces bearer-token auth
-        # for external remote-write traffic). Internal traffic between apps in
-        # the same environment uses the container app name as hostname.
-        value = "http://${azurerm_container_app.vm.name}:8428"
+        # Container Apps inter-app communication uses internal ingress on port 80.
+        # VictoriaMetrics runs internal-only (targetPort 8428), reachable via app name.
+        value = "http://${azurerm_container_app.vm.name}"
+      }
+    }
+  }
+}
+
+# ── epcube-exporter Container App ──
+
+resource "azurerm_container_app" "exporter" {
+  count = var.epcube_image != "" ? 1 : 0
+
+  name                         = "${var.environment_name}-exporter"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.main.id]
+  }
+
+  registry {
+    server   = azurerm_container_registry.main.login_server
+    identity = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "epcube-username"
+    key_vault_secret_id = azurerm_key_vault_secret.epcube_username.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "epcube-password"
+    key_vault_secret_id = azurerm_key_vault_secret.epcube_password.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "exporter-oauth-secret"
+    key_vault_secret_id = azurerm_key_vault_secret.exporter_oauth_secret.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  # External ingress — debug page requires JWT auth in code
+  # /metrics and /health remain unauthenticated for vmagent scraping
+  ingress {
+    external_enabled = true
+    target_port      = 9200
+    transport        = "http"
+
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+
+  template {
+    min_replicas = 1
+    max_replicas = 1
+
+    container {
+      name   = "epcube-exporter"
+      image  = var.epcube_image
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "EPCUBE_USERNAME"
+        secret_name = "epcube-username"
+      }
+
+      env {
+        name        = "EPCUBE_PASSWORD"
+        secret_name = "epcube-password"
+      }
+
+      env {
+        name  = "EPCUBE_PORT"
+        value = "9200"
+      }
+
+      env {
+        name  = "EPCUBE_INTERVAL"
+        value = "60"
+      }
+
+      env {
+        name  = "AZURE_TENANT_ID"
+        value = data.azuread_client_config.current.tenant_id
+      }
+
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = azuread_application.api.client_id
+      }
+
+      env {
+        name  = "AZURE_AUDIENCE"
+        value = "api://${azuread_application.api.client_id}"
+      }
+
+      env {
+        name        = "AZURE_CLIENT_SECRET"
+        secret_name = "exporter-oauth-secret"
+      }
+
+      env {
+        name  = "AZURE_REDIRECT_URI"
+        value = "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback"
       }
     }
   }

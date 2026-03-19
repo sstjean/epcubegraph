@@ -29,19 +29,23 @@ public class SecurityTests : IClassFixture<TestWebApplicationFactory>
     [InlineData("/api/v1/grid")]
     public async Task SC004_TelemetryEndpoints_RejectUnauthenticated(string url)
     {
+        // Act
         var response = await _client.GetAsync(url);
 
+        // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task Health_DoesNotExposeTelemetryData()
     {
+        // Act
         var response = await _client.GetAsync("/api/v1/health");
         var content = await response.Content.ReadAsStringAsync();
 
+        // Assert
         // Health endpoint should only contain status info, not telemetry values
-        Assert.DoesNotContain("echonet_", content);
+        Assert.DoesNotContain("epcube_", content);
         Assert.DoesNotContain("battery", content.ToLowerInvariant());
         Assert.DoesNotContain("solar", content.ToLowerInvariant());
     }
@@ -49,12 +53,13 @@ public class SecurityTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task Metrics_ExposesOnlyProcessMetrics_NoTelemetry()
     {
+        // Act
         var response = await _client.GetAsync("/metrics");
         var content = await response.Content.ReadAsStringAsync();
 
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         // prometheus-net exposes process metrics, not telemetry data
-        Assert.DoesNotContain("echonet_", content);
         Assert.DoesNotContain("epcube_", content);
     }
 }

@@ -1,9 +1,10 @@
 # Tasks: EP Cube Telemetry Data Ingestor
 
-**Input**: Design documents from `/specs/001-data-ingestor/`
+**Input**: Design documents from `/specs/001-data-ingestor/`  
+**Feature Issue**: [#3](https://github.com/sstjean/epcubegraph/issues/3) · **User Stories**: [US1 #9](https://github.com/sstjean/epcubegraph/issues/9) · [US2 #10](https://github.com/sstjean/epcubegraph/issues/10) · [US3 #11](https://github.com/sstjean/epcubegraph/issues/11)  
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/api-v1.md, quickstart.md
 
-**Tests**: Included — constitution v1.6.1 mandates TDD with 100% code coverage (non-negotiable).
+**Tests**: Included — constitution mandates TDD with 100% code coverage (non-negotiable).
 
 **Organization**: Tasks grouped by user story for independent implementation and testing.
 
@@ -19,7 +20,7 @@
 
 **Purpose**: Project initialization, directory structure, .NET solution scaffolding
 
-- [x] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{echonet-exporter,vmagent}, infra/
+- [x] T001 Create directory structure per plan.md: api/src/EpCubeGraph.Api/{Models,Services,Endpoints}, api/tests/EpCubeGraph.Api.Tests/{Unit,Integration,Fixtures}, local/{epcube-exporter,mock-exporter}, infra/
 - [x] T002 Initialize .NET solution: create api/EpCubeGraph.sln, api/src/EpCubeGraph.Api/EpCubeGraph.Api.csproj (.NET 10, web SDK), add NuGet packages: Microsoft.Identity.Web, Swashbuckle.AspNetCore, prometheus-net.AspNetCore (8.2.1)
 - [x] T003 [P] Initialize test project: create api/tests/EpCubeGraph.Api.Tests/EpCubeGraph.Api.Tests.csproj with xunit, coverlet.collector, Microsoft.AspNetCore.Mvc.Testing, Testcontainers, add project reference to API project
 - [x] T004 [P] Create api/.editorconfig with C# coding conventions and api/Directory.Build.props with TreatWarningsAsErrors and nullable enabled
@@ -30,7 +31,7 @@
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story implementation
 
-**CRITICAL**: No user story work can begin until this phase is complete
+**⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
 - [x] T005 Create appsettings.json with AzureAd (Instance, TenantId, ClientId, Audience) and VictoriaMetrics (Url) sections in api/src/EpCubeGraph.Api/appsettings.json
 - [x] T006 [P] Configure Microsoft.Identity.Web authentication and authorization middleware in api/src/EpCubeGraph.Api/Program.cs (AddMicrosoftIdentityWebApiAuthentication, AddAuthorization with RequireScope("user_impersonation") as DefaultPolicy, UseAuthentication, UseAuthorization)
@@ -42,45 +43,47 @@
 
 ---
 
-## Phase 3: User Story 3 — Containerized Local Ingestion Stack (Priority: P1)
+## Phase 3: User Story 3 — Cloud-Deployed Ingestion Stack (Priority: P1)
 
-**Goal**: Package echonet-exporter and vmagent as Docker containers with Docker Compose, deployable via `docker compose up`
+**Goal**: Deploy epcube-exporter as a Container App in Azure, scraped directly by VictoriaMetrics via `-promscrape.config`. EP Cube cloud credentials stored in Key Vault.
 
-**Independent Test**: Run `docker compose build` to verify images build. Run `docker compose up -d` on a LAN-connected device with a valid `.env` file. Verify containers start, echonet-exporter exposes metrics on port 9191, and vmagent scrapes and forwards to the remote-write URL.
+**Independent Test**: Run `infra/deploy.sh` to verify epcube-exporter Container App deploys, VictoriaMetrics scrapes it, and metrics appear in VictoriaMetrics.
 
-**FRs covered**: FR-015, FR-016, FR-017, FR-018
+**FRs covered**: FR-015, FR-016, FR-017
 
-**Also covers (indirectly)**: FR-001, FR-002 (echonet-exporter polls both EP Cube 1.0 and 2.0 gateways via ECHONET Lite — ingestion is inherent to deploying and configuring echonet-exporter with gateway IPs), FR-006 (vmagent WAL buffers failed remote-writes and retries automatically; echonet-exporter retries on next scrape cycle)
+**Also covers (indirectly)**: FR-001, FR-002 (epcube-exporter polls both EP Cube 1.0 and 2.0 devices via the cloud API), FR-006 (epcube-exporter retries on next poll cycle; VictoriaMetrics handles scrape failures gracefully)
 
 ### Implementation for User Story 3
 
-- [x] T010 [P] [US3] Create echonet-exporter multi-arch Dockerfile with docker buildx, Go cross-compilation (CGO_ENABLED=0), alpine:3.19 base, ca-certificates + tzdata in local/echonet-exporter/Dockerfile
-- [x] T011 [P] [US3] Create vmagent scrape configuration targeting echonet-exporter:9191 with 60s scrape interval, 30s timeout in local/vmagent/scrape.yml
-- [x] T012 [P] [US3] Create .env.example with EPCUBE1_IP, EPCUBE2_IP, REMOTE_WRITE_URL, REMOTE_WRITE_TOKEN placeholders in local/.env.example
-- [x] T013 [US3] Create docker-compose.yml orchestrating echonet-exporter and vmagent: env_file for .env, vmagent with -remoteWrite.bearerToken, -remoteWrite.tmpDataPath, -remoteWrite.maxDiskUsagePerURL=1GB, persistent volume for vmagent WAL, restart: unless-stopped on both, scrape.yml mounted read-only in local/docker-compose.yml
+- [x] T010 [P] [US3] Create epcube-exporter Dockerfile with python:3.12-slim base, opencv-python-headless, pycryptodome, numpy in local/epcube-exporter/Dockerfile
+- [x] T011 [P] [US3] Create VictoriaMetrics promscrape configuration targeting epcube-exporter Container App with 60s scrape interval, 30s timeout in infra/main.tf (promscrape_config local)
+- [x] T012 [P] [US3] Add epcube_username, epcube_password, epcube_image variables to infra/variables.tf; add EP Cube credential secrets to infra/keyvault.tf
+- [x] T013 [US3] Add epcube-exporter Container App resource with external ingress (JWT-authenticated debug page), Key Vault secret references, and ACR registry in infra/container-apps.tf; add promscrape config to VictoriaMetrics
 
-**Checkpoint**: `docker compose build` succeeds, `docker compose config` validates. Local stack is independently deployable.
+**Checkpoint**: `terraform validate` passes. epcube-exporter Container App deploys with VictoriaMetrics scraping it directly.
 
 ---
 
 ## Phase 4: User Story 1 — Ingest Telemetry / Azure Infrastructure (Priority: P1)
 
-**Goal**: Deploy VictoriaMetrics + vmauth on Azure Container Apps with bearer-token auth, Key Vault for secrets, 5-year retention, deduplication
+**Goal**: Deploy VictoriaMetrics on Azure Container Apps with internal-only ingress, promscrape scraping epcube-exporter, Key Vault for secrets, 5-year retention, deduplication
 
-**Independent Test**: Deploy Terraform to a resource group. Send a test Prometheus remote-write request with the bearer token and verify VictoriaMetrics stores the data. Verify unauthenticated requests are rejected with 401.
+**Independent Test**: Deploy Terraform to a resource group. Verify VictoriaMetrics is internal-only (no external ingress), verify promscrape scrapes epcube-exporter, and confirm metrics appear in VictoriaMetrics.
 
-**FRs covered**: FR-004, FR-005, FR-007, FR-011, FR-012, FR-013, FR-014
+**FRs covered**: FR-005, FR-007, FR-011, FR-014
 
-**Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). vmagent attaches timestamps at scrape time using the host clock. No application-level normalization code is required.
+**Note on FR-011 (UTC normalization)**: VictoriaMetrics stores all timestamps as Unix epoch (inherently UTC). No application-level normalization code is required.
 
 ### Implementation for User Story 1
 
-- [x] T014 [P] [US1] Create Key Vault Terraform module for bearer token secret storage with access policy in infra/keyvault.tf
+- [x] T014 [P] [US1] Create Key Vault Terraform module for EP Cube credential and OAuth secret storage with access policy in infra/keyvault.tf
 - [x] T015 [P] [US1] Create deployment variables file with environment name, location, container image settings in infra/variables.tf
-- [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume), vmauth sidecar container (bearer_token config from Key Vault secret, url_prefix to localhost:8428), ingress on vmauth port, API container placeholder in infra/container-apps.tf
+- [x] T016 [US1] Create main Terraform configuration: Container Apps environment, VictoriaMetrics container (-retentionPeriod=5y, -dedup.minScrapeInterval=1m, -storageDataPath with persistent volume, internal-only ingress on port 8428), promscrape config targeting epcube-exporter, API container placeholder in infra/container-apps.tf
 - [x] T017 [US1] Add Entra ID app registration and managed identity resources in infra/entra.tf for API authentication (FR-010)
+- [x] T051 [US1] Create VNet with infrastructure and private endpoints subnets, private endpoints + DNS zones for Key Vault and Storage in infra/network.tf (added retroactively — implemented during Bug #14 resolution)
+- [x] T053 [US1] Configure Azure File Share mount for VictoriaMetrics persistent storage (access_key via private endpoint — platform limitation documented in plan.md Complexity Tracking) in infra/storage.tf, infra/container-apps.tf
 
-**Checkpoint**: `terraform validate` passes. VictoriaMetrics + vmauth accept authenticated remote-write requests.
+**Checkpoint**: `terraform validate` passes. VictoriaMetrics accepts promscrape-based ingestion from epcube-exporter.
 
 ---
 
@@ -95,13 +98,14 @@
 ### Tests for User Story 2 (TDD — write tests FIRST, confirm they FAIL)
 
 - [x] T018 [P] [US2] Write VictoriaMetricsClient unit tests (QueryAsync, QueryRangeAsync, SeriesAsync, error handling, timeout) mocking HttpMessageHandler in api/tests/EpCubeGraph.Api.Tests/Unit/VictoriaMetricsClientTests.cs
-- [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=export/negative=import) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
+- [x] T019 [P] [US2] Write GridCalculator unit tests (derived grid PromQL construction, sign convention: positive=import/negative=export) in api/tests/EpCubeGraph.Api.Tests/Unit/GridCalculatorTests.cs
 - [x] T020 [P] [US2] Write DeviceInfo record tests (serialization, optional fields, DeviceClass values) in api/tests/EpCubeGraph.Api.Tests/Unit/DeviceInfoTests.cs
 - [x] T038 [P] [US2] Write Validate helper unit tests (Required, Timestamp, Duration, SafeName — null=valid, invalid=error, valid=pass) in api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs
+- [x] T052 [P] [US2] Write model serialization tests (JSON round-trip for all response records) in api/tests/EpCubeGraph.Api.Tests/Unit/ModelSerializationTests.cs (added retroactively)
 
 ### Models for User Story 2
 
-- [x] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"device_class", Ip→"ip", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
+- [x] T021 [P] [US2] Create DeviceInfo record with [JsonPropertyName] annotations: Device→"device", DeviceClass→"class", Manufacturer?→"manufacturer", ProductCode?→"product_code", Uid?→"uid", Online→"online" in api/src/EpCubeGraph.Api/Models/DeviceInfo.cs
 - [x] T022 [P] [US2] Create HealthResponse record (Status, VictoriaMetrics) in api/src/EpCubeGraph.Api/Models/HealthResponse.cs
 - [x] T023 [P] [US2] Create DeviceMetricsResponse record (Device, Metrics list) in api/src/EpCubeGraph.Api/Models/DeviceMetricsResponse.cs
 - [x] T024 [P] [US2] Create DeviceListResponse record (Devices list) in api/src/EpCubeGraph.Api/Models/DeviceListResponse.cs
@@ -114,13 +118,13 @@
 ### Services for User Story 2
 
 - [x] T025 [US2] Implement VictoriaMetricsClient using HttpClient with IHttpClientFactory DI registration: QueryAsync, QueryRangeAsync, SeriesAsync, LabelsAsync, LabelValuesAsync in api/src/EpCubeGraph.Api/Services/VictoriaMetricsClient.cs
-- [x] T026 [US2] Implement GridCalculator: constructs PromQL expression (echonet_solar_instantaneous_generation_watts - echonet_battery_charge_discharge_power_watts), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
+- [x] T026 [US2] Implement GridCalculator: constructs PromQL expression (epcube_grid_import_kwh - epcube_grid_export_kwh), delegates to IVictoriaMetricsClient.QueryRangeAsync, defaults start=24h ago, end=now, step=1m in api/src/EpCubeGraph.Api/Services/GridCalculator.cs
 
 ### Endpoints for User Story 2
 
-- [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, checks VictoriaMetrics reachability, returns HealthResponse with 200 or 503) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
+- [x] T027 [P] [US2] Implement HealthEndpoints: GET /api/v1/health (unauthenticated, static HealthResponse("healthy", "ok") with 200 — no VictoriaMetrics dependency) in api/src/EpCubeGraph.Api/Endpoints/HealthEndpoints.cs
 - [x] T028 [US2] Implement QueryEndpoints: GET /api/v1/query, GET /api/v1/query_range, GET /api/v1/series, GET /api/v1/labels, GET /api/v1/label/{name}/values as authenticated PromQL passthrough to VictoriaMetrics in api/src/EpCubeGraph.Api/Endpoints/QueryEndpoints.cs
-- [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries echonet_device_info + echonet_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
+- [x] T029 [US2] Implement DevicesEndpoints: GET /api/v1/devices (queries epcube_device_info + epcube_scrape_success, returns DeviceListResponse), GET /api/v1/devices/{device}/metrics (queries series for device label, returns DeviceMetricsResponse or 404) in api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs
 - [x] T030 [US2] Implement GridEndpoints: GET /api/v1/grid (optional start, end, step params, delegates to GridCalculator, returns PromQL range result) in api/src/EpCubeGraph.Api/Endpoints/GridEndpoints.cs
 
 ### Wiring and Integration for User Story 2
@@ -142,9 +146,26 @@
 **Purpose**: Coverage enforcement, end-to-end validation, security hardening
 
 - [x] T035 [P] Enforce 100% code coverage: add coverlet threshold configuration to EpCubeGraph.Api.Tests.csproj (<ThresholdType>line</ThresholdType><Threshold>100</Threshold>) and verify `dotnet test --collect:"XPlat Code Coverage"` passes
-- [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate
-- [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify remote-write rejects missing bearer token (SC-004, FR-013)
-- [x] T044 [P] Create CI/CD pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest)
+- [x] T036 Run quickstart.md end-to-end validation: clone, dotnet build, dotnet test, docker compose build, az deployment validate. Also verify SC-001/SC-002 infrastructure: VictoriaMetrics uses persistent Azure File Share, `up` metric is populated after deployment, and ephemeral storage edge case (L2) is mitigated by persistent volume mount
+- [x] T037 [P] Security review: verify all telemetry endpoints reject unauthenticated requests (SC-004), verify /health exposes no telemetry data, verify VictoriaMetrics is internal-only (no external ingress)
+- [x] T044 [P] Create CI pipeline: .github/workflows/ci.yml with dotnet build, dotnet test --collect:"XPlat Code Coverage" (fail if <100%), docker compose build (local/), terraform validate + terraform fmt -check (infra/), container image build+push with tagged versions (no :latest). Pipeline MUST produce zero warnings on a clean run (constitution: CI/CD Zero Warnings)
+- [x] T050 [P] Create CD pipeline: .github/workflows/cd.yml with OIDC Azure login, Terraform apply (remote state), ACR image build+push, deployment validation via validate-deployment.sh, optional environment teardown. Triggers on CI success for main branch or manual dispatch with environment selection (staging/production). Pipeline MUST produce zero warnings on a clean run (constitution: CI/CD Zero Warnings)
+
+---
+
+## Phase 7: Exporter Enhancements (Operational)
+
+**Purpose**: Health endpoint, debug status page, JWT auth, and test coverage for epcube-exporter
+
+**FRs covered**: FR-022, FR-023, FR-024
+
+- [x] T045 [US3] Add health endpoint to epcube-exporter: GET /health returns 200 {"status":"ok"} when healthy, 503 {"status":"unhealthy","reasons":[...]} when no poll in 5 min or 5+ consecutive errors (FR-022) in local/epcube-exporter/exporter.py
+- [x] T046 [US3] Add debug status page to epcube-exporter: GET / and /status render HTML showing last 10 poll snapshots with per-device tables, uptime, poll count, error count, health chiclet, auto-refresh, browser timezone conversion (FR-023) in local/epcube-exporter/exporter.py
+- [x] T047 [US3] Add auth to epcube-exporter: OAuth 2.0 Authorization Code flow with PKCE for browser access (/login → Entra ID → /.auth/callback → session cookie), Bearer JWT validation for API clients, bypass with EPCUBE_DISABLE_AUTH=true for local dev, /metrics and /health unauthenticated (FR-023, FR-024) in local/epcube-exporter/exporter.py
+- [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE, AZURE_CLIENT_SECRET (Key Vault), AZURE_REDIRECT_URI env vars, and Entra ID redirect URI registration (FR-024) in infra/container-apps.tf, infra/entra.tf, infra/keyvault.tf
+- [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 49 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
+- [x] T054 [P] [US2] Write endpoint integration tests (all API routes: query, query_range, series, labels, label values, devices, device metrics, grid, health — success and error paths) in api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs (added retroactively — 76 tests)
+- [x] T055 [P] [US2] Write Program.cs middleware integration tests (Swagger, CORS, JSON serialization, exception handling, metrics endpoint) in api/tests/EpCubeGraph.Api.Tests/Integration/ProgramMiddlewareTests.cs (added retroactively — 5 tests)
 
 ---
 
@@ -154,7 +175,7 @@
 
 - **Setup (Phase 1)**: No dependencies — can start immediately
 - **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
-- **US3 (Phase 3)**: Depends on Foundational — no code dependencies on other stories (Docker files only)
+- **US3 (Phase 3)**: Depends on Foundational — no code dependencies on other stories (Docker + Terraform only)
 - **US1 (Phase 4)**: Depends on Foundational — no code dependencies on other stories (Terraform only)
 - **US2 (Phase 5)**: Depends on Foundational — uses IVictoriaMetricsClient interface and auth from Phase 2
 - **Polish (Phase 6)**: Depends on all user stories being complete
@@ -233,7 +254,7 @@ T036 (depends on all above)
 
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational (CRITICAL — blocks all stories)
-3. Complete Phase 3: US3 (local Docker stack)
+3. Complete Phase 3: US3 (epcube-exporter Container App)
 4. Complete Phase 4: US1 (Azure infrastructure)
 5. Complete Phase 5: US2 (API)
 6. **STOP and VALIDATE**: All three stories independently testable
@@ -242,8 +263,8 @@ T036 (depends on all above)
 ### Incremental Delivery
 
 1. Setup + Foundational → Foundation ready
-2. US3 → `docker compose build` works → Local stack deployable
-3. US1 → Terraform deploys → VictoriaMetrics receives remote-write
+2. US3 → `deploy.sh` builds and pushes epcube-exporter → Container App deployable
+3. US1 → Terraform deploys → VictoriaMetrics accepts remote-write and scrapes epcube-exporter
 4. US2 → API serves queries → Full pipeline operational (MVP!)
 5. Polish → 100% coverage enforced, security verified
 
@@ -261,9 +282,17 @@ With capacity for parallel work:
 
 ## Notes
 
-- All file paths are relative to repository root (`/Users/steve/repos/epcubegraph/`)
-- TDD is mandated by constitution v1.6.1 — tests MUST fail before implementation
+- All file paths are relative to repository root
+- TDD is mandated by constitution — tests MUST fail before implementation
 - 100% code coverage enforced via coverlet in CI
 - US3 and US1 contain no C# code (Docker + Terraform) so TDD applies only to US2
 - Commit after each task or logical group
 - Stop at any checkpoint to validate the story independently
+
+---
+
+## Future: Phase 8 — Full DevOps CD Pipeline (Issue [#12](https://github.com/sstjean/epcubegraph/issues/12))
+
+**Status**: Not started — tracked in GitHub Issue #12, out of scope for initial 001-data-ingestor implementation  
+**Purpose**: Evolve CI/CD from current single-environment pipeline (T044/T050) to full DevOps process: staging on push, production on merge to main, no hardcoded branch names  
+**Depends on**: Phase 6 (Polish) completion + merge to main

@@ -19,13 +19,10 @@ terraform {
     }
   }
 
-  # Uncomment to use remote state in Azure Blob Storage:
-  # backend "azurerm" {
-  #   resource_group_name  = "tfstate-rg"
-  #   storage_account_name = "tfstateepcubegraph"
-  #   container_name       = "tfstate"
-  #   key                  = "epcubegraph.tfstate"
-  # }
+  # Remote state in Azure Blob Storage.
+  # Config values loaded from backend.hcl (local) or -backend-config flags (CI/CD).
+  # See DEPLOY.md for setup and backend.hcl.example for the template.
+  backend "azurerm" {}
 }
 
 provider "azurerm" {
@@ -33,7 +30,13 @@ provider "azurerm" {
     key_vault {
       purge_soft_delete_on_destroy = true
     }
+    # Container Apps creates NSGs on VNet subnets outside Terraform's control.
+    # Allow RG deletion to clean up these platform-managed resources.
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
   }
+  storage_use_azuread = true
 }
 
 provider "azuread" {}
@@ -61,13 +64,17 @@ resource "azurerm_user_assigned_identity" "main" {
 # ── Locals ──
 
 locals {
-  # vmauth config YAML with env-var placeholder for runtime substitution
-  # vmauth resolves %{REMOTE_WRITE_TOKEN} from its own environment at startup
-  vmauth_config = <<-YAML
-users:
-- bearer_token: "%%{REMOTE_WRITE_TOKEN}"
-  url_prefix: "http://localhost:8428/"
+  # VictoriaMetrics promscrape config — scrapes epcube-exporter within the
+  # Container Apps environment via internal ingress (HTTP port 80 → target 9200)
+  promscrape_config = <<-YAML
+scrape_configs:
+  - job_name: epcube
+    static_configs:
+      - targets: ["${var.environment_name}-exporter"]
+    metrics_path: /metrics
+    scrape_interval: 60s
+    scrape_timeout: 30s
 YAML
 
-  vmauth_config_b64 = base64encode(local.vmauth_config)
+  promscrape_config_b64 = base64encode(local.promscrape_config)
 }

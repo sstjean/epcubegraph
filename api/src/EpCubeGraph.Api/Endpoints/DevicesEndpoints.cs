@@ -23,9 +23,9 @@ public static class DevicesEndpoints
 
         try
         {
-            // Get device info labels from the echonet_device_info metric
-            infoResult = await client.SeriesAsync("echonet_device_info", ct: ct);
-            scrapeResult = await client.QueryAsync("echonet_scrape_success", ct: ct);
+            // Get device info labels from the epcube_device_info metric
+            infoResult = await client.SeriesAsync("epcube_device_info", ct: ct);
+            scrapeResult = await client.QueryAsync("epcube_scrape_success", ct: ct);
         }
         catch (HttpRequestException ex)
         {
@@ -61,7 +61,6 @@ public static class DevicesEndpoints
             {
                 var device = series.GetProperty("device").GetString()!;
                 var deviceClass = series.GetProperty("class").GetString()!;
-                var ip = series.GetProperty("ip").GetString()!;
 
                 string? manufacturer = series.TryGetProperty("manufacturer", out var mfr)
                     ? mfr.GetString() : null;
@@ -72,7 +71,7 @@ public static class DevicesEndpoints
 
                 var online = onlineDevices.Contains(device);
 
-                devices.Add(new DeviceInfo(device, deviceClass, ip, manufacturer, productCode, uid, online));
+                devices.Add(new DeviceInfo(device, deviceClass, manufacturer, productCode, uid, online));
             }
         }
 

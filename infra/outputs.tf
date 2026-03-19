@@ -6,13 +6,18 @@ output "resource_group_name" {
 }
 
 output "vm_fqdn" {
-  description = "FQDN of the VictoriaMetrics container app (remote-write endpoint)"
+  description = "Internal FQDN of the VictoriaMetrics container app"
   value       = azurerm_container_app.vm.ingress[0].fqdn
 }
 
 output "api_fqdn" {
   description = "FQDN of the API container app"
   value       = var.api_image != "" ? azurerm_container_app.api[0].ingress[0].fqdn : ""
+}
+
+output "exporter_fqdn" {
+  description = "FQDN of the epcube-exporter container app"
+  value       = var.epcube_image != "" ? azurerm_container_app.exporter[0].ingress[0].fqdn : ""
 }
 
 output "acr_login_server" {
@@ -23,17 +28,6 @@ output "acr_login_server" {
 output "acr_name" {
   description = "ACR name"
   value       = azurerm_container_registry.main.name
-}
-
-output "remote_write_url" {
-  description = "Full remote-write URL for local vmagent .env"
-  value       = "https://${azurerm_container_app.vm.ingress[0].fqdn}/api/v1/write"
-}
-
-output "remote_write_token" {
-  description = "Remote-write bearer token (for local .env)"
-  value       = random_password.remote_write_token.result
-  sensitive   = true
 }
 
 output "entra_app_client_id" {
@@ -54,4 +48,14 @@ output "key_vault_name" {
 output "managed_identity_client_id" {
   description = "Managed identity client ID"
   value       = azurerm_user_assigned_identity.main.client_id
+}
+
+output "api_image" {
+  description = "Current API container image (empty if not deployed)"
+  value       = var.api_image
+}
+
+output "exporter_image" {
+  description = "Current exporter container image (empty if not deployed)"
+  value       = var.epcube_image
 }
