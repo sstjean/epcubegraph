@@ -47,6 +47,7 @@ from Crypto.Util.Padding import pad
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+__version__ = "1.1.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9200"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
@@ -474,6 +475,7 @@ class EpCubeCollector:
         with self._lock:
             uptime = time.time() - self._start_time
             return {
+                "version": __version__,
                 "uptime_s": int(uptime),
                 "poll_count": self._poll_count,
                 "poll_errors": self._poll_errors,
@@ -588,6 +590,7 @@ def _render_status_page(status, health):
 <span style="font-size:0.6em;background:{'#00d4aa' if health['healthy'] else '#e74c3c'};color:#fff;padding:0.2em 0.7em;border-radius:12px;margin-left:0.8em;vertical-align:middle">{'&#10003; healthy' if health['healthy'] else '&#10007; ' + ', '.join(health['checks'])}</span>
 </h1>
 <div class="info">
+  <span>Version: <b>{status["version"]}</b></span>
   <span>Uptime: <b>{uptime_str}</b></span>
   <span>Polls: <b>{status["poll_count"]}</b></span>
   <span class="{'warn' if status['poll_errors'] else 'ok'}">Errors: <b>{status["poll_errors"]}</b></span>

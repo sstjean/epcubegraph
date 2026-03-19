@@ -323,6 +323,7 @@ class TestRenderStatusPage(unittest.TestCase):
 
     def _make_status(self, **overrides):
         status = {
+            "version": exporter.__version__,
             "uptime_s": 3665,
             "poll_count": 10,
             "poll_errors": 0,
@@ -399,6 +400,11 @@ class TestRenderStatusPage(unittest.TestCase):
     def test_error_count_ok_style(self):
         html = exporter._render_status_page(self._make_status(poll_errors=0), self._make_health())
         self.assertIn("ok", html)
+
+    def test_version_displayed(self):
+        html = exporter._render_status_page(self._make_status(), self._make_health())
+        self.assertIn(exporter.__version__, html)
+        self.assertIn("Version:", html)
 
     def test_auto_refresh_meta(self):
         html = exporter._render_status_page(self._make_status(), self._make_health())
