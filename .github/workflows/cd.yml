@@ -47,7 +47,7 @@ jobs:
     steps:
       - run: echo "Staging deployment — PR or manual dispatch"
 
-  deploy:
+  deploy-staging:
     needs: check-ci
     runs-on: ubuntu-latest
     environment: staging
@@ -241,8 +241,8 @@ jobs:
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from Key Vault firewall"
 
-  validate:
-    needs: deploy
+  validate-staging:
+    needs: deploy-staging
     runs-on: ubuntu-latest
     environment: staging
 
@@ -261,11 +261,11 @@ jobs:
         run: sleep 60
 
       - name: Run deployment validation
-        run: ./infra/validate-deployment.sh --rg ${{ needs.deploy.outputs.resource_group }}
+        run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-staging.outputs.resource_group }}
 
       - name: Smoke test — API health endpoint
         run: |
-          API_FQDN="${{ needs.deploy.outputs.api_fqdn }}"
+          API_FQDN="${{ needs.deploy-staging.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
             for i in 1 2 3 4 5; do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
@@ -291,7 +291,7 @@ jobs:
 
       - name: Smoke test — epcube-exporter health
         run: |
-          EXPORTER_FQDN="${{ needs.deploy.outputs.exporter_fqdn }}"
+          EXPORTER_FQDN="${{ needs.deploy-staging.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
             for i in 1 2 3 4 5; do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
@@ -578,11 +578,11 @@ jobs:
 
   # Tear down: only on manual request (no auto-destroy)
   destroy:
-    needs: [deploy, validate]
+    needs: [deploy-staging, validate-staging]
     runs-on: ubuntu-latest
     if: >
       always() &&
-      needs.validate.result == 'success' &&
+      needs.validate-staging.result == 'success' &&
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.destroy == 'true'
 
