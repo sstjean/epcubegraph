@@ -9,10 +9,11 @@ resource "azurerm_container_app_environment" "main" {
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   infrastructure_subnet_id   = azurerm_subnet.infrastructure.id
 
-  # Azure auto-populates these; ignore to prevent unnecessary force-replacement.
+  # Azure auto-populates these; ignore to prevent unnecessary force-replacement or drift.
   lifecycle {
     ignore_changes = [
       infrastructure_resource_group_name,
+      workload_profile,
     ]
   }
 }
@@ -35,6 +36,7 @@ resource "azurerm_container_app" "vm" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
@@ -120,6 +122,7 @@ resource "azurerm_container_app" "api" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
@@ -191,6 +194,7 @@ resource "azurerm_container_app" "exporter" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption"
 
   identity {
     type         = "UserAssigned"
