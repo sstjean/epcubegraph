@@ -251,6 +251,7 @@ jobs:
   validate:
     needs: deploy
     runs-on: ubuntu-latest
+    environment: staging
 
     steps:
       - uses: actions/checkout@v6
@@ -518,6 +519,7 @@ jobs:
   validate-prod:
     needs: deploy-prod
     runs-on: ubuntu-latest
+    environment: production
 
     steps:
       - uses: actions/checkout@v6
