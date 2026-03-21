@@ -1,28 +1,21 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.15.1 → 1.16.0
-  Modified sections:
-    - DevOps — GitHub Issue Discipline: narrowed scope.
-      Tasks no longer require individual GitHub issues.
-      Tasks are tracked as checklist items in User Story
-      issue bodies and in tasks.md. Feature and User Story
-      issues remain mandatory with sub-issue relationships.
+  Version change: 1.16.0 → 1.17.0
+  Bump rationale: MINOR — new principle added under Security.
   Added sub-sections:
-    - "Task Tracking" under GitHub Issue Discipline
-  Removed language:
-    - "All Task issues MUST link to their parent User Story
-      issue" (no longer applicable — tasks are not issues)
-    - "and Task" from synchronization requirement
+    - Security — SFI Compliance (NON-NEGOTIABLE): Microsoft
+      Secure Futures Initiative policy compliance for Azure
+      infrastructure (storage, Key Vault, subnets, Terraform
+      state alignment, private endpoints, CD toggle patterns).
+  Modified sections: none
+  Removed sections: none
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
     - .specify/templates/spec-template.md         ✅ no changes needed
     - .specify/templates/tasks-template.md        ✅ no changes needed
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
-  Agent files reviewed:
-    - .github/agents/speckit.taskstoissues.agent.md ✅ updated
-      (repurposed: syncs task checklists into US issue bodies)
   Follow-up TODOs: none
 -->
 
@@ -199,11 +192,44 @@ any device.
     trust client applications, and internal services MUST NOT
     trust each other without explicit, per-request credential
     verification.
+- **Microsoft Secure Futures Initiative (SFI) Compliance
+  (NON-NEGOTIABLE)**: All Azure infrastructure and architecture
+  MUST comply with Microsoft Secure Futures Initiative (SFI)
+  policies enforced on the subscription. SFI policies are
+  externally managed and cannot be overridden — infrastructure
+  configurations MUST be designed to work with these policies,
+  not against them. Specifically:
+  - Storage accounts MUST assume `publicNetworkAccess: Disabled`
+    and `allowSharedKeyAccess: false` as SFI-enforced defaults.
+    CD pipelines MUST temporarily toggle `publicNetworkAccess`
+    to `Enabled` (with `defaultAction: Deny`) for deployment
+    operations and restore `Disabled` in always-run cleanup
+    steps.
+  - Key Vaults MUST assume `publicNetworkAccess: Disabled` as
+    the SFI-enforced default. The same temporary toggle pattern
+    applies for CD pipeline access.
+  - Subnet configurations MUST set
+    `default_outbound_access_enabled = false` to match SFI
+    enforcement.
+  - Terraform resource configurations MUST align with
+    SFI-enforced settings to prevent state drift. If Terraform
+    declares a value that SFI overrides, Terraform will attempt
+    to change it on every apply, causing failures or unnecessary
+    churn.
+  - Private endpoints MUST be used for runtime
+    service-to-service communication. Public network access
+    toggles are permitted only for CI/CD operations and MUST be
+    restored to Disabled after use.
 
 **Rationale**: The system handles personal energy telemetry
 data. Zero-trust ensures that no component is implicitly
 trusted, limiting blast radius in the event of a compromise
-and protecting data across all client platforms.
+and protecting data across all client platforms. The Azure
+subscription is a Microsoft internal subscription with SFI
+policies enforced at the subscription level. These policies
+cannot be changed or exempted. Infrastructure must be designed
+to operate within these constraints from the start, rather than
+discovering conflicts at deploy time.
 
 ## DevOps
 
@@ -325,4 +351,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.16.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
+**Version**: 1.17.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-21
