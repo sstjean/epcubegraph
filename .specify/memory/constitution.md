@@ -1,11 +1,10 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.9.0 → 1.12.0
+  Version change: 1.12.0 → 1.13.0
   Modified sections:
-    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle (1.10.0)
-    - DevOps — restored Remote Terraform State principle (1.11.0)
-    - DevOps — added Tool Sync (NON-NEGOTIABLE) principle (1.12.0)
+    - Principle III (Test-Driven Development) — added Test Data
+      Separation (NON-NEGOTIABLE) sub-principle
   Added sections: none
   Removed sections: none
   Templates requiring updates:
@@ -16,7 +15,7 @@
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Dependent specs:
     - specs/001-data-ingestor/plan.md             ✅ no changes needed
-  Follow-up TODOs: none (all completed)
+  Follow-up TODOs: none
 -->
 
 # EP Cube Graph Constitution
@@ -76,6 +75,15 @@ test surface, and obscure the intent of the codebase.
   when they would be genuinely empty (e.g., no arrangement
   needed for a static method with no dependencies), but the
   remaining sections MUST still be commented.
+- **Test Data Separation (NON-NEGOTIABLE)**: Automated tests
+  (unit, integration, CI) MUST use mock or synthetic data
+  exclusively — never live/production data. Manual user
+  testing and local development review MUST use live data
+  from real EP Cube devices (via the production cloud API).
+  Test suites MUST NOT depend on network connectivity or
+  external service availability. Live-data local stacks
+  (e.g., docker-compose.prod-local.yml) are for manual
+  verification only and MUST NOT be invoked by CI pipelines.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.
@@ -289,4 +297,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.12.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-19
+**Version**: 1.13.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
