@@ -1,6 +1,7 @@
 import { render, h } from 'preact';
 import { initializeMsal, isAuthenticated, getAccessToken } from './auth';
 import { App } from './App';
+import './app.css';
 
 const authDisabled = import.meta.env.VITE_DISABLE_AUTH === 'true';
 

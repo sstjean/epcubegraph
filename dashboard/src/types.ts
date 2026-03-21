@@ -8,6 +8,7 @@ export interface Device {
   product_code?: string;
   uid?: string;
   online: boolean;
+  alias?: string;
 }
 
 export interface DeviceListResponse {
