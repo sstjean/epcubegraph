@@ -21,8 +21,8 @@
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
   Agent files reviewed:
-    - .github/agents/speckit.taskstoissues.agent.md ✅ aligned
-      (already creates issues from tasks.md)
+    - .github/agents/speckit.taskstoissues.agent.md ✅ updated
+      (repurposed: syncs task checklists into US issue bodies)
   Follow-up TODOs: none
 -->
 
