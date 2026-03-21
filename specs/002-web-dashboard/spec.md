@@ -9,17 +9,17 @@
 
 ### User Story 1 - View Current Energy Readings in a Browser (Priority: P1)
 
-As the system owner, I want to open a web dashboard in my browser and immediately see the current state of my solar generation, battery charge/discharge, and grid import/export so that I can monitor my energy system at a glance.
+As the system owner, I want to open a web dashboard in my browser and immediately see the current state of my solar generation, battery charge/discharge, home load consumption, and grid import/export so that I can monitor my energy system at a glance.
 
 The dashboard displays the latest readings from all connected EP Cube gateway devices. Data is sourced from the telemetry API provided by the data ingestor (feature 001-data-ingestor).
 
 **Why this priority**: Seeing current readings is the most fundamental use case for the web dashboard and validates end-to-end data flow from gateway to screen.
 
-**Independent Test**: Open the dashboard in a browser while the data ingestor is running. Verify that current solar, battery, and grid values are displayed and update within one collection interval.
+**Independent Test**: Open the dashboard in a browser while the data ingestor is running. Verify that current solar, battery, home load, and grid values are displayed and update within one collection interval.
 
 **Acceptance Scenarios**:
 
-1. **Given** telemetry data exists in the store, **When** I open the web dashboard in a browser, **Then** I see current solar, battery, and grid readings for each connected device.
+1. **Given** telemetry data exists in the store, **When** I open the web dashboard in a browser, **Then** I see current solar, battery, home load, and grid readings for each connected device.
 2. **Given** the ingestor has just collected new data, **When** I view the dashboard, **Then** the displayed readings are no more than one collection interval old (default: 1 minute).
 3. **Given** a device is offline and no recent data exists (data older than 3× the collection interval, default 3 minutes), **When** I view the dashboard, **Then** the device is shown with a clear "offline" or "stale data" indicator rather than displaying misleading values.
 
@@ -75,7 +75,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 ### Functional Requirements
 
 - **FR-001**: System MUST provide a web application accessible via modern web browsers (Chrome, Firefox, Safari, Edge — current and previous major version).
-- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge, and grid import/export readings for each connected device.
+- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge, home load consumption, and grid import/export readings for each connected device.
 - **FR-003**: Dashboard MUST display readings that are no more than one collection interval old (default: 1 minute).
 - **FR-004**: Dashboard MUST provide interactive historical graphs with selectable time ranges: today, last 7 days, last 30 days, last year, and custom date range.
 - **FR-005**: Dashboard MUST render graphs for up to 30 days of data within 2 seconds.

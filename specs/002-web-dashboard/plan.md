@@ -7,7 +7,7 @@
 
 Build a web dashboard (Preact SPA) for viewing EP Cube energy telemetry data in a browser. The dashboard:
 
-1. **Current readings** (US1, #33): Displays live solar, battery, and grid metrics per device, auto-polling every 30 seconds (half the 1-minute collection interval), with stale/offline indicators when data exceeds 3 minutes old.
+1. **Current readings** (US1, #33): Displays live solar, battery, home load, and grid metrics per device, auto-polling every 30 seconds (half the 1-minute collection interval), with stale/offline indicators when data exceeds 3 minutes old.
 2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, 30d step for yearly). Data gaps rendered as broken lines.
 3. **Grafana integration** (US3, #35): Existing API is consumed by Grafana via the Infinity plugin (generic JSON/REST) — no separate Grafana-specific endpoint.
 
@@ -86,13 +86,15 @@ dashboard/
 │   ├── main.tsx                 # Bootstrap, MSAL init, render
 │   ├── App.tsx                  # Router: / (current) and /history
 │   ├── vite-env.d.ts            # Vite client type declarations
+│   ├── app.css                  # Global styles (gauge grid, device cards, badges)
 │   ├── api.ts                   # API client (fetch + bearer token)
 │   ├── auth.ts                  # MSAL.js init, token acquisition
 │   ├── types.ts                 # TypeScript interfaces for API responses
 │   ├── components/
 │   │   ├── CurrentReadings.tsx  # US1: device cards with live metrics
-│   │   ├── DeviceCard.tsx       # Per-device metric display + online/offline badge
+│   │   ├── DeviceCard.tsx       # Per-device metric display via gauge dials
 │   │   ├── ErrorBoundary.tsx    # Global error handling + retry
+│   │   ├── GaugeDial.tsx        # SVG arc gauge for single metric (reusable)
 │   │   ├── HistoricalGraph.tsx  # US2: uPlot time-series chart
 │   │   ├── HistoryView.tsx      # US2: time range selector + graph container
 │   │   └── TimeRangeSelector.tsx # Presets: today, 7d, 30d, 1y, custom
@@ -105,6 +107,7 @@ dashboard/
     │   ├── CurrentReadings.test.tsx
     │   ├── DeviceCard.test.tsx
     │   ├── ErrorBoundary.test.tsx
+    │   ├── GaugeDial.test.tsx
     │   ├── HistoricalGraph.test.tsx
     │   ├── HistoryView.test.tsx
     │   └── TimeRangeSelector.test.tsx
@@ -126,6 +129,23 @@ infra/
 ```
 
 **Structure Decision**: The dashboard is a standalone SPA under `dashboard/` — separate from the API (`api/`) since they have different runtimes, build tools, and deployment targets (SWA vs Container Apps). Infrastructure additions in `infra/` extend the existing Terraform configuration. This mirrors Feature 001's structure pattern.
+
+## Design Decisions
+
+### Device Alias Grouping
+
+EP Cube devices expose two separate Prometheus targets per physical unit: one for the battery (`storage_battery` class) and one for the solar inverter (`home_solar` class). The dashboard groups these into a single DeviceCard per physical EP Cube unit by extracting the base alias (e.g., "Steve St Jean 3") from the `Device.alias` field, stripping trailing "Battery" or "Solar" suffixes. This presents a unified view per EP Cube rather than showing two disconnected device entries.
+
+### Gauge Dial Presentation
+
+Current readings use SVG arc gauges (`GaugeDial` component) instead of plain text values. Each metric gets a dedicated gauge with appropriate scaling:
+- **Solar**: 0–12 kW (unidirectional)
+- **Battery SOC**: 0–100% (unidirectional)
+- **Battery Power**: ±20 kW (bidirectional — charging vs discharging)
+- **Home Load**: 0–10 kW (unidirectional)
+- **Grid**: ±20 kW (bidirectional — import vs export)
+
+Bidirectional gauges render from a center zero point. This visual approach gives at-a-glance comprehension of system state without reading numeric values.
 
 ## Complexity Tracking
 

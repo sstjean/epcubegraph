@@ -20,6 +20,7 @@ The dashboard does not define new data entities — it consumes the data model d
 interface Device {
   device: string;       // Unique identifier (e.g., "epcube_battery")
   class: string;        // "storage_battery" or "home_solar"
+  alias?: string;       // Human-readable name from EP Cube cloud (e.g., "Steve St Jean 3 Battery")
   manufacturer?: string;
   product_code?: string;
   uid?: string;
@@ -31,7 +32,7 @@ interface DeviceListResponse {
 }
 ```
 
-**Dashboard usage**: Rendered as device cards on the current readings view (US1). The `online` field drives the offline/stale indicator (FR-006). The `class` field determines which metrics to query for each device.
+**Dashboard usage**: Rendered as device cards on the current readings view (US1). The `online` field drives the offline/stale indicator (FR-006). The `class` field determines which metrics to query for each device. The `alias` field is used to group battery and solar devices into a single DeviceCard per physical EP Cube unit (see plan.md Design Decisions).
 
 ---
 
@@ -56,8 +57,9 @@ interface InstantQueryResponse {
 
 **Dashboard usage**: Current readings view (US1). Dashboard issues instant queries for the latest values of key metrics per device:
 - `epcube_battery_state_of_capacity_percent` — Battery SOC (%)
-- `epcube_battery_power_watts` — Battery power (W)
+- `epcube_battery_power_watts` — Battery power (W, derived from energy balance)
 - `epcube_solar_instantaneous_generation_watts` — Solar generation (W)
+- `epcube_home_load_power_watts` — Home load consumption (W)
 - `epcube_grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
 
 ---
