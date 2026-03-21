@@ -1,20 +1,25 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.12.0 → 1.13.0
+  Version change: 1.15.0 → 1.15.1
   Modified sections:
-    - Principle III (Test-Driven Development) — added Test Data
-      Separation (NON-NEGOTIABLE) sub-principle
-  Added sections: none
-  Removed sections: none
+    - DevOps — GitHub Issue Discipline: corrected
+      source-of-truth direction. GitHub issues are the
+      source of truth; speckit documents reflect that truth
+      so GitHub Copilot can function.
+  Added sections: none (merged into existing)
+  Removed sections:
+    - "GitHub Issue Traceability" (absorbed into
+      "GitHub Issue Discipline")
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
     - .specify/templates/spec-template.md         ✅ no changes needed
     - .specify/templates/tasks-template.md        ✅ no changes needed
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
-  Dependent specs:
-    - specs/001-data-ingestor/plan.md             ✅ no changes needed
+  Agent files reviewed:
+    - .github/agents/speckit.taskstoissues.agent.md ✅ aligned
+      (already creates issues from tasks.md)
   Follow-up TODOs: none
 -->
 
@@ -274,6 +279,21 @@ and protecting data across all client platforms.
   `scripts/validate-tool-sync.sh` to enforce this — the
   build MUST fail if any drift is detected. Introducing a
   tool without updating all setup artifacts is prohibited.
+- **GitHub Issue Discipline (NON-NEGOTIABLE)**:
+  - **Traceability**: All User Story issues in GitHub MUST
+    include a link to their parent Feature issue. All Task
+    issues MUST link to their parent User Story issue. Clean
+    traceability from Feature → User Story → Task MUST be
+    maintained at all times. Issues MUST NOT exist without
+    proper parent linkage.
+  - **Synchronization**: Every Feature, User Story, and Task
+    defined in speckit documents (spec.md, plan.md, tasks.md)
+    MUST have a corresponding GitHub issue. GitHub issues
+    MUST be kept in sync with speckit documents — when an
+    issue is added, updated, or completed, the corresponding
+    speckit document MUST be updated accordingly. GitHub
+    issues are the source of truth; speckit documents reflect
+    that truth so GitHub Copilot can function effectively.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -297,4 +317,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.13.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
+**Version**: 1.15.1 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
