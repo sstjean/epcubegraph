@@ -99,7 +99,7 @@ dashboard/
 │   │   ├── HistoryView.tsx      # US2: time range selector + graph container
 │   │   └── TimeRangeSelector.tsx # Presets: today, 7d, 30d, 1y, custom
 │   └── utils/
-│       ├── formatting.ts        # formatWatts, formatPercent, formatTimestamp
+│       ├── formatting.ts        # formatWatts, formatPercent, formatKwh, formatTimestamp
 │       └── polling.ts           # Auto-poll at 30s (half collection interval)
 └── tests/
     ├── component/               # @testing-library/preact component tests
@@ -146,6 +146,10 @@ Current readings use SVG arc gauges (`GaugeDial` component) instead of plain tex
 - **Grid**: ±20 kW (bidirectional — import vs export)
 
 Bidirectional gauges render from a center zero point. This visual approach gives at-a-glance comprehension of system state without reading numeric values.
+
+### Secondary Value Display
+
+The Battery SOC gauge displays remaining stored energy (kWh) as a secondary value below the percentage. The `GaugeDial` component accepts an optional `secondaryValue` prop rendered at a smaller font size beneath the main reading. This keeps the primary metric dominant while providing context without requiring a separate gauge. The `formatKwh()` utility in `formatting.ts` formats the value (e.g., "9.7 kWh") with a dash ("—") for missing data.
 
 ## Complexity Tracking
 

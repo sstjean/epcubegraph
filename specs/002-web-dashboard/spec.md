@@ -75,7 +75,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 ### Functional Requirements
 
 - **FR-001**: System MUST provide a web application accessible via modern web browsers (Chrome, Firefox, Safari, Edge — current and previous major version).
-- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge, home load consumption, and grid import/export readings for each connected device.
+- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge (including remaining stored energy in kWh), home load consumption, and grid import/export readings for each connected device.
 - **FR-003**: Dashboard MUST display readings that are no more than one collection interval old (default: 1 minute).
 - **FR-004**: Dashboard MUST provide interactive historical graphs with selectable time ranges: today, last 7 days, last 30 days, last year, and custom date range.
 - **FR-005**: Dashboard MUST render graphs for up to 30 days of data within 2 seconds.
@@ -89,6 +89,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level. Note: "calendar month intervals" uses a 30-day fixed step (2592000s) for VictoriaMetrics compatibility. When data is downsampled, VictoriaMetrics applies its default aggregation (last value per step for gauge metrics). No custom aggregation function is specified.
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 - **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast (≥4.5:1 ratio) for readability. No formal WCAG audit or automated accessibility test suite is required.
+- **FR-016**: Dashboard MUST display current readings within 2 seconds of page load (SC-001). This is structurally ensured by the lightweight SPA framework (Preact 3KB) combined with instant metric queries.
 
 ### Key Entities
 

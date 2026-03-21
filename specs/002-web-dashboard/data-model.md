@@ -61,6 +61,7 @@ interface InstantQueryResponse {
 - `epcube_solar_instantaneous_generation_watts` — Solar generation (W)
 - `epcube_home_load_power_watts` — Home load consumption (W)
 - `epcube_grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
+- `epcube_battery_stored_kwh` — Battery stored energy (kWh, derived from SOC × capacity)
 
 ---
 

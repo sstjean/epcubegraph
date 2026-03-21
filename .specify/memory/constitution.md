@@ -325,4 +325,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.15.1 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
+**Version**: 1.16.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-20
