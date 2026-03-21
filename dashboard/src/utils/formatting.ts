@@ -11,6 +11,11 @@ export function formatPercent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
+export function formatKwh(value: number): string {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(1)} kWh`;
+}
+
 export function formatTimestamp(epoch: number): string {
   if (epoch == null || Number.isNaN(epoch)) return '—';
   return new Date(epoch * 1000).toLocaleString();

@@ -40,13 +40,14 @@ export function CurrentReadings() {
 
   const loadData = async () => {
     try {
-      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad] = await Promise.all([
+      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored] = await Promise.all([
         fetchDevices(),
         fetchInstantQuery('epcube_battery_state_of_capacity_percent'),
         fetchInstantQuery('epcube_battery_power_watts'),
         fetchInstantQuery('epcube_solar_instantaneous_generation_watts'),
         fetchInstantQuery('epcube_grid_power_watts'),
         fetchInstantQuery('epcube_home_load_power_watts'),
+        fetchInstantQuery('epcube_battery_stored_kwh'),
       ]);
 
       // Group devices by base alias
@@ -71,6 +72,9 @@ export function CurrentReadings() {
             metrics: {
               batteryPercent: batteryDevice
                 ? getMetricForDevice(batterySOC, batteryDevice.device)
+                : 0,
+              batteryStoredKwh: batteryDevice
+                ? getMetricForDevice(batteryStored, batteryDevice.device)
                 : 0,
               batteryWatts: batteryDevice
                 ? getMetricForDevice(batteryPower, batteryDevice.device)

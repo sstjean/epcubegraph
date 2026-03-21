@@ -11,6 +11,8 @@ export interface GaugeDialProps {
   label: string;
   /** Formatted display string for the value */
   displayValue: string;
+  /** Optional secondary display string (smaller, below main value) */
+  secondaryValue?: string;
   /** Unit label (e.g. "kW", "%") */
   unit: string;
   /** Arc fill color */
@@ -42,6 +44,7 @@ export function GaugeDial({
   max,
   label,
   displayValue,
+  secondaryValue,
   unit,
   color,
   size = 140,
@@ -92,7 +95,7 @@ export function GaugeDial({
   return (
     <div
       class="gauge-dial"
-      aria-label={`${label}: ${displayValue} ${unit}`}
+      aria-label={`${label}: ${displayValue}${secondaryValue ? ` ${secondaryValue}` : ''} ${unit}`}
       role="meter"
       aria-valuenow={valueNow}
       aria-valuemin={min}
@@ -133,7 +136,7 @@ export function GaugeDial({
         {/* Value text */}
         <text
           x={cx}
-          y={cy - 4}
+          y={secondaryValue ? cy - size * 0.06 : cy - 4}
           text-anchor="middle"
           dominant-baseline="middle"
           font-size={size * 0.16}
@@ -142,17 +145,30 @@ export function GaugeDial({
         >
           {displayValue}
         </text>
-        {/* Unit text */}
-        <text
-          x={cx}
-          y={cy + size * 0.12}
-          text-anchor="middle"
-          dominant-baseline="middle"
-          font-size={size * 0.1}
-          fill="var(--text-secondary, #94a3b8)"
-        >
-          {unit}
-        </text>
+        {/* Secondary value text (replaces unit when present) */}
+        {secondaryValue ? (
+          <text
+            x={cx}
+            y={cy + size * 0.12}
+            text-anchor="middle"
+            dominant-baseline="middle"
+            font-size={size * 0.1}
+            fill="var(--text-secondary, #94a3b8)"
+          >
+            {secondaryValue}
+          </text>
+        ) : (
+          <text
+            x={cx}
+            y={cy + size * 0.12}
+            text-anchor="middle"
+            dominant-baseline="middle"
+            font-size={size * 0.1}
+            fill="var(--text-secondary, #94a3b8)"
+          >
+            {unit}
+          </text>
+        )}
       </svg>
       <span class="gauge-label">{label}</span>
     </div>

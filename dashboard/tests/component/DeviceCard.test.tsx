@@ -7,6 +7,7 @@ const baseMetrics = {
   solarWatts: 3500,
   batteryWatts: 1200,
   batteryPercent: 85.3,
+  batteryStoredKwh: 9.7,
   gridWatts: 500,
   homeLoadWatts: 2800,
 };
@@ -64,6 +65,15 @@ describe('DeviceCard', () => {
     // Assert — battery dd contains both power and SOC
     expect(screen.getByText(/1\.2 kW/)).toBeTruthy();
     expect(screen.getByText(/85\.3%/)).toBeTruthy();
+  });
+
+  it('shows battery stored kWh as secondary value below SOC percentage', () => {
+    // Arrange & Act
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
+
+    // Assert — Battery SOC gauge displays kWh as separate smaller text
+    expect(screen.getByText('9.7 kWh')).toBeTruthy();
+    expect(screen.getByText('85.3%')).toBeTruthy();
   });
 
   it('shows grid power with "Import" label when positive', () => {

@@ -73,8 +73,8 @@ describe('CurrentReadings', () => {
     // Assert
     await waitFor(() => {
       expect(mockFetchDevices).toHaveBeenCalledTimes(1);
-      // 5 metric queries: battery SOC, battery power, solar, grid, home load
-      expect(mockFetchInstantQuery).toHaveBeenCalledTimes(5);
+      // 6 metric queries: battery SOC, battery power, solar, grid, home load, battery stored kWh
+      expect(mockFetchInstantQuery).toHaveBeenCalledTimes(6);
     });
   });
 
@@ -107,7 +107,7 @@ describe('CurrentReadings', () => {
         { device: 'epcube5488_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar' },
       ],
     });
-    // Battery SOC, Battery Power, Solar, Grid, Home Load — each returns device-specific results
+    // Battery SOC, Battery Power, Solar, Grid, Home Load, Battery Stored kWh — each returns device-specific results
     mockFetchInstantQuery
       .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
         { metric: { device: 'epcube5488_battery' }, value: [1, '97'] },
@@ -123,6 +123,9 @@ describe('CurrentReadings', () => {
       ]}})
       .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
         { metric: { device: 'epcube5488_battery' }, value: [1, '1200'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '9.7'] },
       ]}});
 
     // Act
@@ -130,7 +133,8 @@ describe('CurrentReadings', () => {
 
     // Assert
     await waitFor(() => {
-      expect(screen.getByText('97.0%')).toBeTruthy();
+      expect(screen.getByText(/97\.0%/)).toBeTruthy();
+      expect(screen.getByText(/9\.7 kWh/)).toBeTruthy();
       expect(screen.getByText('5.6 kW')).toBeTruthy();
     });
   });
@@ -188,6 +192,82 @@ describe('CurrentReadings', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText(/no devices found/i)).toBeTruthy();
+    });
+  });
+
+  it('defaults metrics to zero when group has no battery device', async () => {
+    // Arrange — solar-only device with no battery counterpart
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube9999_solar', class: 'home_solar', online: true, alias: 'Solar Only Solar' },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — card renders with zero-default battery metrics
+    await waitFor(() => {
+      const articles = document.querySelectorAll('article');
+      expect(articles.length).toBe(1);
+      expect(screen.getByText('Solar Only')).toBeTruthy();
+    });
+  });
+
+  it('defaults solar watts to zero when group has no solar device', async () => {
+    // Arrange — battery-only device with no solar counterpart
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube9999_battery', class: 'storage_battery', online: true, alias: 'Battery Only Battery' },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — card renders with zero-default solar metrics
+    await waitFor(() => {
+      const articles = document.querySelectorAll('article');
+      expect(articles.length).toBe(1);
+      expect(screen.getByText('Battery Only')).toBeTruthy();
+    });
+  });
+
+  it('uses device id as group name when no alias is set', async () => {
+    // Arrange — device without alias, falls back to device id parsing
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — uses formatted device id as name
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube 3483')).toBeTruthy();
+    });
+  });
+
+  it('uses raw device base when id does not match epcube pattern', async () => {
+    // Arrange — device with non-standard id format
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'custom_device_battery', class: 'storage_battery', online: true },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — uses raw base name
+    await waitFor(() => {
+      expect(screen.getByText('custom_device')).toBeTruthy();
     });
   });
 });

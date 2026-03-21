@@ -115,6 +115,52 @@ describe('formatting', () => {
     });
   });
 
+  describe('formatKwh', () => {
+    it('formats kWh with 1 decimal', async () => {
+      // Arrange
+      const { formatKwh } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatKwh(9.7);
+
+      // Assert
+      expect(result).toBe('9.7 kWh');
+    });
+
+    it('formats zero as 0.0 kWh', async () => {
+      // Arrange
+      const { formatKwh } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatKwh(0);
+
+      // Assert
+      expect(result).toBe('0.0 kWh');
+    });
+
+    it('returns "—" for NaN', async () => {
+      // Arrange
+      const { formatKwh } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatKwh(NaN);
+
+      // Assert
+      expect(result).toBe('—');
+    });
+
+    it('returns "—" for null', async () => {
+      // Arrange
+      const { formatKwh } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatKwh(null as unknown as number);
+
+      // Assert
+      expect(result).toBe('—');
+    });
+  });
+
   describe('formatTimestamp', () => {
     it('formats epoch to locale-aware date/time', async () => {
       // Arrange

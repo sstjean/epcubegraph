@@ -1,11 +1,12 @@
 import { h } from 'preact';
-import { formatWatts, formatPercent } from '../utils/formatting';
+import { formatWatts, formatPercent, formatKwh } from '../utils/formatting';
 import { GaugeDial } from './GaugeDial';
 
 export interface DeviceCardMetrics {
   solarWatts: number;
   batteryWatts: number;
   batteryPercent: number;
+  batteryStoredKwh: number;
   gridWatts: number;
   homeLoadWatts: number;
 }
@@ -53,6 +54,7 @@ export function DeviceCard({ name, online, metrics }: DeviceCardProps) {
           max={BATTERY_SOC_MAX}
           label="Battery SOC"
           displayValue={formatPercent(metrics.batteryPercent)}
+          secondaryValue={formatKwh(metrics.batteryStoredKwh)}
           unit="charge"
           color="#22c55e"
         />

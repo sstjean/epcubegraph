@@ -187,4 +187,28 @@ describe('GaugeDial', () => {
     const paths = container.querySelectorAll('path');
     expect(paths.length).toBe(1);
   });
+
+  it('renders secondary value text when secondaryValue prop is provided', () => {
+    // Arrange & Act
+    const { container } = render(
+      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.7 kWh" unit="charge" color="#22c55e" />
+    );
+
+    // Assert
+    const texts = container.querySelectorAll('text');
+    const textContents = Array.from(texts).map((t) => t.textContent);
+    expect(textContents).toContain('85.0%');
+    expect(textContents).toContain('9.7 kWh');
+  });
+
+  it('includes secondaryValue in aria-label when provided', () => {
+    // Arrange & Act
+    render(
+      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.7 kWh" unit="charge" color="#22c55e" />
+    );
+
+    // Assert
+    const meter = screen.getByRole('meter');
+    expect(meter.getAttribute('aria-label')).toContain('9.7 kWh');
+  });
 });
