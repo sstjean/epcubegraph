@@ -427,7 +427,7 @@ class TestRenderStatusPage(unittest.TestCase):
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="imbalance"', html)
         self.assertIn("\u26a0", html)  # warning symbol
-        self.assertIn("Supply 0.00 kW", html)  # tooltip
+        self.assertIn("Expected battery +1.23 kW", html)  # tooltip
 
     def test_energy_balance_all_zeros_no_warning(self):
         """All zeros (idle system) should NOT be flagged."""
@@ -899,6 +899,117 @@ class TestPrometheusMetrics(unittest.TestCase):
         line = [l for l in metrics.splitlines()
                 if l.startswith("epcube_battery_peak_stored_kwh{")][0]
         self.assertTrue(line.endswith("20.0"))
+
+
+# ---------------------------------------------------------------------------
+# Negative zero normalization tests
+# ---------------------------------------------------------------------------
+
+class TestNegativeZeroNormalization(unittest.TestCase):
+
+    def test_nz_negative_zero_returns_positive_zero(self):
+        # Arrange
+        value = -0.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+        self.assertNotEqual(str(result), "-0.0")
+
+    def test_nz_positive_zero_returns_positive_zero(self):
+        # Arrange
+        value = 0.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+
+    def test_nz_integer_zero_returns_positive_zero(self):
+        # Arrange
+        value = 0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+
+    def test_nz_positive_value_passes_through(self):
+        # Arrange
+        value = 3.14
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 3.14)
+
+    def test_nz_negative_value_passes_through(self):
+        # Arrange
+        value = -5.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, -5.0)
+
+    def test_metrics_no_negative_zero_with_zero_grid_power(self):
+        """When API returns gridPower=0, negation must NOT produce -0 in metrics."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(
+            solarPower=0, batterySoc=50, batteryPower=0,
+            gridPower=0, backUpPower=0, selfHelpRate=0,
+            batteryCurrentElectricity="0",
+        )
+        elec_data = _make_electricity_data(
+            solarElectricity=0, gridElectricityFrom=0,
+            gridElectricityTo=0, backUpElectricity=0,
+        )
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info, elec_data)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        for line in metrics.splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            self.assertNotRegex(line, r'\s-0(\.0+)?$',
+                                f"Negative zero found in metric line: {line}")
+
+    def test_snapshot_no_negative_zero_with_zero_grid_power(self):
+        """Snapshot values must not contain negative zero."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(
+            solarPower=0, gridPower=0, backUpPower=0,
+        )
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        snap = c._history[-1]
+        dev = snap["devices"][0]
+        self.assertNotEqual(str(dev["grid_kw"]), "-0.0")
+        self.assertNotEqual(str(dev["battery_kw"]), "-0.0")
+        self.assertNotEqual(str(dev["solar_kw"]), "-0.0")
 
 
 # ---------------------------------------------------------------------------

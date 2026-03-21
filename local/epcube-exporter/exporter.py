@@ -100,6 +100,11 @@ class AuthExpiredError(Exception):
     pass
 
 
+def _nz(v):
+    """Normalize negative zero to positive zero."""
+    return 0.0 if v == 0 else v
+
+
 # ---------------------------------------------------------------------------
 # Captcha solver
 # ---------------------------------------------------------------------------
@@ -310,49 +315,51 @@ class EpCubeCollector:
             sl = ",".join(f'{k}="{v}"' for k, v in sol_labels.items())
 
             # ── Solar metrics ──
-            solar_kw = float(data.get("solarPower", 0))
-            solar_w = round(solar_kw * 1000, 1)
+            solar_kw = _nz(float(data.get("solarPower", 0)))
+            solar_w = _nz(round(solar_kw * 1000, 1))
 
             lines.append("# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
             lines.append("# TYPE epcube_solar_instantaneous_generation_watts gauge")
             lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
 
             # ── Battery metrics ──
-            soc = float(data.get("batterySoc", 0))
+            soc = _nz(float(data.get("batterySoc", 0)))
 
             lines.append("# HELP epcube_battery_state_of_capacity_percent Battery SoC")
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
             lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-            battery_kw = float(data.get("batteryPower", 0))
-            battery_w = round(battery_kw * 1000, 1)
-            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
-            lines.append("# TYPE epcube_battery_power_watts gauge")
-            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
-
             # ── Grid metrics ── (API uses opposite sign: negate so positive=import)
-            grid_kw = -float(data.get("gridPower", 0))
-            grid_w = round(grid_kw * 1000, 1)
+            grid_kw = _nz(-float(data.get("gridPower", 0)))
+            grid_w = _nz(round(grid_kw * 1000, 1))
             lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
             lines.append("# TYPE epcube_grid_power_watts gauge")
             lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_w}")
 
             # ── Backup/home load metrics ──
-            backup_kw = float(data.get("backUpPower", 0))
-            backup_w = round(backup_kw * 1000, 1)
+            backup_kw = _nz(float(data.get("backUpPower", 0)))
+            backup_w = _nz(round(backup_kw * 1000, 1))
 
             lines.append("# HELP epcube_home_load_power_watts Home load power consumption")
             lines.append("# TYPE epcube_home_load_power_watts gauge")
             lines.append(f"epcube_home_load_power_watts{{{bl}}} {backup_w}")
 
+            # ── Battery power (derived from energy balance — API batteryPower is unreliable) ──
+            # positive = charging, negative = discharging
+            battery_kw = _nz(round(solar_kw + grid_kw - backup_kw, 2))
+            battery_w = _nz(round(battery_kw * 1000, 1))
+            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
+            lines.append("# TYPE epcube_battery_power_watts gauge")
+            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
+
             # ── Self-sufficiency rate ──
-            self_help = float(data.get("selfHelpRate", 0))
+            self_help = _nz(float(data.get("selfHelpRate", 0)))
             lines.append("# HELP epcube_self_sufficiency_rate Self-sufficiency percentage")
             lines.append("# TYPE epcube_self_sufficiency_rate gauge")
             lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_help}")
 
             # ── Battery stored energy ──
-            bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
+            bat_stored_kwh = _nz(float(data.get("batteryCurrentElectricity", 0)))
             lines.append("# HELP epcube_battery_stored_kwh Current battery energy level")
             lines.append("# TYPE epcube_battery_stored_kwh gauge")
             lines.append(f"epcube_battery_stored_kwh{{{bl}}} {bat_stored_kwh}")
@@ -376,15 +383,12 @@ class EpCubeCollector:
             lines.append("# TYPE epcube_battery_peak_stored_kwh gauge")
             lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
             ress_count = data.get("ressNumber", "?")
-            # Derive battery kW from energy balance (API batteryPower is unreliable)
-            # positive = charging, negative = discharging
-            battery_kw_derived = round(solar_kw + grid_kw - backup_kw, 2)
             snapshot["devices"].append({
                 "name": dev_name,
                 "id": dev_id,
                 "solar_kw": solar_kw,
                 "battery_soc": soc,
-                "battery_kw": battery_kw_derived,
+                "battery_kw": battery_kw,
                 "grid_kw": grid_kw,
                 "backup_kw": backup_kw,
                 "self_sufficiency": self_help,
@@ -432,13 +436,13 @@ class EpCubeCollector:
                 edata = elec.get("data", {})
                 bl = f'device="epcube{dev["id"]}_battery",ip="cloud",class="storage_battery"'
 
-                solar_kwh = float(edata.get("solarElectricity", 0))
+                solar_kwh = _nz(float(edata.get("solarElectricity", 0)))
                 lines.append("# HELP epcube_solar_cumulative_generation_kwh Total energy generated today")
                 lines.append("# TYPE epcube_solar_cumulative_generation_kwh gauge")
                 lines.append(f"epcube_solar_cumulative_generation_kwh{{{bl}}} {solar_kwh}")
 
-                grid_from = float(edata.get("gridElectricityFrom", 0))
-                grid_to = float(edata.get("gridElectricityTo", 0))
+                grid_from = _nz(float(edata.get("gridElectricityFrom", 0)))
+                grid_to = _nz(float(edata.get("gridElectricityTo", 0)))
                 lines.append("# HELP epcube_grid_import_kwh Grid energy imported today")
                 lines.append("# TYPE epcube_grid_import_kwh gauge")
                 lines.append(f"epcube_grid_import_kwh{{{bl}}} {grid_from}")
@@ -446,7 +450,7 @@ class EpCubeCollector:
                 lines.append("# TYPE epcube_grid_export_kwh gauge")
                 lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_to}")
 
-                backup_kwh = float(edata.get("backUpElectricity", 0))
+                backup_kwh = _nz(float(edata.get("backUpElectricity", 0)))
                 lines.append("# HELP epcube_home_supply_cumulative_kwh Daily cumulative home supply")
                 lines.append("# TYPE epcube_home_supply_cumulative_kwh gauge")
                 lines.append(f"epcube_home_supply_cumulative_kwh{{{bl}}} {backup_kwh}")
@@ -547,18 +551,23 @@ def _render_status_page(status, health):
                 for dev in snap["devices"]:
                     if dev["id"] != dev_id:
                         continue
-                    supply = dev["solar_kw"] + abs(dev.get("battery_kw", 0)) + abs(dev.get("grid_kw", 0))
-                    load = dev["backup_kw"]
-                    imbalance = abs(supply - load)
-                    row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.1 else ''
-                    warn_td = f' title="Supply {supply:.2f} kW ≠ Load {load:.2f} kW"' if load > 0 and imbalance > 0.1 else ''
+                    battery_kw = _nz(float(dev.get("battery_kw", 0)))
+                    grid_kw = _nz(float(dev.get("grid_kw", 0)))
+                    solar_kw = _nz(float(dev["solar_kw"]))
+                    load = _nz(float(dev["backup_kw"]))
+                    expected_battery = load - solar_kw - grid_kw
+                    imbalance = abs(expected_battery - battery_kw)
+                    row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.5 else ''
+                    warn_td = f' title="Expected battery {expected_battery:+.2f} kW ≠ Actual {battery_kw:+.2f} kW"' if load > 0 and imbalance > 0.5 else ''
+                    fmt_bat = f"{battery_kw:+.2f}" if battery_kw != 0 else "0.00"
+                    fmt_grid = f"{grid_kw:+.2f}" if grid_kw != 0 else "0.00"
                     rows.append(
                         f'<tr{row_cls}>'
                         f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
-                        f'<td style="text-align:right">{dev["solar_kw"]:.2f}</td>'
-                        f'<td style="text-align:right">{dev.get("battery_kw", 0):+.2f}</td>'
-                        f'<td style="text-align:right">{dev.get("grid_kw", 0):+.2f}</td>'
-                        f'<td style="text-align:right"{warn_td}>{dev["backup_kw"]:.2f}{" ⚠" if row_cls else ""}</td>'
+                        f'<td style="text-align:right">{solar_kw:.2f}</td>'
+                        f'<td style="text-align:right">{fmt_bat}</td>'
+                        f'<td style="text-align:right">{fmt_grid}</td>'
+                        f'<td style="text-align:right"{warn_td}>{load:.2f}{" ⚠" if row_cls else ""}</td>'
                         f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
                         f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
                         f'<td class="section-divider" style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
