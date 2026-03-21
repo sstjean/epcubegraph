@@ -1,16 +1,19 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.15.0 → 1.15.1
+  Version change: 1.15.1 → 1.16.0
   Modified sections:
-    - DevOps — GitHub Issue Discipline: corrected
-      source-of-truth direction. GitHub issues are the
-      source of truth; speckit documents reflect that truth
-      so GitHub Copilot can function.
-  Added sections: none (merged into existing)
-  Removed sections:
-    - "GitHub Issue Traceability" (absorbed into
-      "GitHub Issue Discipline")
+    - DevOps — GitHub Issue Discipline: narrowed scope.
+      Tasks no longer require individual GitHub issues.
+      Tasks are tracked as checklist items in User Story
+      issue bodies and in tasks.md. Feature and User Story
+      issues remain mandatory with sub-issue relationships.
+  Added sub-sections:
+    - "Task Tracking" under GitHub Issue Discipline
+  Removed language:
+    - "All Task issues MUST link to their parent User Story
+      issue" (no longer applicable — tasks are not issues)
+    - "and Task" from synchronization requirement
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
     - .specify/templates/spec-template.md         ✅ no changes needed
@@ -280,20 +283,25 @@ and protecting data across all client platforms.
   build MUST fail if any drift is detected. Introducing a
   tool without updating all setup artifacts is prohibited.
 - **GitHub Issue Discipline (NON-NEGOTIABLE)**:
-  - **Traceability**: All User Story issues in GitHub MUST
-    include a link to their parent Feature issue. All Task
-    issues MUST link to their parent User Story issue. Clean
-    traceability from Feature → User Story → Task MUST be
-    maintained at all times. Issues MUST NOT exist without
-    proper parent linkage.
-  - **Synchronization**: Every Feature, User Story, and Task
-    defined in speckit documents (spec.md, plan.md, tasks.md)
-    MUST have a corresponding GitHub issue. GitHub issues
-    MUST be kept in sync with speckit documents — when an
+  - **Traceability**: Every User Story issue in GitHub MUST
+    be a sub-issue of its parent Feature issue. Clean
+    traceability from Feature → User Story MUST be
+    maintained at all times via GitHub's sub-issue
+    relationships. Issues MUST NOT exist without proper
+    parent linkage.
+  - **Synchronization**: Every Feature and User Story
+    defined in speckit documents (spec.md, plan.md) MUST
+    have a corresponding GitHub issue. GitHub issues MUST
+    be kept in sync with speckit documents — when an
     issue is added, updated, or completed, the corresponding
     speckit document MUST be updated accordingly. GitHub
     issues are the source of truth; speckit documents reflect
     that truth so GitHub Copilot can function effectively.
+  - **Task Tracking**: Tasks defined in tasks.md do not
+    require individual GitHub issues. Tasks MUST be
+    reflected as checklist items in their parent User Story
+    issue body. Task completion is tracked in both tasks.md
+    and the User Story issue checklist.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
