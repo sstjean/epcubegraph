@@ -1,12 +1,13 @@
-# EP Cube Graph — Local Development Stack (no Azure dependencies)
+# EP Cube Graph — Mock Stack (automated testing only)
 #
-# Runs the full ingestion pipeline locally with mock data:
+# Runs mock services for CI and automated tests. For manual local
+# development with live data, use docker-compose.prod-local.yml
+# (via ./deploy.sh).
+#
+# Services:
 #   mock-exporter  → generates fake EP Cube Prometheus metrics
 #   vmagent        → scrapes mock-exporter, writes to local VictoriaMetrics
-#   victoriametrics → local time-series DB (replaces Azure Container Apps)
-#
-# The API runs on the host via `dotnet run` and queries VictoriaMetrics
-# at http://localhost:8428 (default in appsettings.Development.json).
+#   victoriametrics → local time-series DB
 #
 # Usage:
 #   docker compose -f docker-compose.local.yml up -d

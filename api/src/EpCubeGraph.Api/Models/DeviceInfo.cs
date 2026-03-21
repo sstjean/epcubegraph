@@ -8,4 +8,5 @@ public record DeviceInfo(
     [property: JsonPropertyName("manufacturer")] string? Manufacturer = null,
     [property: JsonPropertyName("product_code")] string? ProductCode = null,
     [property: JsonPropertyName("uid")] string? Uid = null,
-    [property: JsonPropertyName("online")] bool Online = false);
+    [property: JsonPropertyName("online")] bool Online = false,
+    [property: JsonPropertyName("alias")] string? Alias = null);

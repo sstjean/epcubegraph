@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# EP Cube Graph — Local Development Stack (no Azure dependencies)
+# EP Cube Graph — Mock Stack (automated testing only)
+#
+# Runs mock data services for CI/automated tests. For manual local
+# development, use ./deploy.sh which connects to live EP Cube data.
 #
 # Usage:
 #   ./deploy-local.sh              # Build and start the mock stack

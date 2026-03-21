@@ -64,21 +64,21 @@ validate_env() {
 
   local errors=0
 
-  # Source the env file to check values
+  # Required variable names and their placeholder patterns
+  local -a var_names=( EPCUBE_USERNAME EPCUBE_PASSWORD )
+  local -a placeholders=( "<" "<" )
+
+  # Source the env file to export values
   set -a
   # shellcheck disable=SC1090
   source "${ENV_FILE}"
   set +a
 
-  # Required variables and their placeholder patterns
-  local -A required=(
-    [EPCUBE_USERNAME]="<"
-    [EPCUBE_PASSWORD]="<"
-  )
-
-  for var in "${!required[@]}"; do
-    val="${!var:-}"
-    placeholder="${required[$var]}"
+  local i
+  for i in "${!var_names[@]}"; do
+    local var="${var_names[$i]}"
+    local val="${!var:-}"
+    local placeholder="${placeholders[$i]}"
     if [[ -z "${val}" ]]; then
       error "${var} is not set in .env"
       ((errors++))

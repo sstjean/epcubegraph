@@ -16,6 +16,7 @@ public static class DevicesEndpoints
 
     private static async Task<IResult> HandleDevices(
         IVictoriaMetricsClient client,
+        IConfiguration config,
         CancellationToken ct)
     {
         JsonElement infoResult;
@@ -54,6 +55,7 @@ public static class DevicesEndpoints
         }
 
         // Build device list from series info
+        var aliases = config.GetSection("DeviceAliases");
         var devices = new List<DeviceInfo>();
         if (infoResult.TryGetProperty("data", out var data))
         {
@@ -70,8 +72,9 @@ public static class DevicesEndpoints
                     ? u.GetString() : null;
 
                 var online = onlineDevices.Contains(device);
+                var alias = aliases[device];
 
-                devices.Add(new DeviceInfo(device, deviceClass, manufacturer, productCode, uid, online));
+                devices.Add(new DeviceInfo(device, deviceClass, manufacturer, productCode, uid, online, alias));
             }
         }
 
