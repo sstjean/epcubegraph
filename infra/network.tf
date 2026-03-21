@@ -21,10 +21,11 @@ resource "azurerm_virtual_network" "main" {
 
 # Container Apps infrastructure subnet (/23 minimum for Consumption workload profile)
 resource "azurerm_subnet" "infrastructure" {
-  name                 = "infrastructure"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.0.0/23"]
+  name                            = "infrastructure"
+  resource_group_name             = azurerm_resource_group.main.name
+  virtual_network_name            = azurerm_virtual_network.main.name
+  address_prefixes                = ["10.0.0.0/23"]
+  default_outbound_access_enabled = false
 
   delegation {
     name = "container-apps"
@@ -37,10 +38,11 @@ resource "azurerm_subnet" "infrastructure" {
 
 # Private endpoints subnet
 resource "azurerm_subnet" "endpoints" {
-  name                 = "endpoints"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.2.0/24"]
+  name                            = "endpoints"
+  resource_group_name             = azurerm_resource_group.main.name
+  virtual_network_name            = azurerm_virtual_network.main.name
+  address_prefixes                = ["10.0.2.0/24"]
+  default_outbound_access_enabled = false
 }
 
 # ── Key Vault Private Endpoint ──

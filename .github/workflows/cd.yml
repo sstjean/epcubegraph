@@ -109,6 +109,8 @@ jobs:
         run: |
           KV_NAME="epcubegraph-staging-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -117,8 +119,6 @@ jobs:
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
-
-      # Wait for firewall + public-network-access changes to propagate
       - name: Wait for firewall propagation
         run: |
           echo "Waiting for tfstate storage firewall propagation..."
@@ -283,7 +283,8 @@ jobs:
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
 
       - name: Restore public network access to Disabled
         if: always()
@@ -426,6 +427,8 @@ jobs:
         run: |
           KV_NAME="epcubegraph-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -594,7 +597,8 @@ jobs:
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
 
       - name: Restore public network access to Disabled
         if: always()
@@ -724,6 +728,8 @@ jobs:
         run: |
           KV_NAME="epcubegraph-staging-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -809,7 +815,8 @@ jobs:
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
 
       - name: Restore public network access to Disabled
         if: always()
@@ -876,6 +883,8 @@ jobs:
             KV_NAME="epcubegraph-${ENV}-kv"
           fi
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -969,7 +978,8 @@ jobs:
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
 
       - name: Restore public network access to Disabled
         if: always()
