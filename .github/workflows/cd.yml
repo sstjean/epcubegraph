@@ -1,9 +1,9 @@
 name: CD
 
 on:
-  # Deploy to production on merge to main
+  # Deploy to staging on push to any branch, production on push to main
   push:
-    branches: [main]
+    branches: ['**']
 
   # Deploy staging on PRs to main
   pull_request:
@@ -28,7 +28,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event_name == 'push' && 'production' || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'production' || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -42,14 +42,15 @@ permissions:
   contents: read
 
 jobs:
-  # ── Staging: deploy on PRs to main or manual dispatch ──
+  # ── Staging: deploy on push to non-main branches, PRs to main, or manual dispatch ──
   check-ci:
     runs-on: ubuntu-latest
     if: >
+      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     steps:
-      - run: echo "Staging deployment — PR or manual dispatch"
+      - run: echo "Staging deployment — branch push, PR, or manual dispatch"
 
   deploy-staging:
     needs: check-ci
@@ -342,11 +343,11 @@ jobs:
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # ── Production: deploy only via manual dispatch ──
+  # ── Production: deploy on push to main or manual dispatch ──
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'push' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     steps:
       - run: echo "Production deployment — push to main or manual dispatch"
@@ -636,6 +637,134 @@ jobs:
           else
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
+
+  # ── Cleanup staging after successful PR merge to main ──
+  cleanup-staging:
+    needs: validate-prod
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+
+    env:
+      TF_VAR_environment_name: 'epcubegraph-staging'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Detect runner IP
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::${RUNNER_IP}"
+          echo "✓ Detected runner IP"
+
+      - name: Whitelist runner IP on tfstate storage
+        run: |
+          az storage account network-rule add \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+
+      - name: Whitelist runner IP on Key Vault
+        run: |
+          KV_NAME="epcubegraph-staging-kv"
+          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault network-rule add \
+              --name "$KV_NAME" \
+              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+              --output none 2>/dev/null || true
+            echo "✓ Runner IP added to Key Vault firewall"
+          else
+            echo "Key Vault does not exist — nothing to destroy"
+            exit 0
+          fi
+
+      - name: Wait for firewall propagation
+        run: |
+          echo "Waiting for tfstate storage firewall propagation..."
+          for attempt in $(seq 1 30); do
+            if az storage container list \
+              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --auth-mode login \
+              --output none 2>/dev/null; then
+              echo "✓ tfstate storage accessible (attempt $attempt)"
+              exit 0
+            fi
+            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
+          exit 1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init (staging state)
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=epcubegraph-staging.tfstate" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Azure Re-Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy (staging)
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: |
+          if ! terraform destroy -auto-approve -input=false; then
+            echo "⚠ First destroy attempt failed — refreshing state and retrying..."
+            terraform refresh -input=false
+            terraform destroy -auto-approve -input=false
+          fi
+          echo "✓ Staging environment destroyed — clean for next branch"
+
+      - name: Remove runner IP from firewalls
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account network-rule remove \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from tfstate firewall"
+          KV_NAME="epcubegraph-staging-kv"
+          az keyvault network-rule remove \
+            --name "$KV_NAME" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from Key Vault firewall"
 
   # Tear down: only on manual request (no auto-destroy)
   destroy:
