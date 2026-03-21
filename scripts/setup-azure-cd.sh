@@ -238,10 +238,23 @@ else
     --location "$LOCATION" \
     --sku Standard_LRS \
     --allow-blob-public-access false \
-    --allow-shared-key-access true \
+    --allow-shared-key-access false \
+    --default-action Deny \
+    --bypass AzureServices \
     --output none
   success "Storage account '$TFSTATE_STORAGE' created"
 fi
+
+# SFI compliance: ensure storage account is locked down. The CD pipeline
+# temporarily enables public network access (with defaultAction=Deny) when it
+# needs to reach the data plane, then restores Disabled in cleanup.
+info "Configuring storage network rules (SFI-compliant: Deny + Disabled)..."
+run az storage account update \
+  --name "$TFSTATE_STORAGE" \
+  --resource-group "$TFSTATE_RG" \
+  --public-network-access Disabled \
+  --output none 2>/dev/null || true
+success "Storage account network configuration applied"
 
 # Blob container
 CONTAINER_EXISTS=$(az storage container exists \
