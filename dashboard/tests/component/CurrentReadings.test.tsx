@@ -21,6 +21,11 @@ const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchInstantQuery = fetchInstantQuery as ReturnType<typeof vi.fn>;
 const mockCreatePolling = createPollingInterval as ReturnType<typeof vi.fn>;
 
+const emptyMetricResponse = {
+  status: 'success',
+  data: { resultType: 'vector', result: [] },
+};
+
 describe('CurrentReadings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,6 +36,7 @@ describe('CurrentReadings', () => {
   it('renders as <section> with heading (FR-015)', async () => {
     // Arrange
     mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);
@@ -46,6 +52,7 @@ describe('CurrentReadings', () => {
   it('renders loading state with aria-busy="true" initially', () => {
     // Arrange
     mockFetchDevices.mockReturnValue(new Promise(() => {})); // never resolves
+    mockFetchInstantQuery.mockReturnValue(new Promise(() => {}));
 
     // Act
     render(<CurrentReadings />);
@@ -55,51 +62,83 @@ describe('CurrentReadings', () => {
     expect(section?.getAttribute('aria-busy')).toBe('true');
   });
 
-  it('fetches devices and instant queries on mount', async () => {
+  it('fetches devices and all metric queries on mount', async () => {
     // Arrange
-    mockFetchDevices.mockResolvedValue({
-      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
-    });
-    mockFetchInstantQuery.mockResolvedValue({
-      status: 'success',
-      data: { resultType: 'vector', result: [{ metric: {}, value: [Date.now() / 1000, '85'] }] },
-    });
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);
 
     // Assert
     await waitFor(() => {
-      expect(mockFetchDevices).toHaveBeenCalled();
+      expect(mockFetchDevices).toHaveBeenCalledTimes(1);
+      // 5 metric queries: battery SOC, battery power, solar, grid, home load
+      expect(mockFetchInstantQuery).toHaveBeenCalledTimes(5);
     });
   });
 
-  it('renders DeviceCard for each device', async () => {
+  it('groups battery+solar devices into one card per alias', async () => {
     // Arrange
     mockFetchDevices.mockResolvedValue({
       devices: [
-        { device: 'epcube_battery', class: 'storage_battery', online: true },
-        { device: 'epcube_solar', class: 'home_solar', online: true },
+        { device: 'epcube5488_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
+        { device: 'epcube5488_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar' },
       ],
     });
-    mockFetchInstantQuery.mockResolvedValue({
-      status: 'success',
-      data: { resultType: 'vector', result: [{ metric: {}, value: [Date.now() / 1000, '0'] }] },
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — one grouped card, not two
+    await waitFor(() => {
+      const articles = document.querySelectorAll('article');
+      expect(articles.length).toBe(1);
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
     });
+  });
+
+  it('matches metric values to correct device in group', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5488_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
+        { device: 'epcube5488_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar' },
+      ],
+    });
+    // Battery SOC, Battery Power, Solar, Grid, Home Load — each returns device-specific results
+    mockFetchInstantQuery
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '97'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '500'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_solar' }, value: [1, '5580'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '3660'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '1200'] },
+      ]}});
 
     // Act
     render(<CurrentReadings />);
 
     // Assert
     await waitFor(() => {
-      const articles = document.querySelectorAll('article');
-      expect(articles.length).toBe(2);
+      expect(screen.getByText('97.0%')).toBeTruthy();
+      expect(screen.getByText('5.6 kW')).toBeTruthy();
     });
   });
 
   it('shows error state when API fails', async () => {
     // Arrange
     mockFetchDevices.mockRejectedValue(new Error('Network error'));
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);
@@ -113,6 +152,7 @@ describe('CurrentReadings', () => {
   it('triggers polling refresh via createPollingInterval', async () => {
     // Arrange
     mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);
@@ -123,29 +163,10 @@ describe('CurrentReadings', () => {
     });
   });
 
-  it('handles empty instant query results (getValue fallback to 0)', async () => {
-    // Arrange
-    mockFetchDevices.mockResolvedValue({
-      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
-    });
-    mockFetchInstantQuery.mockResolvedValue({
-      status: 'success',
-      data: { resultType: 'vector', result: [] },
-    });
-
-    // Act
-    render(<CurrentReadings />);
-
-    // Assert
-    await waitFor(() => {
-      const articles = document.querySelectorAll('article');
-      expect(articles.length).toBe(1);
-    });
-  });
-
   it('handles non-Error thrown objects', async () => {
     // Arrange
     mockFetchDevices.mockRejectedValue('string error');
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);
@@ -159,6 +180,7 @@ describe('CurrentReadings', () => {
   it('shows "No devices found" when API returns empty list', async () => {
     // Arrange
     mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
 
     // Act
     render(<CurrentReadings />);

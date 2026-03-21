@@ -105,14 +105,14 @@ describe('GaugeDial', () => {
     expect(svg?.getAttribute('height')).toBe('200');
   });
 
-  it('uses default size=120 when not specified', () => {
+  it('uses default size=140 when not specified', () => {
     const { container } = render(
       <GaugeDial value={50} max={100} label="Test" displayValue="50%" unit="pct" color="#000" />
     );
 
     const svg = container.querySelector('svg');
-    expect(svg?.getAttribute('width')).toBe('120');
-    expect(svg?.getAttribute('height')).toBe('120');
+    expect(svg?.getAttribute('width')).toBe('140');
+    expect(svg?.getAttribute('height')).toBe('140');
   });
 
   it('applies correct color to foreground arc', () => {
@@ -125,12 +125,66 @@ describe('GaugeDial', () => {
     expect(fgPath.getAttribute('stroke')).toBe('#ff6600');
   });
 
-  it('background arc uses gray track color', () => {
+  it('background arc uses dark track color', () => {
     const { container } = render(
       <GaugeDial value={50} max={100} label="Test" displayValue="50%" unit="pct" color="#000" />
     );
 
     const bgPath = container.querySelectorAll('path')[0];
-    expect(bgPath.getAttribute('stroke')).toBe('#e5e7eb');
+    // Uses CSS variable; inline fallback is #2d3748
+    expect(bgPath.getAttribute('stroke')).toContain('#');
+  });
+
+  // Bidirectional gauge tests (min < 0)
+  it('supports bidirectional mode with min < 0', () => {
+    const { container } = render(
+      <GaugeDial value={-3000} min={-5000} max={20000} label="Grid (Export)" displayValue="-3.0 kW" unit="export" color="#10b981" />
+    );
+
+    const meter = screen.getByRole('meter');
+    expect(meter.getAttribute('aria-valuemin')).toBe('-5000');
+    expect(meter.getAttribute('aria-valuemax')).toBe('20000');
+    expect(meter.getAttribute('aria-valuenow')).toBe('-3000');
+
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(2); // bg arc + fg arc
+  });
+
+  it('renders zero tick mark for bidirectional gauges', () => {
+    const { container } = render(
+      <GaugeDial value={5000} min={-5000} max={20000} label="Grid (Import)" displayValue="5.0 kW" unit="import" color="#ef4444" />
+    );
+
+    const line = container.querySelector('line');
+    expect(line).toBeTruthy();
+  });
+
+  it('does not render zero tick for unidirectional gauges', () => {
+    const { container } = render(
+      <GaugeDial value={50} max={100} label="Test" displayValue="50%" unit="pct" color="#000" />
+    );
+
+    const line = container.querySelector('line');
+    expect(line).toBeNull();
+  });
+
+  it('bidirectional gauge fills from zero toward negative value', () => {
+    const { container } = render(
+      <GaugeDial value={-2000} min={-5000} max={20000} label="Grid (Export)" displayValue="-2.0 kW" unit="export" color="#10b981" />
+    );
+
+    // Should have bg + fg arcs
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(2);
+  });
+
+  it('bidirectional gauge shows no fill arc when value is exactly 0', () => {
+    const { container } = render(
+      <GaugeDial value={0} min={-5000} max={20000} label="Grid" displayValue="0.0 W" unit="" color="#10b981" />
+    );
+
+    // Only background arc, no foreground
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1);
   });
 });

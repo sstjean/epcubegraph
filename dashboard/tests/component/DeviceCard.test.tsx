@@ -2,39 +2,38 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
 import { DeviceCard } from '../../src/components/DeviceCard';
-import type { Device } from '../../src/types';
-
-const baseDevice: Device = {
-  device: 'epcube_battery',
-  class: 'storage_battery',
-  manufacturer: 'Canadian Solar',
-  product_code: 'EP Cube 2.0',
-  uid: 'ABC123',
-  online: true,
-};
 
 const baseMetrics = {
   solarWatts: 3500,
   batteryWatts: 1200,
   batteryPercent: 85.3,
   gridWatts: 500,
+  homeLoadWatts: 2800,
 };
 
 describe('DeviceCard', () => {
   afterEach(cleanup);
-  it('renders as <article> with aria-label including device name (FR-015)', () => {
+  it('renders as <article> with aria-label including group name (FR-015)', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
     const article = screen.getByRole('article');
     expect(article).toBeTruthy();
-    expect(article.getAttribute('aria-label')).toContain('epcube_battery');
+    expect(article.getAttribute('aria-label')).toContain('EP Cube v2');
+  });
+
+  it('displays the group name as heading', () => {
+    // Arrange & Act
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
+
+    // Assert
+    expect(screen.getByText('EP Cube v2')).toBeTruthy();
   });
 
   it('shows online badge with aria-label "Online" (FR-015)', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
     const badge = screen.getByLabelText('Online');
@@ -42,11 +41,8 @@ describe('DeviceCard', () => {
   });
 
   it('shows offline badge with aria-label "Offline" (FR-015)', () => {
-    // Arrange
-    const offlineDevice = { ...baseDevice, online: false };
-
-    // Act
-    render(<DeviceCard device={offlineDevice} metrics={baseMetrics} />);
+    // Arrange & Act
+    render(<DeviceCard name="EP Cube v1" online={false} metrics={baseMetrics} />);
 
     // Assert
     const badge = screen.getByLabelText('Offline');
@@ -55,7 +51,7 @@ describe('DeviceCard', () => {
 
   it('displays solar generation formatted via formatWatts', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
     expect(screen.getByText('3.5 kW')).toBeTruthy();
@@ -63,7 +59,7 @@ describe('DeviceCard', () => {
 
   it('shows battery power and SOC formatted correctly', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert — battery dd contains both power and SOC
     expect(screen.getByText(/1\.2 kW/)).toBeTruthy();
@@ -72,7 +68,7 @@ describe('DeviceCard', () => {
 
   it('shows grid power with "Import" label when positive', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={{ ...baseMetrics, gridWatts: 500 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 500 }} />);
 
     // Assert
     expect(screen.getByText('500.0 W')).toBeTruthy();
@@ -81,50 +77,34 @@ describe('DeviceCard', () => {
 
   it('shows grid power with "Export" label when negative', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={{ ...baseMetrics, gridWatts: -1500 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: -1500 }} />);
 
     // Assert
-    expect(screen.getByText('-1.5 kW')).toBeTruthy();
+    expect(screen.getByText('1.5 kW')).toBeTruthy();
     expect(screen.getByText('Grid (Export)')).toBeTruthy();
-  });
-
-  it('handles missing optional fields (manufacturer, uid)', () => {
-    // Arrange
-    const minimalDevice: Device = {
-      device: 'epcube_solar',
-      class: 'home_solar',
-      online: true,
-    };
-
-    // Act
-    render(<DeviceCard device={minimalDevice} metrics={baseMetrics} />);
-
-    // Assert
-    const article = screen.getByRole('article');
-    expect(article).toBeTruthy();
   });
 
   it('uses sufficient contrast colors on badges (FR-015)', () => {
     // Arrange & Act
-    const { container } = render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert — online badge uses green #16a34a
     const onlineBadge = screen.getByLabelText('Online');
     expect(onlineBadge).toBeTruthy();
   });
 
-  it('renders four gauge dials for instantaneous metrics (FR-002)', () => {
+  it('renders five gauge dials for instantaneous metrics (FR-002)', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
     const meters = screen.getAllByRole('meter');
-    expect(meters.length).toBe(4);
+    expect(meters.length).toBe(5);
   });
 
-  it('gauge dials have accessible labels for Solar, Battery SOC, Battery Power, Grid', () => {
+  it('gauge dials have accessible labels for Solar, Battery SOC, Battery Power, Home Load, Grid', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={baseMetrics} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
     const meters = screen.getAllByRole('meter');
@@ -132,12 +112,13 @@ describe('DeviceCard', () => {
     expect(labels.some((l) => l?.includes('Solar'))).toBe(true);
     expect(labels.some((l) => l?.includes('Battery SOC'))).toBe(true);
     expect(labels.some((l) => l?.includes('Battery Power'))).toBe(true);
+    expect(labels.some((l) => l?.includes('Home Load'))).toBe(true);
     expect(labels.some((l) => l?.includes('Grid'))).toBe(true);
   });
 
   it('grid gauge shows charging/discharging unit for battery power', () => {
     // Arrange & Act — positive batteryWatts = charging
-    render(<DeviceCard device={baseDevice} metrics={{ ...baseMetrics, batteryWatts: 1200 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, batteryWatts: 1200 }} />);
 
     // Assert
     const meters = screen.getAllByRole('meter');
@@ -147,7 +128,7 @@ describe('DeviceCard', () => {
 
   it('shows discharging unit when battery power is negative', () => {
     // Arrange & Act
-    render(<DeviceCard device={baseDevice} metrics={{ ...baseMetrics, batteryWatts: -800 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, batteryWatts: -800 }} />);
 
     // Assert
     const meters = screen.getAllByRole('meter');
