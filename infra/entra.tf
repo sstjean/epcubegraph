@@ -21,6 +21,12 @@ resource "azuread_application" "api" {
     }
   }
 
+  web {
+    redirect_uris = [
+      "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
+    ]
+  }
+
   owners = [data.azuread_client_config.current.object_id]
 
   lifecycle {
@@ -49,13 +55,4 @@ resource "azuread_application_password" "exporter_oauth" {
   lifecycle {
     ignore_changes = [end_date]
   }
-}
-
-resource "azuread_application_redirect_uris" "exporter" {
-  application_id = azuread_application.api.id
-  type           = "Web"
-
-  redirect_uris = [
-    "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
-  ]
 }
