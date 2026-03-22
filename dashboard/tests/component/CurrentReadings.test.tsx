@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/preact';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
 import { fetchDevices, fetchInstantQuery } from '../../src/api';
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
@@ -268,6 +268,118 @@ describe('CurrentReadings', () => {
     // Assert — uses raw base name
     await waitFor(() => {
       expect(screen.getByText('custom_device')).toBeTruthy();
+    });
+  });
+
+  it('defaults to flow view and shows EnergyFlowDiagram when devices loaded', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar' },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — flow view is default, flow diagram renders as article
+    await waitFor(() => {
+      const flowButton = screen.getByText('Flow');
+      expect(flowButton.getAttribute('aria-pressed')).toBe('true');
+      const articles = document.querySelectorAll('article');
+      expect(articles.length).toBe(1);
+    });
+  });
+
+  it('switches to gauges view when Gauges button is clicked', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar' },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v1')).toBeTruthy();
+    });
+
+    // Click Gauges button
+    fireEvent.click(screen.getByText('Gauges'));
+
+    // Assert — gauges view shows DeviceCard with gauge-grid
+    await waitFor(() => {
+      const gaugesButton = screen.getByText('Gauges');
+      expect(gaugesButton.getAttribute('aria-pressed')).toBe('true');
+      const gaugeGrids = document.querySelectorAll('.gauge-grid');
+      expect(gaugeGrids.length).toBe(1);
+    });
+  });
+
+  it('switches back to flow view from gauges view', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar' },
+      ],
+    });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v1')).toBeTruthy();
+    });
+
+    // Switch to gauges, then back to flow
+    fireEvent.click(screen.getByText('Gauges'));
+    fireEvent.click(screen.getByText('Flow'));
+
+    // Assert — flow diagram visible again
+    await waitFor(() => {
+      const flowButton = screen.getByText('Flow');
+      expect(flowButton.getAttribute('aria-pressed')).toBe('true');
+      const svg = document.querySelector('.energy-flow-svg');
+      expect(svg).toBeTruthy();
+    });
+  });
+
+  it('renders view toggle radiogroup with proper aria', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      const radiogroup = screen.getByRole('radiogroup');
+      expect(radiogroup).toBeTruthy();
+      expect(radiogroup.getAttribute('aria-label')).toBe('View mode');
+    });
+  });
+
+  it('does not render flow diagram when no devices are loaded', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — no flow diagram, no gauge cards
+    await waitFor(() => {
+      const svg = document.querySelector('.energy-flow-svg');
+      expect(svg).toBeNull();
     });
   });
 });

@@ -49,7 +49,7 @@ body {
 }
 
 main {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 1rem 2rem;
 }
@@ -112,7 +112,7 @@ section > h2 {
 /* Device cards */
 .device-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(560px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr));
   gap: 1.5rem;
 }
 
@@ -124,6 +124,7 @@ section > h2 {
   box-shadow: var(--shadow-card);
   transition: border-color var(--transition), box-shadow var(--transition);
   overflow: hidden;
+  min-width: 0;
 }
 
 .device-card:hover {
@@ -170,19 +171,35 @@ section > h2 {
 /* Gauge grid layout */
 .gauge-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
   gap: 0.5rem;
   justify-items: center;
   overflow: hidden;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 480px) {
   .gauge-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 
   .device-cards {
     grid-template-columns: 1fr;
+  }
+
+  main {
+    padding: 0 0.5rem 1rem;
+  }
+
+  nav {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .device-card {
+    padding: 0.75rem;
+  }
+
+  section > h2 {
+    font-size: 1.25rem;
   }
 }
 
@@ -236,6 +253,128 @@ section > h2 {
   color: var(--error);
   text-align: center;
   padding: 1rem;
+}
+
+/* Energy Flow Diagram */
+.energy-flow-diagram {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0;
+}
+
+.energy-flow-svg {
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+}
+
+.flow-node-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  fill: var(--text-secondary);
+}
+
+.flow-node-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  fill: var(--text-primary);
+}
+
+.flow-node-sublabel {
+  font-size: 0.65rem;
+  fill: var(--text-muted);
+}
+
+.flow-battery-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  fill: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+
+.flow-battery-soc {
+  font-size: 1.6rem;
+  font-weight: 800;
+  fill: var(--text-primary);
+}
+
+.flow-battery-kwh {
+  font-size: 0.7rem;
+  fill: var(--text-secondary);
+}
+
+.flow-badge-text {
+  font-size: 0.5rem;
+  font-weight: 700;
+  fill: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.flow-line-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  fill: var(--text-secondary);
+}
+
+.flow-gateway-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  fill: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+/* Animated flow lines */
+.flow-line {
+  animation: flow-dash 1s linear infinite;
+}
+
+.flow-line.flow-reverse {
+  animation: flow-dash-reverse 1s linear infinite;
+}
+
+@keyframes flow-dash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -20; }
+}
+
+@keyframes flow-dash-reverse {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: 20; }
+}
+
+/* Flow dots glow */
+.flow-dot {
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+/* View toggle button */
+.view-toggle {
+  display: inline-flex;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin-left: auto;
+}
+
+.view-toggle button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition);
+}
+
+.view-toggle button:hover {
+  color: var(--text-primary);
+}
+
+.view-toggle button.active {
+  background: var(--bg-secondary);
+  color: var(--accent);
 }
 
 /* Scrollbar theming */

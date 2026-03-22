@@ -98,38 +98,59 @@ def _generate_metrics() -> str:
         # Home load: base ~800W, higher when solar is low (evening cooking etc.)
         home_load_w = round(800 + 400 * abs(math.sin(elapsed / 90 + phase)) + (300 if solar_w < 100 else 0), 1)
 
-        # Grid import/export: when solar exceeds load, export; otherwise import
+        # Grid power: positive=import, negative=export. When solar exceeds load, export.
         net_power = solar_w - home_load_w
+        grid_power_w = round(-net_power * 0.6, 1) if abs(net_power) > 50 else 0.0
+
+        # Battery power: positive=charging, negative=discharging (derived: solar + grid - home)
+        battery_power_w = round(solar_w + grid_power_w - home_load_w, 1)
+
+        # Battery stored kWh: derived from SoC (assume 10 kWh capacity per system)
+        bat_capacity_kwh = 10.0
+        bat_stored_kwh = round(soc / 100 * bat_capacity_kwh, 2)
+
+        # Grid import/export cumulative kWh
         grid_import_key = f"grid_import_{i}"
         grid_export_key = f"grid_export_{i}"
         prev_import = _cumulative.get(grid_import_key, 0.0)
         prev_export = _cumulative.get(grid_export_key, 0.0)
-        if net_power < 0:
-            _cumulative[grid_import_key] = prev_import + abs(net_power) / 1000 * (60 / 3600)
-        else:
-            _cumulative[grid_export_key] = prev_export + net_power / 1000 * (60 / 3600)
+        if grid_power_w > 0:
+            _cumulative[grid_import_key] = prev_import + grid_power_w / 1000 * (60 / 3600)
+        elif grid_power_w < 0:
+            _cumulative[grid_export_key] = prev_export + abs(grid_power_w) / 1000 * (60 / 3600)
         grid_import_kwh = round(_cumulative.get(grid_import_key, 0.0), 3)
         grid_export_kwh = round(_cumulative.get(grid_export_key, 0.0), 3)
 
         # Self-sufficiency rate: higher when solar covers more of the load
         self_sufficiency = min(100.0, max(0.0, round(min(solar_w, home_load_w) / max(home_load_w, 1) * 100, 1)))
 
-        # Battery net kWh: derived from energy balance (solar + grid_import - home_load - grid_export)
-        bat_net_key = f"bat_net_{i}"
-        prev_bat_net = _cumulative.get(bat_net_key, 0.0)
-        bat_delta = (solar_w + (abs(net_power) if net_power < 0 else 0) - home_load_w - (net_power if net_power > 0 else 0)) / 1000 * (60 / 3600)
-        _cumulative[bat_net_key] = prev_bat_net + bat_delta
-        bat_net_kwh = round(_cumulative.get(bat_net_key, 0.0), 3)
+        # Peak battery stored kWh for the day
+        peak_key = f"bat_peak_{i}"
+        prev_peak = _cumulative.get(peak_key, 0.0)
+        _cumulative[peak_key] = max(prev_peak, bat_stored_kwh)
+        bat_peak_kwh = round(_cumulative[peak_key], 2)
 
         lines.append(f"# HELP epcube_battery_state_of_capacity_percent Battery SoC")
         lines.append(f"# TYPE epcube_battery_state_of_capacity_percent gauge")
         lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-        lines.append(f"# HELP epcube_battery_net_kwh Net battery energy today")
-        lines.append(f"# TYPE epcube_battery_net_kwh gauge")
-        lines.append(f"epcube_battery_net_kwh{{{bl}}} {bat_net_kwh}")
+        lines.append(f"# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
+        lines.append(f"# TYPE epcube_battery_power_watts gauge")
+        lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_power_w}")
 
-        lines.append(f"# HELP epcube_home_load_power_watts Home load power")
+        lines.append(f"# HELP epcube_battery_stored_kwh Current battery energy level")
+        lines.append(f"# TYPE epcube_battery_stored_kwh gauge")
+        lines.append(f"epcube_battery_stored_kwh{{{bl}}} {bat_stored_kwh}")
+
+        lines.append(f"# HELP epcube_battery_peak_stored_kwh Peak battery energy level today")
+        lines.append(f"# TYPE epcube_battery_peak_stored_kwh gauge")
+        lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
+
+        lines.append(f"# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
+        lines.append(f"# TYPE epcube_grid_power_watts gauge")
+        lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_power_w}")
+
+        lines.append(f"# HELP epcube_home_load_power_watts Home load power consumption")
         lines.append(f"# TYPE epcube_home_load_power_watts gauge")
         lines.append(f"epcube_home_load_power_watts{{{bl}}} {home_load_w}")
 

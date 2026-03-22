@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { fetchDevices, fetchInstantQuery } from '../api';
 import { DeviceCard } from './DeviceCard';
+import { EnergyFlowDiagram } from './EnergyFlowDiagram';
 import type { DeviceCardMetrics } from './DeviceCard';
 import type { Device, InstantQueryResponse } from '../types';
 import { createPollingInterval, clearPollingInterval } from '../utils/polling';
@@ -36,6 +37,7 @@ export function CurrentReadings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number>(0);
+  const [view, setView] = useState<'gauges' | 'flow'>('flow');
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = async () => {
@@ -113,15 +115,40 @@ export function CurrentReadings() {
 
   return (
     <section aria-busy={loading ? 'true' : undefined}>
-      <h2>Current Readings</h2>
+      <div class="device-card-header">
+        <h2>Current Readings</h2>
+        <div class="view-toggle" role="radiogroup" aria-label="View mode">
+          <button
+            type="button"
+            class={view === 'flow' ? 'active' : ''}
+            aria-pressed={view === 'flow'}
+            onClick={() => setView('flow')}
+          >
+            Flow
+          </button>
+          <button
+            type="button"
+            class={view === 'gauges' ? 'active' : ''}
+            aria-pressed={view === 'gauges'}
+            onClick={() => setView('gauges')}
+          >
+            Gauges
+          </button>
+        </div>
+      </div>
       {error && <p role="alert">Error: {error}</p>}
       {loading && !error && <p class="status-message">Loading devices…</p>}
       {!loading && !error && groups.length === 0 && <p class="status-message">No devices found.</p>}
-      <div class="device-cards">
-        {groups.map((group) => (
-          <DeviceCard key={group.name} name={group.name} online={group.online} metrics={group.metrics} />
-        ))}
-      </div>
+      {view === 'flow' && groups.length > 0 && (
+        <EnergyFlowDiagram groups={groups} />
+      )}
+      {view === 'gauges' && (
+        <div class="device-cards">
+          {groups.map((group) => (
+            <DeviceCard key={group.name} name={group.name} online={group.online} metrics={group.metrics} />
+          ))}
+        </div>
+      )}
       {lastRefreshed > 0 && (
         <p class="last-updated">Last updated: {formatRelativeTime(lastRefreshed)}</p>
       )}

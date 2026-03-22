@@ -6,6 +6,11 @@ export function formatWatts(watts: number): string {
   return `${watts.toFixed(1)} W`;
 }
 
+export function formatKw(watts: number): string {
+  if (watts == null || Number.isNaN(watts)) return '—';
+  return `${(watts / 1_000).toFixed(1)} kW`;
+}
+
 export function formatPercent(value: number): string {
   if (value == null || Number.isNaN(value)) return '—';
   return `${value.toFixed(1)}%`;

@@ -90,6 +90,8 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 - **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast (≥4.5:1 ratio) for readability. No formal WCAG audit or automated accessibility test suite is required.
 - **FR-016**: Dashboard MUST display current readings within 2 seconds of page load (SC-001). This is structurally ensured by the lightweight SPA framework (Preact 3KB) combined with instant metric queries.
+- **FR-017**: Dashboard MUST provide an animated energy flow diagram as the default current-readings view, showing per-device energy flow between Solar, Grid, EP Cube gateway, Battery, and Home nodes. Flow lines animate directionally to indicate power flow direction, display power values (watts/kW), and dim to inactive when power is below a threshold. Battery node displays SOC ring, stored kWh, and charge/discharge state. A toggle allows switching between the flow diagram and the gauge dial view.
+- **FR-018**: Dashboard UI MUST scale responsively to viewport size, adjusting layout, font sizes, and component dimensions across desktop and mobile breakpoints.
 
 ### Key Entities
 

@@ -64,7 +64,7 @@
 
 **Independent Test**: Open the dashboard in a browser, verify current solar, battery, home load, and grid values are displayed for each device, offline devices show stale indicator (data >3 minutes old), readings refresh within 30 seconds
 
-**FRs covered**: FR-001, FR-002, FR-003, FR-006, FR-010, FR-011, FR-012, FR-014, FR-015
+**FRs covered**: FR-001, FR-002, FR-003, FR-006, FR-010, FR-011, FR-012, FR-014, FR-015, FR-017, FR-018
 
 ### Tests for User Story 1 (TDD — write tests FIRST, confirm they FAIL)
 
@@ -83,6 +83,15 @@
 - [x] T026 [US1] Create dashboard/src/App.tsx: <nav> landmark with links "Current" (/) and "History" (/history) (FR-015), preact-router mapping "/" to CurrentReadings and "/history" to HistoryView, wrap in ErrorBoundary
 
 **Checkpoint**: Dashboard loads in browser, authenticates via MSAL, shows current device readings with correct metric names (epcube_*), online/offline status, auto-refreshes every 30 seconds. Auth failures redirect gracefully preserving view state. Semantic HTML and keyboard navigation throughout (FR-015). User Story 1 is independently functional and testable.
+
+### Energy Flow Diagram & Responsive Layout (FR-017, FR-018)
+
+- [x] T024a [P] [US1] Write EnergyFlowDiagram component tests in dashboard/tests/component/EnergyFlowDiagram.test.tsx: renders one article per device group, device name and online/offline badges, SVG structure with flow lines for Solar→Gateway, Grid↔Gateway, Gateway↔Battery, Gateway→Home, flow line activation when power > 10W threshold, inactive lines dimmed, grid importing/exporting labels based on sign convention, battery charging/discharging states, SOC ring arc rendering, power labels on active lines via formatWatts, flow-reverse class for bidirectional lines, empty groups, SOC clamping 0–100%
+- [x] T024b [P] [US1] Write CurrentReadings view toggle tests in dashboard/tests/component/CurrentReadings.test.tsx: default view is flow diagram, toggle radiogroup with Flow/Gauges buttons, clicking Gauges switches to DeviceCard gauge grid, clicking Flow switches back, aria role="radiogroup", no flow diagram rendered when groups are empty
+- [x] T024c [US1] Implement EnergyFlowDiagram component in dashboard/src/components/EnergyFlowDiagram.tsx: per-device SVG flow diagram (380×380 viewBox), node positions — Solar (top), Grid (left), Gateway/EP Cube (center), Battery (right), Home (bottom), FlowLine sub-component with animated dashed lines (CSS animation), directional dots (SVG animateMotion), perpendicular power labels, 10W activation threshold, battery SOC ring (describeArc helper), charge/discharge icon, importing/exporting sublabels, inline SVG icons per node (FR-017)
+- [x] T024d [US1] Add view toggle to CurrentReadings component: 'flow' | 'gauges' state (default 'flow'), radiogroup with two toggle buttons, conditionally renders EnergyFlowDiagram (flow view) or DeviceCard grid (gauges view) (FR-017)
+- [x] T024e [P] [US1] Add responsive CSS to dashboard/src/app.css: energy-flow-diagram container, energy-flow-svg responsive scaling, flow node labels/values/sublabels, flow line label styling, flow-line/flow-reverse CSS animations (dash-offset keyframes), flow-dot styling, view-toggle button styles with active state, increase main max-width to 1200px, device-cards grid minmax adjustment, responsive breakpoint at 480px (FR-018)
+- [x] T024f [P] Fix mock exporter missing metrics in local/mock-exporter/metrics_server.py: add epcube_battery_power_watts (derived from energy balance), epcube_grid_power_watts (instantaneous), epcube_battery_stored_kwh (derived from SOC × capacity), epcube_battery_peak_stored_kwh to match real exporter output
 
 ---
 

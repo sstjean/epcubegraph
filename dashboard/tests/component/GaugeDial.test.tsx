@@ -211,4 +211,32 @@ describe('GaugeDial', () => {
     const meter = screen.getByRole('meter');
     expect(meter.getAttribute('aria-label')).toContain('9.7 kWh');
   });
+
+  it('bidirectional gauge with negative value clamped to same angle as zero renders empty fg arc', () => {
+    // When both min and max are negative, zero clamps to ratio 1 (end of arc).
+    // A negative value also clamps to ratio 1, so valueAngle >= zeroAngle → empty string.
+    const { container } = render(
+      <GaugeDial value={-10} min={-100} max={-50} label="Grid" displayValue="-10 W" unit="" color="#ef4444" />
+    );
+    // Only the background arc path should render (no foreground arc)
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1);
+  });
+
+  it('bidirectional gauge with positive value clamped to same angle as zero renders empty fg arc', () => {
+    // Same scenario: zero and positive value both clamp to ratio 1 → equal angles.
+    const { container } = render(
+      <GaugeDial value={10} min={-100} max={-50} label="Grid" displayValue="10 W" unit="" color="#10b981" />
+    );
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1);
+  });
+
+  it('bidirectional gauge with range=0 renders only background arc', () => {
+    const { container } = render(
+      <GaugeDial value={0} min={0} max={0} label="Empty" displayValue="0" unit="" color="#ccc" />
+    );
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1); // bg arc only
+  });
 });

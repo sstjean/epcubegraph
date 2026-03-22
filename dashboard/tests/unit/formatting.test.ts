@@ -80,6 +80,21 @@ describe('formatting', () => {
     });
   });
 
+  describe('formatKw', () => {
+    it('always formats in kW', async () => {
+      const { formatKw } = await import('../../src/utils/formatting');
+      expect(formatKw(500)).toBe('0.5 kW');
+      expect(formatKw(1500)).toBe('1.5 kW');
+      expect(formatKw(60)).toBe('0.1 kW');
+      expect(formatKw(0)).toBe('0.0 kW');
+    });
+
+    it('returns — for NaN', async () => {
+      const { formatKw } = await import('../../src/utils/formatting');
+      expect(formatKw(NaN)).toBe('—');
+    });
+  });
+
   describe('formatPercent', () => {
     it('formats 0-100 with % suffix', async () => {
       // Arrange
