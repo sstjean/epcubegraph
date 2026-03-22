@@ -10,6 +10,7 @@ export async function initializeMsal(): Promise<PublicClientApplication> {
       redirectUri: `${window.location.origin}/`,
     },
   });
+  await msalInstance.initialize();
   await msalInstance.handleRedirectPromise();
   return msalInstance;
 }

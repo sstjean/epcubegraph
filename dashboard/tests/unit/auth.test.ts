@@ -7,8 +7,10 @@ vi.mock('@azure/msal-browser', () => {
   const mockLogout = vi.fn();
   const mockGetAllAccounts = vi.fn();
   const mockHandleRedirectPromise = vi.fn();
+  const mockInitialize = vi.fn();
   return {
     PublicClientApplication: vi.fn().mockImplementation(() => ({
+      initialize: mockInitialize,
       acquireTokenSilent: mockAcquireTokenSilent,
       loginRedirect: mockLoginRedirect,
       logout: mockLogout,
