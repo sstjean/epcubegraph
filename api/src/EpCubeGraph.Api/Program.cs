@@ -46,7 +46,6 @@ builder.Services
         client.BaseAddress = new Uri(url);
         client.Timeout = TimeSpan.FromSeconds(10);
     });
-builder.Services.AddScoped<GridCalculator>();
 
 // JSON serialization — camelCase (T009)
 builder.Services.ConfigureHttpJsonOptions(options =>

@@ -587,7 +587,7 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Grid_ReturnsOk_WithDefaults()
     {
-        // Act — all params optional, GridCalculator uses defaults
+        // Act — all params optional, endpoint uses defaults
         var response = await _client.GetAsync("/api/v1/grid");
 
         // Assert
@@ -1130,6 +1130,15 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public void Grid_PromqlExpression_ContainsGridImportMinusExport()
+    {
+        // Assert — positive = net import, negative = net export
+        Assert.Equal(
+            "epcube_grid_import_kwh - epcube_grid_export_kwh",
+            EpCubeGraph.Api.Endpoints.GridEndpoints.GridPromqlExpression);
     }
 
     // ── Edge Cases: Auth ──
