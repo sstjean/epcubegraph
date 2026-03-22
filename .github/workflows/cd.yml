@@ -18,6 +18,11 @@ on:
         options:
           - staging
           - production
+      branch_name:
+        description: 'Branch name for staging destroy (ignored for production)'
+        required: false
+        default: ''
+        type: string
       destroy:
         description: 'Destroy resources after validation (for ephemeral test deployments)'
         required: false
@@ -945,11 +950,30 @@ jobs:
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.destroy == 'true'
 
-    env:
-      TF_VAR_environment_name: ${{ github.event.inputs.environment == 'production' && 'epcubegraph' || 'epcubegraph-staging' }}
-
     steps:
       - uses: actions/checkout@v6
+
+      - name: Compute environment name
+        id: env
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "env_name=epcubegraph" >> "$GITHUB_OUTPUT"
+            echo "state_key=epcubegraph-production.tfstate" >> "$GITHUB_OUTPUT"
+            echo "kv_name=epcubegraph-kv" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ github.event.inputs.branch_name }}"
+            if [ -z "$BRANCH" ]; then
+              echo "::error::branch_name is required for staging destroy"
+              exit 1
+            fi
+            SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+            [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+            ENV_NAME="epcubegraph-${SANITIZED}"
+            echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+            echo "state_key=${ENV_NAME}.tfstate" >> "$GITHUB_OUTPUT"
+            echo "kv_name=${ENV_NAME}-kv" >> "$GITHUB_OUTPUT"
+            echo "✓ Branch '$BRANCH' → env '${ENV_NAME}'"
+          fi
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -986,12 +1010,7 @@ jobs:
 
       - name: Whitelist runner IP on Key Vault
         run: |
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
-          if [ "$ENV" = "production" ]; then
-            KV_NAME="epcubegraph-kv"
-          else
-            KV_NAME="epcubegraph-${ENV}-kv"
-          fi
+          KV_NAME="${{ steps.env.outputs.kv_name }}"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
             az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
             echo "✓ Key Vault public network access enabled"
@@ -1033,12 +1052,11 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
           terraform init -input=false \
             -backend-config="resource_group_name=tfstate-rg" \
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=epcubegraph-${ENV}.tfstate" \
+            -backend-config="key=${{ steps.env.outputs.state_key }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
@@ -1056,18 +1074,26 @@ jobs:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: |
-          # First attempt may fail due to provider ordering (e.g., Entra app
-          # deleted before its redirect URIs resource). Refresh + retry resolves
-          # stale references in state.
           if ! terraform destroy -auto-approve -input=false; then
             echo "⚠ First destroy attempt failed — refreshing state and retrying..."
             terraform refresh -input=false
             terraform destroy -auto-approve -input=false
           fi
+
+      - name: Delete state blob
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.env.outputs.state_key }}" \
+            --auth-mode login \
+            --output none 2>/dev/null || true
+          echo "✓ State file ${{ steps.env.outputs.state_key }} deleted"
 
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
@@ -1078,12 +1104,7 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
-          if [ "$ENV" = "production" ]; then
-            KV_NAME="epcubegraph-kv"
-          else
-            KV_NAME="epcubegraph-${ENV}-kv"
-          fi
+          KV_NAME="${{ steps.env.outputs.kv_name }}"
           az keyvault network-rule remove \
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
