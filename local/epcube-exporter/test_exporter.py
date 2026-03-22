@@ -427,7 +427,7 @@ class TestRenderStatusPage(unittest.TestCase):
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="imbalance"', html)
         self.assertIn("\u26a0", html)  # warning symbol
-        self.assertIn("Expected battery +1.23 kW", html)  # tooltip
+        self.assertIn("Expected battery -1.23 kW", html)  # tooltip
 
     def test_energy_balance_all_zeros_no_warning(self):
         """All zeros (idle system) should NOT be flagged."""
