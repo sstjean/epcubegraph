@@ -382,4 +382,41 @@ describe('CurrentReadings', () => {
       expect(svg).toBeNull();
     });
   });
+
+  it('preserves grid sign convention (positive=import, negative=export)', async () => {
+    // Arrange — grid value is negative (exporting to grid)
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5488_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
+        { device: 'epcube5488_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar' },
+      ],
+    });
+    mockFetchInstantQuery
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '90'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '500'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_solar' }, value: [1, '6000'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '-3500'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '1200'] },
+      ]}})
+      .mockResolvedValueOnce({ status: 'success', data: { resultType: 'vector', result: [
+        { metric: { device: 'epcube5488_battery' }, value: [1, '9.0'] },
+      ]}});
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — negative grid value means exporting; flow diagram should show "exporting" sublabel
+    await waitFor(() => {
+      expect(screen.getByText('exporting')).toBeTruthy();
+    });
+  });
 });

@@ -183,7 +183,7 @@ class TestEnergyBalance(unittest.TestCase):
 
         home_info = _make_home_device_info(
             solarPower=3.0,
-            gridPower=-1.0,  # API convention: negative = import
+            gridPower=1.0,  # API convention: positive = import
             backUpPower=2.0,
             batteryCurrentElectricity="15.5",
         )
@@ -196,7 +196,7 @@ class TestEnergyBalance(unittest.TestCase):
         device_snap = snap["devices"][0]
         # battery_kw = solar + grid - load = 3.0 + 1.0 - 2.0 = 2.0 (charging)
         self.assertAlmostEqual(device_snap["battery_kw"], 2.0)
-        # grid negated: -(-1.0) = 1.0 (importing)
+        # grid_kw = gridPower = 1.0 (importing)
         self.assertAlmostEqual(device_snap["grid_kw"], 1.0)
         # bat_peak_kwh tracks high-water mark
         self.assertAlmostEqual(device_snap["bat_peak_kwh"], 15.5)
@@ -446,6 +446,74 @@ class TestRenderStatusPage(unittest.TestCase):
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertNotIn('class="imbalance"', html)
         self.assertNotIn("\u26a0", html)
+
+    def test_battery_charging_green(self):
+        """Battery charging (positive) should get val-pos class (green)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 5.0, "battery_kw": 3.0, "grid_kw": 0.0,
+                "backup_kw": 2.0, "battery_soc": 60, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-pos">+3.00', html)
+
+    def test_battery_discharging_red(self):
+        """Battery discharging (negative) should get val-neg class (red)."""
+        snap = {
+            "time": "2026-03-17T22:00:00Z",
+            "time_minute": "2026-03-17T22:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": -2.5, "grid_kw": 0.0,
+                "backup_kw": 2.5, "battery_soc": 80, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-neg">-2.50', html)
+
+    def test_grid_import_red(self):
+        """Grid import (positive) should get val-neg class (red)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": 0.0, "grid_kw": 1.5,
+                "backup_kw": 1.5, "battery_soc": 50, "self_sufficiency": 0,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-neg">+1.50', html)
+
+    def test_grid_export_green(self):
+        """Grid export (negative) should get val-pos class (green)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 5.0, "battery_kw": 2.0, "grid_kw": -1.0,
+                "backup_kw": 2.0, "battery_soc": 60, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-pos">-1.00', html)
 
     def test_uptime_formatting(self):
         html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())

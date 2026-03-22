@@ -65,7 +65,7 @@ export function DeviceCard({ name, online, metrics }: DeviceCardProps) {
           label="Battery Power"
           displayValue={formatWatts(metrics.batteryWatts)}
           unit={metrics.batteryWatts >= 0 ? 'charging' : 'discharging'}
-          color="#3b82f6"
+          color={metrics.batteryWatts >= 0 ? '#22c55e' : '#ef4444'}
         />
         <GaugeDial
           value={metrics.homeLoadWatts}

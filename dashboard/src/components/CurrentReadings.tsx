@@ -88,7 +88,7 @@ export function CurrentReadings() {
                 ? getMetricForDevice(homeLoad, batteryDevice.device)
                 : 0,
               gridWatts: batteryDevice
-                ? -getMetricForDevice(grid, batteryDevice.device)
+                ? getMetricForDevice(grid, batteryDevice.device)
                 : 0,
             },
           };

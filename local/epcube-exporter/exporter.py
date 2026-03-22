@@ -329,8 +329,8 @@ class EpCubeCollector:
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
             lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-            # ── Grid metrics ── (API uses opposite sign: negate so positive=import)
-            grid_kw = _nz(-float(data.get("gridPower", 0)))
+            # ── Grid metrics ── (API already uses positive=import, negative=export)
+            grid_kw = _nz(float(data.get("gridPower", 0)))
             grid_w = _nz(round(grid_kw * 1000, 1))
             lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
             lines.append("# TYPE epcube_grid_power_watts gauge")
@@ -561,12 +561,16 @@ def _render_status_page(status, health):
                     warn_td = f' title="Expected battery {expected_battery:+.2f} kW ≠ Actual {battery_kw:+.2f} kW"' if load > 0 and imbalance > 0.5 else ''
                     fmt_bat = f"{battery_kw:+.2f}" if battery_kw != 0 else "0.00"
                     fmt_grid = f"{grid_kw:+.2f}" if grid_kw != 0 else "0.00"
+                    # Battery: green=charging(+), red=discharging(-)
+                    bat_cls = ' class="val-pos"' if battery_kw > 0 else (' class="val-neg"' if battery_kw < 0 else '')
+                    # Grid: green=export(-), red=import(+)
+                    grid_cls = ' class="val-neg"' if grid_kw > 0 else (' class="val-pos"' if grid_kw < 0 else '')
                     rows.append(
                         f'<tr{row_cls}>'
                         f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
                         f'<td style="text-align:right">{solar_kw:.2f}</td>'
-                        f'<td style="text-align:right">{fmt_bat}</td>'
-                        f'<td style="text-align:right">{fmt_grid}</td>'
+                        f'<td style="text-align:right"{bat_cls}>{fmt_bat}</td>'
+                        f'<td style="text-align:right"{grid_cls}>{fmt_grid}</td>'
                         f'<td style="text-align:right"{warn_td}>{load:.2f}{" ⚠" if row_cls else ""}</td>'
                         f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
                         f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
@@ -636,6 +640,8 @@ def _render_status_page(status, health):
   tr.imbalance {{ background: #3a2000; }}
   tr.imbalance:hover {{ background: #4a2800; }}
   tr:hover {{ background: #16213e; }}
+  .val-pos {{ color: #00d4aa; }}
+  .val-neg {{ color: #e74c3c; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
 </style>
 </head><body>
