@@ -86,12 +86,28 @@
 
 ### Energy Flow Diagram & Responsive Layout (FR-017, FR-018)
 
+> Tasks T024a–T024f below were added after initial plan generation to implement FR-017 and FR-018.
+
 - [x] T024a [P] [US1] Write EnergyFlowDiagram component tests in dashboard/tests/component/EnergyFlowDiagram.test.tsx: renders one article per device group, device name and online/offline badges, SVG structure with flow lines for Solar→Gateway, Grid↔Gateway, Gateway↔Battery, Gateway→Home, flow line activation when power > 10W threshold, inactive lines dimmed, grid importing/exporting labels based on sign convention, battery charging/discharging states, SOC ring arc rendering, power labels on active lines via formatWatts, flow-reverse class for bidirectional lines, empty groups, SOC clamping 0–100%
 - [x] T024b [P] [US1] Write CurrentReadings view toggle tests in dashboard/tests/component/CurrentReadings.test.tsx: default view is flow diagram, toggle radiogroup with Flow/Gauges buttons, clicking Gauges switches to DeviceCard gauge grid, clicking Flow switches back, aria role="radiogroup", no flow diagram rendered when groups are empty
 - [x] T024c [US1] Implement EnergyFlowDiagram component in dashboard/src/components/EnergyFlowDiagram.tsx: per-device SVG flow diagram (380×380 viewBox), node positions — Solar (top), Grid (left), Gateway/EP Cube (center), Battery (right), Home (bottom), FlowLine sub-component with animated dashed lines (CSS animation), directional dots (SVG animateMotion), perpendicular power labels, 10W activation threshold, battery SOC ring (describeArc helper), charge/discharge icon, importing/exporting sublabels, inline SVG icons per node (FR-017)
 - [x] T024d [US1] Add view toggle to CurrentReadings component: 'flow' | 'gauges' state (default 'flow'), radiogroup with two toggle buttons, conditionally renders EnergyFlowDiagram (flow view) or DeviceCard grid (gauges view) (FR-017)
 - [x] T024e [P] [US1] Add responsive CSS to dashboard/src/app.css: energy-flow-diagram container, energy-flow-svg responsive scaling, flow node labels/values/sublabels, flow line label styling, flow-line/flow-reverse CSS animations (dash-offset keyframes), flow-dot styling, view-toggle button styles with active state, increase main max-width to 1200px, device-cards grid minmax adjustment, responsive breakpoint at 480px (FR-018)
 - [x] T024f [P] Fix mock exporter missing metrics in local/mock-exporter/metrics_server.py: add epcube_battery_power_watts (derived from energy balance), epcube_grid_power_watts (instantaneous), epcube_battery_stored_kwh (derived from SOC × capacity), epcube_battery_peak_stored_kwh to match real exporter output
+
+### Deployment Infrastructure (moved from Phase 5/6 into US1 — dashboard must be deployed for US1 to be complete)
+
+> Tasks below were originally in Phase 5 (US3) and Phase 6 (Polish). Moved into US1 scope because "View Current Energy Readings **in a Browser**" requires the dashboard to be deployed, not just built locally. Grafana-only tasks (T035–T037) remain in Phase 5 under US3.
+
+- [x] T033 [P] [US1] Add dashboard Entra ID app registration in infra/entra.tf: azuread_application.dashboard (public client, sign_in_audience="AzureADMyOrg", single_page_application redirect URIs from SWA default hostname + localhost:5173, required_resource_access for user_impersonation scope on API app), azuread_service_principal.dashboard
+- [x] T034 [P] [US1] Create Azure Static Web Apps resource (Free tier, sku_tier="Free", sku_size="Free") in infra/static-web-app.tf
+- [x] T038a [P] [US1] Add SWA Terraform outputs in infra/outputs.tf: swa_default_hostname, swa_api_key (sensitive), dashboard_client_id
+- [x] T039 [P] [US1] Create dashboard/.env.example with VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE, VITE_DISABLE_AUTH placeholder values
+- [x] T040a [US1] Run terraform validate and terraform fmt -check to verify SWA + Entra infrastructure changes compile and are formatted correctly
+- [x] T041 [P] [US1] Add dashboard job to .github/workflows/ci.yml: trigger on paths dashboard/**, steps: checkout, setup Node.js 22, npm ci, npm run test:coverage (fail if <100%), npm run build
+- [x] T042 [P] [US1] Add SWA deployment step to .github/workflows/cd.yml: Phase 4 in both staging and production — get SWA deployment token from Terraform output, setup Node.js 22, npm ci + npm run build with Vite env vars (API URL, Entra client/tenant IDs, API scope), deploy via Azure/static-web-apps-deploy@v1. Add SWA smoke test: curl SWA URL and verify HTML contains `<div id="app">`
+
+**Checkpoint**: Dashboard SPA deployed to Azure Static Web Apps via CI/CD. Entra ID app registration enables MSAL PKCE auth. SWA serves the Preact SPA. Smoke tests verify deployment. User Story 1 is complete — current readings viewable in a browser at the deployed URL.
 
 ---
 
@@ -119,35 +135,34 @@
 
 ---
 
-## Phase 5: User Story 3 — Grafana Integration & Deployment Infrastructure (Priority: P3, #35)
+## Phase 5: User Story 3 — Grafana Integration (Priority: P3, #35)
 
-**Goal**: Deploy Grafana on Container Apps with Infinity plugin (REST API via OAuth2), deploy dashboard SPA on Azure Static Web Apps, register dashboard Entra ID app, configure service principal for Grafana API access
+**Goal**: Deploy Grafana on Container Apps with Infinity plugin (REST API via OAuth2), configure service principal for Grafana API access
 
-**Independent Test**: SWA resource created. Dashboard Entra ID app registration exists with correct SPA redirect URIs and API permissions. Grafana Container App runs with Infinity plugin installed. Grafana data source connection test succeeds against the REST API (acceptance scenario #4). terraform validate passes.
+> **Note**: Dashboard SWA deployment and Entra ID app registration (T033, T034, T038a, T039, T040a, T041, T042) were moved to Phase 3 / US1 — the dashboard must be deployed for "View Current Energy Readings in a Browser" to be complete. Only Grafana-specific tasks remain here.
 
-**FRs covered**: FR-009, FR-010, SC-004, SC-005
+**Independent Test**: Grafana Container App runs with Infinity plugin installed. Grafana data source connection test succeeds against the REST API (acceptance scenario #4). terraform validate passes.
+
+**FRs covered**: FR-009, FR-010, SC-004
 
 ### Implementation for User Story 3
 
-- [ ] T033 [P] [US3] Add dashboard Entra ID app registration in infra/entra.tf: azuread_application.dashboard (public client, sign_in_audience="AzureADMyOrg", single_page_application redirect URIs from SWA default hostname, required_resource_access for user_impersonation scope on API app)
-- [ ] T034 [P] [US3] Create Azure Static Web Apps resource (Free tier, sku_tier="Free", sku_size="Free") with management lock (CanNotDelete) in infra/static-web-app.tf
 - [ ] T035 [P] [US3] Add grafana_image variable (default "grafana/grafana:11.5.2", no :latest) in infra/variables.tf, add Grafana admin password (random_password + azurerm_key_vault_secret) in infra/keyvault.tf
 - [ ] T036 [P] [US3] Add Grafana service principal app registration in infra/entra.tf: azuread_application.grafana_sp (confidential client with client secret), grant user_impersonation scope on API app, add azuread_service_principal.grafana_sp, store client secret in Key Vault via azurerm_key_vault_secret.grafana_sp_client_secret
 - [ ] T037 [US3] Create Grafana Container App in infra/grafana.tf: azurerm_container_app with ingress on port 3000 (external), min_replicas=0/max_replicas=1, 0.25 vCPU/0.5Gi memory, Azure File Share volume mount for /var/lib/grafana (azurerm_container_app_environment_storage + azurerm_storage_share), GF_INSTALL_PLUGINS="yesoreyeram-infinity-datasource", Infinity plugin data source provisioned via YAML at /etc/grafana/provisioning/datasources/ (type: yesoreyeram-infinity-datasource, URL: API FQDN /api/v1, OAuth2 client credentials from service principal per contracts/dashboard-config.md), GF_SECURITY_ADMIN_PASSWORD from Key Vault, GF_SERVER_ROOT_URL, management lock (CanNotDelete)
-- [ ] T038 [US3] Add Terraform outputs in infra/outputs.tf: swa_default_hostname, swa_deployment_token (sensitive), grafana_fqdn, dashboard_client_id, grafana_sp_client_id
-- [ ] T039 [P] [US3] Create dashboard/.env.example with VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE placeholder values per contracts/dashboard-config.md
-- [ ] T040 [US3] Run terraform validate and terraform fmt -check to verify all infrastructure changes compile and are formatted correctly
+- [ ] T038b [US3] Add Grafana Terraform outputs in infra/outputs.tf: grafana_fqdn, grafana_sp_client_id
+- [ ] T040b [US3] Run terraform validate and terraform fmt -check to verify Grafana infrastructure changes compile and are formatted correctly
 
-**Checkpoint**: terraform validate passes. SWA resource created. Dashboard Entra ID app registered with correct SPA redirect URIs. Grafana Container App configured with Infinity plugin and OAuth2 service principal for API access. All three user stories are independently functional.
+**Checkpoint**: terraform validate passes. Grafana Container App configured with Infinity plugin and OAuth2 service principal for API access. All three user stories are independently functional.
 
 ---
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-**Purpose**: CI/CD, accessibility verification, security review, end-to-end validation
+**Purpose**: Accessibility verification, security review, end-to-end validation
 
-- [ ] T041 [P] Add dashboard job to .github/workflows/ci.yml: trigger on paths dashboard/**, steps: checkout, setup Node.js 22, npm ci, npm run test:coverage (fail if <100%), npm run build, alongside existing API and exporter jobs, all must pass for PR merge
-- [ ] T042 [P] Add SWA deployment step to .github/workflows/cd.yml: after dashboard CI passes, deploy via Azure/static-web-apps-deploy@v1 using SWA deployment token from Terraform output (production on push to main, staging on PR). Add dashboard smoke test step: curl SWA URL for HTTP 200 and verify HTML response contains `<div id="app">` (constitution: smoke tests MUST run after each deployment)
+> **Note**: T041 (CI dashboard job) and T042 (CD SWA deploy) were moved to Phase 3 / US1 and are complete.
+
 - [ ] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID), verify Grafana password stored in Key Vault and injected as secret env var, verify Grafana service principal client secret in Key Vault, verify all new infra resources have management locks
 - [ ] T044 [P] Accessibility spot-check (FR-015): verify all pages keyboard-navigable (Tab through nav, cards, buttons), verify semantic landmarks (<nav>, <main>, <section>, <article>), verify ARIA attributes on interactive elements (aria-label, aria-pressed, aria-busy, role="alert", role="status"), verify color contrast ≥4.5:1 on all text/badges
 - [ ] T045 Run full test suite with coverage: cd dashboard && npm run test:coverage — verify 100% coverage (branches, functions, lines, statements). Verify performance: load CurrentReadings with mock data and confirm render <2s (SC-001); load HistoricalGraph with 30d mock data (~43K points) and confirm render <2s (SC-002)
@@ -170,9 +185,9 @@
 
 - **US1 (P1, #33)**: Can start after Foundational — no dependencies on US2 or US3
 - **US2 (P2, #34)**: Can start after Foundational — no dependencies on US1 or US3 (separate components, separate route)
-- **US3 (P3, #35)**: Can start after Setup — no dependencies on US1 or US2 (pure infrastructure/Terraform)
+- **US3 (P3, #35)**: Can start after US1 — SWA + Entra infra done in US1, only Grafana tasks remain (infra/ Terraform)
 - **US1 and US2** can run in parallel since they involve different component files
-- **US3** can run in parallel with US1/US2 since it involves only infra/ files (Terraform), not dashboard/ code
+- **US3** can run in parallel with US2 since it involves only infra/ files (Terraform), not dashboard/ code
 
 ### Within Each User Story
 
@@ -211,12 +226,12 @@ T015 [P] (formatting.ts), T016 [P] (polling.ts)
 ```
 US1: T017 [P], T018 [P], T019 [P], T020 [P], T021 [P] → T022 [P], T023 [P] → T024 → T025 → T026
 US2: T027 [P], T028 [P], T029 [P] → T030 [P] → T031 → T032
-US3: T033 [P], T034 [P], T035 [P], T036 [P], T039 [P] → T037 → T038 → T040
+US3: T035 [P], T036 [P] → T037 → T038b → T040b
 ```
 
 ### Phase 6 (Polish)
 ```
-T041 [P], T042 [P], T043 [P], T044 [P]
+T043 [P], T044 [P]
 T045 (depends on all code tasks)
 T046 (depends on all above)
 ```
