@@ -25,7 +25,7 @@ function FlowLine({
   x1: number; y1: number; x2: number; y2: number;
   watts: number; active: boolean; reverse: boolean; color: string; id: string;
 }) {
-  const opacity = active ? 1 : 0.15;
+  const opacity = active ? 1 : 0.3;
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
   // Offset label perpendicular to line to avoid overlapping the line
@@ -121,7 +121,8 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             x1={SOLAR.x} y1={SOLAR.y + 18}
             x2={GATEWAY.x} y2={GATEWAY.y - 28}
             watts={Math.abs(m.solarWatts)} active={solarActive} reverse={false}
-            color="#f59e0b" id={`${prefix}-solar`}
+            color={solarActive ? '#facc15' : '#4b5563'}
+            id={`${prefix}-solar`}
           />
           {/* Grid ↔ Gateway */}
           <FlowLine
@@ -129,7 +130,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             x2={GATEWAY.x - 28} y2={GATEWAY.y}
             watts={Math.abs(m.gridWatts)} active={gridActive}
             reverse={!gridImporting}
-            color={gridImporting ? '#ef4444' : '#10b981'}
+            color={gridActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563'}
             id={`${prefix}-grid`}
           />
           {/* Gateway ↔ Battery */}
@@ -138,20 +139,21 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             x2={BATTERY.x - RING_R - 4} y2={BATTERY.y}
             watts={Math.abs(m.batteryWatts)} active={batteryActive}
             reverse={!batteryCharging}
-            color="#3b82f6" id={`${prefix}-battery`}
+            color={batteryActive ? (batteryCharging ? '#22c55e' : '#ef4444') : '#4b5563'}
+            id={`${prefix}-battery`}
           />
           {/* Gateway → Home */}
           <FlowLine
             x1={GATEWAY.x} y1={GATEWAY.y + 28}
             x2={HOME.x} y2={HOME.y - 22}
             watts={Math.abs(m.homeLoadWatts)} active={homeActive} reverse={false}
-            color="#a855f7" id={`${prefix}-home`}
+            color={homeActive ? '#a855f7' : '#4b5563'} id={`${prefix}-home`}
           />
 
           {/* --- Solar node (top) --- */}
           <g class="flow-node">
             <g transform={`translate(${SOLAR.x - 14}, ${SOLAR.y - 14})`}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={solarActive ? '#facc15' : '#4b5563'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4" />
                 <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
               </svg>
@@ -162,7 +164,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
           {/* --- Grid node (left) --- */}
           <g class="flow-node">
             <g transform={`translate(${GRID.x - 14}, ${GRID.y - 14})`}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={gridImporting ? '#ef4444' : '#10b981'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={gridActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2v6M12 18v4M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M18 12h4M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
               </svg>
             </g>
@@ -201,7 +203,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             )}
             {/* Battery icon inside ring */}
             <g transform={`translate(${BATTERY.x - 10}, ${BATTERY.y - 12})`}>
-              <svg width="20" height="24" viewBox="0 0 24 24" fill="none" stroke={batteryCharging ? '#22c55e' : '#3b82f6'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="20" height="24" viewBox="0 0 24 24" fill="none" stroke={batteryActive ? (batteryCharging ? '#22c55e' : '#3b82f6') : '#4b5563'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <rect x="6" y="4" width="12" height="18" rx="2" />
                 <line x1="10" y1="1" x2="14" y2="1" />
                 {batteryCharging ? (
@@ -225,7 +227,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
           {/* --- Home node (bottom) --- */}
           <g class="flow-node">
             <g transform={`translate(${HOME.x - 14}, ${HOME.y - 14})`}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={homeActive ? '#a855f7' : '#4b5563'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>

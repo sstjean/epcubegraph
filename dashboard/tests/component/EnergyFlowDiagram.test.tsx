@@ -236,4 +236,40 @@ describe('EnergyFlowDiagram', () => {
     const gaugeArcs = container.querySelectorAll('.gauge-arc');
     expect(gaugeArcs.length).toBe(0);
   });
+
+  it('uses inactive gray color (#4b5563) on all lines and icons when values are zero', () => {
+    const { container } = render(
+      <EnergyFlowDiagram
+        groups={[makeGroup({ solarWatts: 0, gridWatts: 0, batteryWatts: 0, homeLoadWatts: 0 })]}
+      />
+    );
+
+    // All four flow lines should use the inactive gray stroke
+    const lines = container.querySelectorAll('line[stroke]');
+    const grayLines = Array.from(lines).filter((l) => l.getAttribute('stroke') === '#4b5563');
+    expect(grayLines.length).toBe(4);
+
+    // Node icons (solar, grid, battery, home SVGs) should also use gray stroke
+    const svgs = Array.from(container.querySelectorAll('svg svg'));
+    const grayIcons = svgs.filter((s) => s.getAttribute('stroke') === '#4b5563');
+    // Solar, Grid, Battery, Home icons = 4
+    expect(grayIcons.length).toBe(4);
+  });
+
+  it('uses active colors on lines and icons when values are above threshold', () => {
+    const { container } = render(
+      <EnergyFlowDiagram
+        groups={[makeGroup({ solarWatts: 3000, gridWatts: 1500, batteryWatts: 500, homeLoadWatts: 2000 })]}
+      />
+    );
+
+    // No line or icon should use gray
+    const lines = container.querySelectorAll('line[stroke]');
+    const grayLines = Array.from(lines).filter((l) => l.getAttribute('stroke') === '#4b5563');
+    expect(grayLines.length).toBe(0);
+
+    const svgs = Array.from(container.querySelectorAll('svg svg'));
+    const grayIcons = svgs.filter((s) => s.getAttribute('stroke') === '#4b5563');
+    expect(grayIcons.length).toBe(0);
+  });
 });
