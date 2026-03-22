@@ -165,7 +165,7 @@
 - [x] T048 [US3] Update Terraform to deploy epcube-exporter with external ingress, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE, AZURE_CLIENT_SECRET (Key Vault), AZURE_REDIRECT_URI env vars, and Entra ID redirect URI registration (FR-024) in infra/container-apps.tf, infra/entra.tf, infra/keyvault.tf
 - [x] T049 [US3] Add comprehensive Python test suite for epcube-exporter: 49 tests covering health checks, energy balance, snapshot dedup, poll counters, debug page rendering, HTTP routing, auth, Prometheus metrics format, re-authentication in local/epcube-exporter/test_exporter.py
 - [x] T054 [P] [US2] Write endpoint integration tests (all API routes: query, query_range, series, labels, label values, devices, device metrics, grid, health — success and error paths) in api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs (added retroactively — 76 tests)
-- [x] T055 [P] [US2] Write Program.cs middleware integration tests (Swagger, CORS, JSON serialization, exception handling, metrics endpoint) in api/tests/EpCubeGraph.Api.Tests/Integration/ProgramMiddlewareTests.cs (added retroactively — 5 tests)
+- [x] T055 [P] [US2] Write Program.cs middleware integration tests (Swagger, JSON serialization, exception handling, metrics endpoint, NoAuth bypass) in api/tests/EpCubeGraph.Api.Tests/Integration/ProgramMiddlewareTests.cs (added retroactively — 5 tests). Note: CORS was listed in original description but was NOT implemented or tested — see #44 for the fix added in 002-web-dashboard.
 
 ---
 

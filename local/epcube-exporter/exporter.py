@@ -8,7 +8,9 @@ Produces the same epcube_* metric names as the mock exporter so the API
 and dashboard work without changes.
 
 Authentication: Automatically solves the AJ-Captcha block puzzle and logs in.
-Re-authenticates when the token expires (HTTP 401).
+Proactively refreshes the JWT before expiry (5-minute margin).  Also detects
+the cloud API's silent session expiry (returns 200 with all-zero data instead
+of 401) and forces re-authentication.
 
 Required env vars:
   EPCUBE_USERNAME  — EP Cube cloud account email
@@ -98,6 +100,18 @@ def _api_request(method, path, data=None, token=None):
 
 class AuthExpiredError(Exception):
     pass
+
+
+def _jwt_exp(token):
+    """Decode JWT expiry (exp claim) without external libraries."""
+    try:
+        payload = token.split(".")[1]
+        # Add padding for base64
+        payload += "=" * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims.get("exp", 0)
+    except Exception:
+        return 0
 
 
 def _nz(v):
@@ -237,6 +251,7 @@ class EpCubeCollector:
         self._username = username
         self._password = password
         self._token = None
+        self._token_exp = 0  # JWT expiry timestamp
         self._devices = []
         self._lock = threading.Lock()
         self._metrics_text = ""
@@ -249,14 +264,42 @@ class EpCubeCollector:
         self._start_time = time.time()
 
     def _ensure_auth(self):
-        if not self._token:
+        if not self._token or self._token_expiring_soon():
+            if self._token:
+                log.info("Token expiring within 5 min, proactively re-authenticating...")
             self._token = authenticate(self._username, self._password)
+            self._token_exp = _jwt_exp(self._token)
+            if self._token_exp:
+                remaining = self._token_exp - time.time()
+                log.info("Token expires in %.0f min", remaining / 60)
             self._discover_devices()
+
+    def _token_expiring_soon(self):
+        """Return True if token expires within 5 minutes."""
+        if not self._token_exp:
+            return False
+        return time.time() > (self._token_exp - 300)
 
     def _reauth(self):
         log.info("Re-authenticating...")
         self._token = authenticate(self._username, self._password)
+        self._token_exp = _jwt_exp(self._token)
         self._discover_devices()
+
+    @staticmethod
+    def _data_looks_stale(data):
+        """Detect EP Cube cloud's silent session expiry.
+
+        When the JWT expires, the cloud API returns HTTP 200 with all operational
+        fields set to zero (or "0.00") instead of returning 401. This method
+        checks the key fields that should virtually never ALL be zero on a live
+        system: solarPower, gridPower, backUpPower, batterySoc, and
+        batteryCurrentElectricity.
+        """
+        if not data:
+            return True
+        _FIELDS = ("solarPower", "gridPower", "backUpPower", "batterySoc", "batteryCurrentElectricity")
+        return all(float(data.get(f, 0)) == 0 for f in _FIELDS)
 
     def _api(self, path):
         try:
@@ -298,6 +341,17 @@ class EpCubeCollector:
             try:
                 info = self._api(f"/home/homeDeviceInfo?sgSn={sg_sn}")
                 data = info.get("data", {})
+
+                # Stale-session detection: EP Cube cloud returns 200 with all-zero
+                # data when the JWT has silently expired, instead of a 401.
+                # If every operational field is zero, force re-auth and retry once.
+                if self._data_looks_stale(data):
+                    log.warning("Stale data detected for %s — all operational fields zero, forcing re-auth", dev_name)
+                    self._reauth()
+                    info = self._api(f"/home/homeDeviceInfo?sgSn={sg_sn}")
+                    data = info.get("data", {})
+                    if self._data_looks_stale(data):
+                        log.warning("Still zero after re-auth for %s — device may genuinely be idle", dev_name)
             except Exception as e:
                 log.error("Failed to fetch data for %s: %s", dev_name, e)
                 self._poll_errors += 1

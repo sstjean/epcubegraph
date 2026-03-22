@@ -1,4 +1,5 @@
 """Tests for epcube-exporter."""
+import base64
 import collections
 import json
 import threading
@@ -1108,6 +1109,159 @@ class TestReauth(unittest.TestCase):
                 c._api("/home/homeDeviceInfo?sgSn=test")
 
         self.assertEqual(c._token, "new-token")
+
+
+# ---------------------------------------------------------------------------
+# JWT expiry decoding
+# ---------------------------------------------------------------------------
+
+class TestJwtExp(unittest.TestCase):
+
+    def test_decodes_valid_jwt_exp(self):
+        # Build a JWT with exp=1700000000
+        payload = base64.urlsafe_b64encode(json.dumps({"exp": 1700000000}).encode()).rstrip(b"=").decode()
+        token = f"header.{payload}.signature"
+        self.assertEqual(exporter._jwt_exp(token), 1700000000)
+
+    def test_returns_zero_for_invalid_token(self):
+        self.assertEqual(exporter._jwt_exp("not-a-jwt"), 0)
+
+    def test_returns_zero_for_missing_exp(self):
+        payload = base64.urlsafe_b64encode(json.dumps({"sub": "user"}).encode()).rstrip(b"=").decode()
+        token = f"header.{payload}.signature"
+        self.assertEqual(exporter._jwt_exp(token), 0)
+
+
+# ---------------------------------------------------------------------------
+# Stale data detection
+# ---------------------------------------------------------------------------
+
+class TestStaleDataDetection(unittest.TestCase):
+
+    def test_all_zeros_is_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "0.00",
+            "batterySoc": 0,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_nonzero_soc_is_not_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "0.00",
+            "batterySoc": 75,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_nonzero_backup_is_not_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "2.74",
+            "batterySoc": 0,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_empty_data_is_stale(self):
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale({}))
+
+    def test_none_data_is_stale(self):
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(None))
+
+    def test_normal_data_is_not_stale(self):
+        data = _make_home_device_info()["data"]
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+
+# ---------------------------------------------------------------------------
+# Proactive token refresh
+# ---------------------------------------------------------------------------
+
+class TestProactiveTokenRefresh(unittest.TestCase):
+
+    def test_token_expiring_soon_true_when_within_5min(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = time.time() + 200  # 3.3 min left
+        self.assertTrue(c._token_expiring_soon())
+
+    def test_token_expiring_soon_false_when_plenty_of_time(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = time.time() + 3600  # 1h left
+        self.assertFalse(c._token_expiring_soon())
+
+    def test_token_expiring_soon_false_when_no_exp(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = 0
+        self.assertFalse(c._token_expiring_soon())
+
+    def test_ensure_auth_refreshes_expiring_token(self):
+        c = _make_collector()
+        c._token = "old-token"
+        c._token_exp = time.time() + 100  # about to expire
+        c._devices = [_make_device()]
+
+        with patch.object(exporter, "authenticate", return_value="fresh-token") as auth_mock:
+            with patch.object(exporter, "_api_request", return_value={"status": 200, "data": [_make_device()]}):
+                c._ensure_auth()
+
+        auth_mock.assert_called_once()
+        self.assertEqual(c._token, "fresh-token")
+
+    def test_ensure_auth_skips_refresh_when_token_valid(self):
+        c = _make_collector()
+        c._token = "valid-token"
+        c._token_exp = time.time() + 3600  # plenty of time
+
+        with patch.object(exporter, "authenticate") as auth_mock:
+            c._ensure_auth()
+
+        auth_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Stale data triggers re-auth during poll
+# ---------------------------------------------------------------------------
+
+class TestStaleDataReauth(unittest.TestCase):
+
+    def test_poll_reauths_on_stale_data(self):
+        c = _make_collector()
+        c._token = "stale-token"
+        c._token_exp = time.time() + 3600  # token not expired by clock
+        c._devices = [_make_device()]
+
+        call_count = {"n": 0}
+        stale_data = {"solarPower": "0.00", "gridPower": "0.00", "backUpPower": "0.00",
+                      "batterySoc": 0, "batteryCurrentElectricity": "0.00", "systemStatus": "?"}
+        good_data = _make_home_device_info()["data"]
+
+        def mock_api(method, path, **kwargs):
+            if "homeDeviceInfo" in path:
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    return {"status": 200, "data": stale_data}
+                return {"status": 200, "data": good_data}
+            elif "deviceList" in path:
+                return {"status": 200, "data": c._devices}
+            return {"status": 200, "data": {}}
+
+        with patch.object(exporter, "_api_request", side_effect=mock_api):
+            with patch.object(exporter, "authenticate", return_value="fresh-token"):
+                c.poll()
+
+        self.assertEqual(c._token, "fresh-token")
+        # Verify metrics were generated with good data (non-zero)
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+        self.assertIn("75", c._metrics_text)
 
 
 if __name__ == "__main__":
