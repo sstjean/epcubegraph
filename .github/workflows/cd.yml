@@ -92,6 +92,7 @@ jobs:
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
       vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
+      swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
     steps:
       - uses: actions/checkout@v6
@@ -297,6 +298,47 @@ jobs:
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
+          echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
+
+      # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
+      - name: Get SWA deployment token
+        id: swa-token
+        working-directory: infra
+        run: |
+          TOKEN=$(terraform output -raw swa_api_key)
+          echo "::add-mask::${TOKEN}"
+          echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
+          VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
+          VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy dashboard to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: dashboard/dist
+          skip_app_build: true
+          skip_api_build: true
 
       # Zero-trust cleanup: remove runner IP and re-disable public network access (always runs)
       - name: Remove runner IP from firewalls
@@ -395,6 +437,27 @@ jobs:
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
+      - name: Smoke test — Dashboard SWA
+        run: |
+          SWA_HOSTNAME="${{ needs.deploy-staging.outputs.swa_hostname }}"
+          if [ -n "$SWA_HOSTNAME" ] && [ "$SWA_HOSTNAME" != "" ]; then
+            for i in 1 2 3 4 5; do
+              BODY=$(curl -s --max-time 15 "https://${SWA_HOSTNAME}/" 2>/dev/null) || true
+              if echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+                echo "✓ Dashboard SWA is serving the SPA"
+                break
+              fi
+              echo "Attempt $i: SPA not ready — retrying in 15s..."
+              sleep 15
+            done
+            if ! echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+              echo "::error::Dashboard SWA did not serve the SPA after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "Dashboard not deployed (no SWA hostname) — skipping smoke test"
+          fi
+
   # ── Production: deploy on push to main or manual dispatch ──
   # Block deployment if CI failed
   ci-failed:
@@ -428,6 +491,7 @@ jobs:
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
       vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
+      swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
     steps:
       - uses: actions/checkout@v6
@@ -636,6 +700,47 @@ jobs:
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
           echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
+          echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
+
+      # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
+      - name: Get SWA deployment token
+        id: swa-token
+        working-directory: infra
+        run: |
+          TOKEN=$(terraform output -raw swa_api_key)
+          echo "::add-mask::${TOKEN}"
+          echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
+          VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
+          VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy dashboard to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: dashboard/dist
+          skip_app_build: true
+          skip_api_build: true
 
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
@@ -730,6 +835,27 @@ jobs:
             fi
           else
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
+          fi
+
+      - name: Smoke test — Dashboard SWA
+        run: |
+          SWA_HOSTNAME="${{ needs.deploy-prod.outputs.swa_hostname }}"
+          if [ -n "$SWA_HOSTNAME" ] && [ "$SWA_HOSTNAME" != "" ]; then
+            for i in 1 2 3 4 5; do
+              BODY=$(curl -s --max-time 15 "https://${SWA_HOSTNAME}/" 2>/dev/null) || true
+              if echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+                echo "✓ Dashboard SWA is serving the SPA"
+                break
+              fi
+              echo "Attempt $i: SPA not ready — retrying in 15s..."
+              sleep 15
+            done
+            if ! echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+              echo "::error::Dashboard SWA did not serve the SPA after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "Dashboard not deployed (no SWA hostname) — skipping smoke test"
           fi
 
   # ── Cleanup the merged branch's environment after successful prod deploy ──

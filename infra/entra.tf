@@ -56,3 +56,34 @@ resource "azuread_application_password" "exporter_oauth" {
     ignore_changes = [end_date]
   }
 }
+
+# ── Dashboard SPA App Registration (public client — PKCE, no secret) ──
+
+resource "azuread_application" "dashboard" {
+  display_name = "EP Cube Graph Dashboard (${var.environment_name})"
+
+  sign_in_audience = "AzureADMyOrg"
+
+  single_page_application {
+    redirect_uris = [
+      "https://${azurerm_static_web_app.dashboard.default_host_name}/",
+      "http://localhost:5173/",
+    ]
+  }
+
+  required_resource_access {
+    resource_app_id = azuread_application.api.client_id
+
+    resource_access {
+      id   = random_uuid.user_impersonation_scope.result
+      type = "Scope"
+    }
+  }
+
+  owners = [data.azuread_client_config.current.object_id]
+}
+
+resource "azuread_service_principal" "dashboard" {
+  client_id = azuread_application.dashboard.client_id
+  owners    = [data.azuread_client_config.current.object_id]
+}
