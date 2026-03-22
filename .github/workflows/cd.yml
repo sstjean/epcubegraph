@@ -1,6 +1,14 @@
 name: CD
 
 on:
+  # Direct push trigger for branch deployments (workflow_run only works from default branch)
+  push:
+    branches-ignore: ['main']
+    paths-ignore:
+      - 'specs/**'
+      - '.specify/**'
+      - '**/*.md'
+
   # Deploy after CI passes — staging for branches, production for main
   workflow_run:
     workflows: ["CI"]
@@ -31,7 +39,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ github.event_name == 'push' && github.ref_name || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -49,6 +57,7 @@ jobs:
   check-ci:
     runs-on: ubuntu-latest
     if: >
+      (github.event_name == 'push' && github.ref_name != 'main') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     outputs:
@@ -58,7 +67,7 @@ jobs:
       - name: Compute branch-specific environment name
         id: env
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch || 'staging' }}"
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name || 'staging' }}"
           # Sanitize: lowercase, replace non-alphanumeric with hyphens, collapse,
           # strip leading/trailing hyphens, prefix with 'b' if starts with digit,
           # truncate to fit epcubegraph-{branch} ≤ 21 chars (Terraform limit)
