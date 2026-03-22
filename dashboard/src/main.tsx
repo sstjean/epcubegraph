@@ -1,4 +1,4 @@
-import { render, h } from 'preact';
+import { render } from 'preact';
 import { initializeMsal, isAuthenticated, getAccessToken } from './auth';
 import { App } from './App';
 import './app.css';

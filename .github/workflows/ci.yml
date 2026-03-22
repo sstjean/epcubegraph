@@ -177,6 +177,10 @@ jobs:
         working-directory: dashboard
         run: npm ci
 
+      - name: Type check
+        working-directory: dashboard
+        run: npm run typecheck
+
       - name: Test with coverage
         working-directory: dashboard
         run: npm run test:coverage

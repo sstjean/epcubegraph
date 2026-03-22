@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import { formatKw, formatPercent, formatKwh } from '../utils/formatting';
 import type { DeviceGroup } from './CurrentReadings';
 

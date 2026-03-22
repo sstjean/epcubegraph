@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { fetchDevices, fetchInstantQuery } from '../api';
 import { DeviceCard } from './DeviceCard';

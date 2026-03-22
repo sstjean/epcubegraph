@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import Router from 'preact-router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CurrentReadings } from './components/CurrentReadings';

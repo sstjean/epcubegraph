@@ -1,4 +1,3 @@
-import { h } from 'preact';
 import { formatWatts, formatPercent, formatKwh } from '../utils/formatting';
 import { GaugeDial } from './GaugeDial';
 

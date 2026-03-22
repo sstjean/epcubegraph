@@ -1,4 +1,4 @@
-import { Component, ComponentChildren, h } from 'preact';
+import { Component, ComponentChildren } from 'preact';
 
 interface ErrorBoundaryProps {
   children: ComponentChildren;

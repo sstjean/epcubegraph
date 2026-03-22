@@ -1,13 +1,14 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.16.0 → 1.17.0
-  Bump rationale: MINOR — new principle added under Security.
+  Version change: 1.17.0 → 1.18.0
+  Bump rationale: MINOR — new principle added under
+    Development Workflow.
   Added sub-sections:
-    - Security — SFI Compliance (NON-NEGOTIABLE): Microsoft
-      Secure Futures Initiative policy compliance for Azure
-      infrastructure (storage, Key Vault, subnets, Terraform
-      state alignment, private endpoints, CD toggle patterns).
+    - Development Workflow — Local Type-Checking Parity
+      (NON-NEGOTIABLE): Mandates local type-check commands
+      matching CI for every statically typed language in the
+      project.
   Modified sections: none
   Removed sections: none
   Templates requiring updates:
@@ -104,6 +105,29 @@ silent regressions.
   is merged. No test failures are permitted in the main branch.
 - **Documentation**: User-facing behaviour changes MUST be
   reflected in relevant docs or specs before merge.
+- **Local Type-Checking Parity (NON-NEGOTIABLE)**: For every
+  language in the project that has a static type checker
+  (e.g., TypeScript's `tsc`, C#'s compiler, Python's `mypy`),
+  the project MUST provide a local command that runs the same
+  type-checking step that CI enforces. Type errors MUST be
+  catchable locally before pushing — developers MUST NOT have
+  to wait for CI to discover type-checking failures.
+  Specifically:
+  - Every project component MUST include a script or command
+    (e.g., `npm run typecheck`, `dotnet build`, `mypy .`) that
+    performs the same static analysis as the CI build step.
+  - Test runners that skip type checking (e.g., Vitest with
+    esbuild, pytest) do NOT satisfy this requirement — the
+    actual type checker must be invokable separately.
+  - The local type-check command MUST be documented in the
+    component's package.json scripts, Makefile, or equivalent
+    task runner.
+
+  **Rationale**: Test runners often use fast transpilers
+  (esbuild, Babel) that strip types without checking them. If
+  CI runs a strict type checker but local development only runs
+  tests, type errors become invisible until push — wasting CI
+  cycles and developer time.
 
 ## Performance Standards
 
@@ -351,4 +375,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.17.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-21
+**Version**: 1.18.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-22

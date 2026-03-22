@@ -1,5 +1,3 @@
-import { h } from 'preact';
-
 export interface GaugeDialProps {
   /** Current value */
   value: number;
