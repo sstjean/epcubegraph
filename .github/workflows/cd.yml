@@ -1,13 +1,11 @@
 name: CD
 
 on:
-  # Deploy to staging on push to any branch, production on push to main
-  push:
+  # Deploy after CI passes — staging for branches, production for main
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: ['**']
-
-  # Deploy staging on PRs to main
-  pull_request:
-    branches: [main]
 
   # Manual trigger for any environment
   workflow_dispatch:
@@ -28,7 +26,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'production' || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -42,15 +40,29 @@ permissions:
   contents: read
 
 jobs:
-  # ── Staging: deploy on push to non-main branches, PRs to main, or manual dispatch ──
+  # ── Staging: deploy after CI passes on non-main branches, or manual dispatch ──
   check-ci:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    outputs:
+      env_name: ${{ steps.env.outputs.env_name }}
+      state_key: ${{ steps.env.outputs.state_key }}
     steps:
-      - run: echo "Staging deployment — branch push, PR, or manual dispatch"
+      - name: Compute branch-specific environment name
+        id: env
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch || 'staging' }}"
+          # Sanitize: lowercase, replace non-alphanumeric with hyphens, collapse,
+          # strip leading/trailing hyphens, prefix with 'b' if starts with digit,
+          # truncate to fit epcubegraph-{branch} ≤ 21 chars (Terraform limit)
+          SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+          [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+          ENV_NAME="epcubegraph-${SANITIZED}"
+          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "state_key=${ENV_NAME}.tfstate" >> "$GITHUB_OUTPUT"
+          echo "✓ Branch '$BRANCH' → env '${ENV_NAME}'"
 
   deploy-staging:
     needs: check-ci
@@ -59,7 +71,7 @@ jobs:
     environment: staging
 
     env:
-      TF_VAR_environment_name: 'epcubegraph-staging'
+      TF_VAR_environment_name: ${{ needs.check-ci.outputs.env_name }}
 
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
@@ -69,6 +81,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -107,7 +121,7 @@ jobs:
 
       - name: Whitelist runner IP on Key Vault
         run: |
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${TF_VAR_environment_name}-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
             az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
             echo "✓ Key Vault public network access enabled"
@@ -157,7 +171,7 @@ jobs:
             -backend-config="resource_group_name=tfstate-rg" \
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=epcubegraph-staging.tfstate" \
+            -backend-config="key=${{ needs.check-ci.outputs.state_key }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
@@ -224,7 +238,8 @@ jobs:
       - name: Build & Push API image
         id: api-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file api/Dockerfile api/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -232,7 +247,8 @@ jobs:
       - name: Build & Push exporter image
         id: exporter-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -278,7 +294,7 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${TF_VAR_environment_name}-kv"
           az keyvault network-rule remove \
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -366,13 +382,24 @@ jobs:
           fi
 
   # ── Production: deploy on push to main or manual dispatch ──
+  # Block deployment if CI failed
+  ci-failed:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - run: |
+          echo "::error::CI failed on ${{ github.event.workflow_run.head_branch }} — deployment blocked"
+          exit 1
+
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     steps:
-      - run: echo "Production deployment — push to main or manual dispatch"
+      - run: echo "Production deployment — CI passed on main or manual dispatch"
 
   deploy-prod:
     needs: check-ci-prod
@@ -390,6 +417,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Determine commit SHA
+        id: commit
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="${{ github.sha }}"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "✓ Deploying commit: $SHA"
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -540,7 +580,7 @@ jobs:
       - name: Build & Push API image
         id: api-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ steps.commit.outputs.sha }}"
           docker build --tag "$IMAGE" --file api/Dockerfile api/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -548,7 +588,7 @@ jobs:
       - name: Build & Push exporter image
         id: exporter-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ steps.commit.outputs.sha }}"
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -678,28 +718,79 @@ jobs:
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # ── Cleanup staging after successful PR merge to main ──
-  cleanup-staging:
+  # ── Cleanup the merged branch's environment after successful prod deploy ──
+  cleanup-branch:
     needs: validate-prod
     runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_run'
     environment: staging
-
-    env:
-      TF_VAR_environment_name: 'epcubegraph-staging'
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Determine merged branch environment
+        id: branch-env
+        run: |
+          # Extract branch name from the merge commit message
+          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
+          echo "Merge commit message: $COMMIT_MSG"
+
+          # Pattern: "Merge pull request #N from owner/branch-name"
+          BRANCH=$(echo "$COMMIT_MSG" | sed -n 's|.*Merge pull request #[0-9]* from [^/]*/||p')
+
+          # Fallback: "Merge branch 'branch-name'"
+          if [ -z "$BRANCH" ]; then
+            BRANCH=$(echo "$COMMIT_MSG" | sed -n "s/.*Merge branch '\([^']*\)'.*/\1/p")
+          fi
+
+          if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No feature branch to clean up (commit: $COMMIT_MSG)"
+            exit 0
+          fi
+
+          echo "Merged branch: $BRANCH"
+
+          # Sanitize identically to check-ci job
+          SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+          [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+          ENV_NAME="epcubegraph-${SANITIZED}"
+          STATE_KEY="${ENV_NAME}.tfstate"
+
+          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "state_key=${STATE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "✓ Branch '$BRANCH' → env '${ENV_NAME}' (state: ${STATE_KEY})"
 
       - name: Azure Login (OIDC)
+        if: steps.branch-env.outputs.skip != 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Check if state file exists
+        if: steps.branch-env.outputs.skip != 'true'
+        id: state-check
+        run: |
+          EXISTS=$(az storage blob exists \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.branch-env.outputs.state_key }}" \
+            --auth-mode login \
+            --query exists --output tsv 2>/dev/null) || EXISTS="false"
+          echo "exists=${EXISTS}" >> "$GITHUB_OUTPUT"
+          if [ "$EXISTS" = "true" ]; then
+            echo "✓ State file found — will destroy environment"
+          else
+            echo "No state file for ${{ steps.branch-env.outputs.env_name }} — nothing to clean up"
+          fi
+
       - name: Detect runner IP
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         id: ip
         run: |
           RUNNER_IP=$(curl -sf https://api.ipify.org)
@@ -708,6 +799,7 @@ jobs:
           echo "✓ Detected runner IP"
 
       - name: Enable public network access on tfstate storage
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
           az storage account update \
             --name "$TFSTATE_STORAGE_ACCOUNT" \
@@ -717,6 +809,7 @@ jobs:
           echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on tfstate storage
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
           az storage account network-rule add \
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
@@ -725,8 +818,9 @@ jobs:
             --output none 2>/dev/null || true
 
       - name: Whitelist runner IP on Key Vault
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
             az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
             echo "✓ Key Vault public network access enabled"
@@ -736,11 +830,11 @@ jobs:
               --output none 2>/dev/null || true
             echo "✓ Runner IP added to Key Vault firewall"
           else
-            echo "Key Vault does not exist — nothing to destroy"
-            exit 0
+            echo "Key Vault does not exist — skipping"
           fi
 
       - name: Wait for firewall propagation
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
           echo "Waiting for tfstate storage firewall propagation..."
           for attempt in $(seq 1 45); do
@@ -758,11 +852,13 @@ jobs:
           exit 1
 
       - name: Setup Terraform
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         uses: hashicorp/setup-terraform@v4
         with:
           terraform_wrapper: false
 
-      - name: Terraform Init (staging state)
+      - name: Terraform Init
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -773,33 +869,47 @@ jobs:
             -backend-config="resource_group_name=tfstate-rg" \
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=epcubegraph-staging.tfstate" \
+            -backend-config="key=${{ steps.branch-env.outputs.state_key }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
       - name: Azure Re-Login (OIDC)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Terraform Destroy (staging)
+      - name: Terraform Destroy
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: |
           if ! terraform destroy -auto-approve -input=false; then
-            echo "⚠ First destroy attempt failed — refreshing state and retrying..."
-            terraform refresh -input=false
+            echo "⚠ First destroy failed — refreshing state and retrying..."
+            terraform refresh -input=false || true
             terraform destroy -auto-approve -input=false
           fi
-          echo "✓ Staging environment destroyed — clean for next branch"
+          echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
+
+      - name: Delete state blob
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.branch-env.outputs.state_key }}" \
+            --auth-mode login \
+            --output none 2>/dev/null || true
+          echo "✓ State file ${{ steps.branch-env.outputs.state_key }} deleted"
 
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
@@ -810,7 +920,7 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
           az keyvault network-rule remove \
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -819,7 +929,7 @@ jobs:
           echo "✓ Key Vault firewalled and public access re-disabled"
 
       - name: Restore public network access to Disabled
-        if: always()
+        if: always() && steps.ip.outputs.runner_ip
         run: |
           az storage account update \
             --name "$TFSTATE_STORAGE_ACCOUNT" \
