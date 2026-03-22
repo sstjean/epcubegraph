@@ -555,7 +555,7 @@ def _render_status_page(status, health):
                     grid_kw = _nz(float(dev.get("grid_kw", 0)))
                     solar_kw = _nz(float(dev["solar_kw"]))
                     load = _nz(float(dev["backup_kw"]))
-                    expected_battery = load - solar_kw - grid_kw
+                    expected_battery = solar_kw + grid_kw - load
                     imbalance = abs(expected_battery - battery_kw)
                     row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.5 else ''
                     warn_td = f' title="Expected battery {expected_battery:+.2f} kW ≠ Actual {battery_kw:+.2f} kW"' if load > 0 and imbalance > 0.5 else ''
