@@ -45,7 +45,8 @@ public class MockableTestFactory : WebApplicationFactory<Program>
                 ["AzureAd:TenantId"] = "00000000-0000-0000-0000-000000000000",
                 ["AzureAd:ClientId"] = "00000000-0000-0000-0000-000000000001",
                 ["AzureAd:Audience"] = "api://00000000-0000-0000-0000-000000000001",
-                ["VictoriaMetrics:Url"] = "http://localhost:0"
+                ["VictoriaMetrics:Url"] = "http://localhost:0",
+                ["Cors:AllowedOrigin"] = "https://test-dashboard.example.com"
             });
         });
 

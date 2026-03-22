@@ -181,6 +181,11 @@ resource "azurerm_container_app" "api" {
         # VictoriaMetrics runs internal-only (targetPort 8428), reachable via app name.
         value = "http://${azurerm_container_app.vm.name}"
       }
+
+      env {
+        name  = "Cors__AllowedOrigin"
+        value = "https://${azurerm_static_web_app.dashboard.default_host_name}"
+      }
     }
   }
 }

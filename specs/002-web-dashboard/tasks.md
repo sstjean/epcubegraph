@@ -163,6 +163,7 @@
 
 > **Note**: T041 (CI dashboard job) and T042 (CD SWA deploy) were moved to Phase 3 / US1 and are complete.
 
+- [x] T043a [US1] Bug fix (#44): Add CORS to API — `builder.Services.AddCors()` with `Cors:AllowedOrigin` config, `app.UseCors()` before auth middleware, `Cors__AllowedOrigin` env var in container-apps.tf set to SWA hostname, CORS integration test in ProgramMiddlewareTests.cs (FR-019)
 - [ ] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID), verify Grafana password stored in Key Vault and injected as secret env var, verify Grafana service principal client secret in Key Vault, verify all new infra resources have management locks
 - [ ] T044 [P] Accessibility spot-check (FR-015): verify all pages keyboard-navigable (Tab through nav, cards, buttons), verify semantic landmarks (<nav>, <main>, <section>, <article>), verify ARIA attributes on interactive elements (aria-label, aria-pressed, aria-busy, role="alert", role="status"), verify color contrast ≥4.5:1 on all text/badges
 - [ ] T045 Run full test suite with coverage: cd dashboard && npm run test:coverage — verify 100% coverage (branches, functions, lines, statements). Verify performance: load CurrentReadings with mock data and confirm render <2s (SC-001); load HistoricalGraph with 30d mock data (~43K points) and confirm render <2s (SC-002)

@@ -4,6 +4,8 @@ using EpCubeGraph.Api.Endpoints;
 using EpCubeGraph.Api.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
 using Prometheus;
 
@@ -47,6 +49,9 @@ builder.Services
         client.Timeout = TimeSpan.FromSeconds(10);
     });
 
+// CORS — allow dashboard SWA origin when configured (FR-019)
+builder.Services.AddCors();
+
 // JSON serialization — camelCase (T009)
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -84,6 +89,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// CORS — configure allowed origin after Build() so test config overrides apply (FR-019)
+var allowedOrigin = app.Configuration["Cors:AllowedOrigin"];
+if (!string.IsNullOrEmpty(allowedOrigin))
+{
+    var corsOptions = app.Services.GetRequiredService<IOptions<CorsOptions>>();
+    corsOptions.Value.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(allowedOrigin)
+              .WithMethods("GET")
+              .WithHeaders("Authorization", "Content-Type");
+    });
+}
+app.UseCors();
 
 // Prometheus HTTP metrics middleware (T041)
 app.UseHttpMetrics();

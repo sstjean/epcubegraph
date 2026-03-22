@@ -78,6 +78,54 @@ public class ProgramMiddlewareTests : IDisposable
             response.StatusCode == HttpStatusCode.ServiceUnavailable,
             $"Expected OK or 503 but got {response.StatusCode}");
     }
+
+    [Fact]
+    public async Task Cors_AllowedOrigin_ReturnsHeaders()
+    {
+        // Arrange — simple GET with Origin header
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health");
+        request.Headers.Add("Origin", "https://test-dashboard.example.com");
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.Equal("https://test-dashboard.example.com",
+            response.Headers.GetValues("Access-Control-Allow-Origin").First());
+    }
+
+    [Fact]
+    public async Task Cors_DisallowedOrigin_NoHeaders()
+    {
+        // Arrange — request from a different origin
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/health");
+        request.Headers.Add("Origin", "https://evil.example.com");
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        Assert.False(response.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
+    [Fact]
+    public async Task Cors_Preflight_ReturnsAllowedMethodsAndHeaders()
+    {
+        // Arrange — OPTIONS preflight request
+        var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/health");
+        request.Headers.Add("Origin", "https://test-dashboard.example.com");
+        request.Headers.Add("Access-Control-Request-Method", "GET");
+        request.Headers.Add("Access-Control-Request-Headers", "Authorization");
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Methods"));
+        Assert.True(response.Headers.Contains("Access-Control-Allow-Headers"));
+    }
 }
 
 /// <summary>

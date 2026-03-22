@@ -92,6 +92,7 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - **FR-016**: Dashboard MUST display current readings within 2 seconds of page load (SC-001). This is structurally ensured by the lightweight SPA framework (Preact 3KB) combined with instant metric queries.
 - **FR-017**: Dashboard MUST provide an animated energy flow diagram as the default current-readings view, showing per-device energy flow between Solar, Grid, EP Cube gateway, Battery, and Home nodes. Flow lines animate directionally to indicate power flow direction, display power values (watts/kW), and dim to inactive when power is below a threshold. Battery node displays SOC ring, stored kWh, and charge/discharge state. A toggle allows switching between the flow diagram and the gauge dial view.
 - **FR-018**: Dashboard UI MUST scale responsively to viewport size, adjusting layout, font sizes, and component dimensions across desktop and mobile breakpoints.
+- **FR-019**: API MUST include CORS headers allowing the SWA dashboard origin to make cross-origin requests. The allowed origin MUST be configured via environment variable (not hardcoded) and MUST restrict methods to GET and headers to Authorization and Content-Type.
 
 ### Key Entities
 
