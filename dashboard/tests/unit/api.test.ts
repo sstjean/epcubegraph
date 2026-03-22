@@ -138,6 +138,19 @@ describe('api', () => {
     expect(callHeaders.Authorization).toBeUndefined();
   });
 
+  it('fetchHealth throws on error response', async () => {
+    // Arrange — no `error` field to exercise the HTTP status fallback branch
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () => Promise.resolve({}),
+    });
+    const { fetchHealth } = await import('../../src/api');
+
+    // Act & Assert
+    await expect(fetchHealth()).rejects.toThrow('HTTP 503');
+  });
+
   it('parses error responses (400/401/403/404/422/503)', async () => {
     // Arrange
     const errorResponse = { status: 'error', errorType: 'bad_data', error: 'invalid query' };
