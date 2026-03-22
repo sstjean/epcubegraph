@@ -8,5 +8,5 @@ WORKDIR /app
 RUN pip install --no-cache-dir --root-user-action=ignore opencv-python-headless pycryptodome numpy PyJWT[crypto]
 COPY exporter.py .
 
-EXPOSE 9200
+EXPOSE 9250
 CMD ["python", "-u", "exporter.py"]

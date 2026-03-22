@@ -2,7 +2,7 @@
 EP Cube Cloud Exporter — Bridges EP Cube cloud API to Prometheus metrics.
 
 Polls the EP Cube monitoring API (monitoring-us.epcube.com) and exposes 
-Prometheus-compatible metrics on :9200/metrics for VictoriaMetrics to scrape.
+Prometheus-compatible metrics on :9250/metrics for VictoriaMetrics to scrape.
 
 Produces the same epcube_* metric names as the mock exporter so the API
 and dashboard work without changes.
@@ -15,7 +15,7 @@ Required env vars:
   EPCUBE_PASSWORD  — EP Cube cloud account password
 
 Optional env vars:
-  EPCUBE_PORT      — HTTP port for metrics (default: 9200)
+  EPCUBE_PORT      — HTTP port for metrics (default: 9250)
   EPCUBE_INTERVAL  — Poll interval in seconds (default: 60)
 """
 import base64
@@ -49,7 +49,7 @@ from Crypto.Util.Padding import pad
 # ---------------------------------------------------------------------------
 __version__ = "1.1.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
-METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9200"))
+METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
 

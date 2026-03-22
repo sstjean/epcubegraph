@@ -22,7 +22,7 @@ Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure a
 │                 │                                                    │
 │  ┌──────────────▼────────────┐                                       │
 │  │ epcube-exporter App       │    Key Vault                          │
-│  │  :9200/metrics (internal) │    (OAuth secret, credentials)        │
+│  │  :9250/metrics (internal) │    (OAuth secret, credentials)        │
 │  │  polls cloud API ────────────► monitoring-us.epcube.com           │
 │  └───────────────────────────┘                                       │
 │                                                                      │

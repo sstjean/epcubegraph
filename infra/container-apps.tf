@@ -228,7 +228,7 @@ resource "azurerm_container_app" "exporter" {
   # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
     external_enabled = true
-    target_port      = 9200
+    target_port      = 9250
     transport        = "http"
 
     traffic_weight {
@@ -259,7 +259,7 @@ resource "azurerm_container_app" "exporter" {
 
       env {
         name  = "EPCUBE_PORT"
-        value = "9200"
+        value = "9250"
       }
 
       env {

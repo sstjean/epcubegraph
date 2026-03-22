@@ -128,10 +128,10 @@ cmd_status() {
   echo ""
 
   # Check if epcube-exporter metrics endpoint is reachable
-  if curl -sf http://localhost:9200/metrics >/dev/null 2>&1; then
-    ok "epcube-exporter metrics endpoint is reachable at http://localhost:9200/metrics"
+  if curl -sf http://localhost:9250/metrics >/dev/null 2>&1; then
+    ok "epcube-exporter metrics endpoint is reachable at http://localhost:9250/metrics"
   else
-    warn "epcube-exporter metrics endpoint is not reachable at http://localhost:9200/metrics"
+    warn "epcube-exporter metrics endpoint is not reachable at http://localhost:9250/metrics"
   fi
 }
 

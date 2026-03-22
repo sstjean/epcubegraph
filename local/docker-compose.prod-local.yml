@@ -17,7 +17,7 @@
 # Web UIs:
 #   VictoriaMetrics (vmui):  http://localhost:8428/vmui
 #   vmagent targets:         http://localhost:8429/targets
-#   cloud exporter:          http://localhost:9200/metrics
+#   cloud exporter:          http://localhost:9250/metrics
 
 services:
   epcube-exporter:
@@ -26,11 +26,11 @@ services:
     environment:
       - EPCUBE_USERNAME=${EPCUBE_USERNAME}
       - EPCUBE_PASSWORD=${EPCUBE_PASSWORD}
-      - EPCUBE_PORT=9200
+      - EPCUBE_PORT=9250
       - EPCUBE_INTERVAL=60
       - EPCUBE_DISABLE_AUTH=true
     ports:
-      - "9200:9200"
+      - "9250:9250"
     restart: unless-stopped
 
   victoriametrics:

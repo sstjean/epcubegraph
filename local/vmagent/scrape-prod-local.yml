@@ -4,7 +4,7 @@
 scrape_configs:
   - job_name: epcube
     static_configs:
-      - targets: ["epcube-exporter:9200"]
+      - targets: ["epcube-exporter:9250"]
     metrics_path: /metrics
     scrape_interval: 60s
     scrape_timeout: 30s

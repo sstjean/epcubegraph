@@ -315,7 +315,7 @@ else
     fail "Provisioning state: $EXP_STATUS (expected Succeeded)"
   fi
 
-  # Check external ingress on port 9200
+  # Check external ingress on port 9250
   EXP_EXT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
   EXP_PORT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
   if [[ "$EXP_EXT" == "True" ]]; then
@@ -323,10 +323,10 @@ else
   else
     fail "Ingress: external=$EXP_EXT (expected True)"
   fi
-  if [[ "$EXP_PORT" == "9200" ]]; then
-    pass "Ingress target port: 9200"
+  if [[ "$EXP_PORT" == "9250" ]]; then
+    pass "Ingress target port: 9250"
   else
-    fail "Ingress target port: $EXP_PORT (expected 9200)"
+    fail "Ingress target port: $EXP_PORT (expected 9250)"
   fi
 
   # Check FQDN

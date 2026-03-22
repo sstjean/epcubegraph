@@ -210,7 +210,7 @@ Key advantages:
 
 ### Decision
 
-**Custom Python exporter** that polls the EP Cube cloud API and exposes Prometheus metrics on `:9200/metrics`. Deployed as an Azure Container App with internal-only ingress, scraped directly by VictoriaMetrics via `-promscrape.config`.
+**Custom Python exporter** that polls the EP Cube cloud API and exposes Prometheus metrics on `:9250/metrics`. Deployed as an Azure Container App with internal-only ingress, scraped directly by VictoriaMetrics via `-promscrape.config`.
 
 ### Key Details
 
@@ -244,7 +244,7 @@ scrape_configs:
     scrape_timeout: 30s
 ```
 
-The epcube-exporter Container App has internal-only ingress on port 9200. Within the Container Apps environment, VictoriaMetrics reaches it via `http://<app-name>` (port 80, which maps to target port 9200).
+The epcube-exporter Container App has internal-only ingress on port 9250. Within the Container Apps environment, VictoriaMetrics reaches it via `http://<app-name>` (port 80, which maps to target port 9250).
 
 ### Notes on vmauth (retained)
 

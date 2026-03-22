@@ -65,7 +65,7 @@ resource "azurerm_user_assigned_identity" "main" {
 
 locals {
   # VictoriaMetrics promscrape config — scrapes epcube-exporter within the
-  # Container Apps environment via internal ingress (HTTP port 80 → target 9200)
+  # Container Apps environment via internal ingress (HTTP port 80 → target 9250)
   promscrape_config = <<-YAML
 scrape_configs:
   - job_name: epcube
