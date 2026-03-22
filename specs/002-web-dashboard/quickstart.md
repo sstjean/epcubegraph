@@ -53,7 +53,7 @@ Create `dashboard/.env.local`:
 
 ```bash
 # Feature 001 API base URL (no trailing slash)
-VITE_API_BASE_URL=http://localhost:8080/api/v1
+VITE_API_BASE_URL=http://localhost:5062/api/v1
 
 # Dashboard Entra ID app registration (public client)
 VITE_ENTRA_CLIENT_ID=<dashboard-app-client-id>
@@ -146,7 +146,7 @@ terraform plan -var-file=terraform.tfvars
 terraform apply -var-file=terraform.tfvars
 
 # Get the deployment token for GitHub Actions
-terraform output -raw swa_deployment_token
+terraform output -raw swa_api_key
 ```
 
 ### SPA Deployment (CI/CD)
@@ -270,6 +270,6 @@ Automated timing assertions in happy-dom are not meaningful — real-browser per
 3. Click **Record**, then select the **30d** time range preset
 4. Stop recording after the chart renders
 5. Verify the total render time (from range selection to chart paint) is under 2 seconds
-6. With ~8,640 data points (30 days × 5-min intervals), uPlot's canvas rendering should complete in <100ms
+6. With ~43,200 data points (30 days × 1-min intervals), uPlot's canvas rendering should complete in <100ms
 
 > **Note**: These targets assume the Feature 001 API returns 30-day range query results within ~1 second (validated by API performance tests in `api/tests/EpCubeGraph.Api.Tests/Integration/PerformanceTests.cs`).

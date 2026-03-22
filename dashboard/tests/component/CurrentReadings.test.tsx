@@ -352,7 +352,7 @@ describe('CurrentReadings', () => {
     });
   });
 
-  it('renders view toggle radiogroup with proper aria', async () => {
+  it('renders view toggle group with proper aria', async () => {
     // Arrange
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchInstantQuery.mockResolvedValue(emptyMetricResponse);
@@ -362,9 +362,9 @@ describe('CurrentReadings', () => {
 
     // Assert
     await waitFor(() => {
-      const radiogroup = screen.getByRole('radiogroup');
-      expect(radiogroup).toBeTruthy();
-      expect(radiogroup.getAttribute('aria-label')).toBe('View mode');
+      const group = screen.getByRole('group');
+      expect(group).toBeTruthy();
+      expect(group.getAttribute('aria-label')).toBe('View mode');
     });
   });
 

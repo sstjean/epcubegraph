@@ -116,7 +116,7 @@ export function CurrentReadings() {
     <section aria-busy={loading ? 'true' : undefined}>
       <div class="device-card-header">
         <h2>Current Readings</h2>
-        <div class="view-toggle" role="radiogroup" aria-label="View mode">
+        <div class="view-toggle" role="group" aria-label="View mode">
           <button
             type="button"
             class={view === 'flow' ? 'active' : ''}

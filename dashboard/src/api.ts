@@ -10,21 +10,25 @@ import type {
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
 const authDisabled = import.meta.env.VITE_DISABLE_AUTH === 'true';
 
-async function authFetch(url: string): Promise<Response> {
+async function authFetch(url: string, isRetry = false): Promise<Response> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (!authDisabled) {
     const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication in progress');
+    }
     headers.Authorization = `Bearer ${token}`;
   }
 
   const response = await fetch(url, { headers });
 
   if (!response.ok) {
-    if (response.status === 401) {
+    if (response.status === 401 && !isRetry) {
       await getAccessToken();
+      return authFetch(url, true);
     }
     const errorBody = await response.json();
     throw new Error(errorBody.error || `HTTP ${response.status}`);
@@ -81,6 +85,14 @@ export async function fetchDeviceMetrics(device: string): Promise<DeviceMetricsR
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const response = await authFetch(`${getBaseUrl()}/health`);
+  const response = await fetch(`${getBaseUrl()}/health`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json();
+    throw new Error(errorBody.error || `HTTP ${response.status}`);
+  }
+
   return response.json();
 }

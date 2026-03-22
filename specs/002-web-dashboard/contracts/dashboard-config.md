@@ -32,7 +32,7 @@ The SPA is configured via Vite environment variables (prefixed with `VITE_`). Th
 ### Local Development (`.env.local`)
 
 ```bash
-VITE_API_BASE_URL=http://localhost:8080/api/v1
+VITE_API_BASE_URL=http://localhost:5062/api/v1
 VITE_ENTRA_CLIENT_ID=<dashboard-app-client-id>
 VITE_ENTRA_TENANT_ID=<your-tenant-id>
 VITE_ENTRA_API_SCOPE=api://<api-app-client-id>/user_impersonation

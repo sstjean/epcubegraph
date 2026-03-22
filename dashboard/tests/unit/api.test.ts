@@ -133,6 +133,9 @@ describe('api', () => {
 
     // Assert
     expect(result).toEqual(mockResponse);
+    // fetchHealth should NOT attach an Authorization header (endpoint is AllowAnonymous)
+    const callHeaders = (globalThis.fetch as any).mock.calls[0][1]?.headers ?? {};
+    expect(callHeaders.Authorization).toBeUndefined();
   });
 
   it('parses error responses (400/401/403/404/422/503)', async () => {
@@ -149,9 +152,38 @@ describe('api', () => {
     await expect(fetchDevices()).rejects.toThrow('invalid query');
   });
 
-  it('401 triggers re-auth flow (FR-014)', async () => {
+  it('401 triggers re-auth and retries request once (FR-014)', async () => {
     // Arrange
     const { getAccessToken } = await import('../../src/auth');
+    let callCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ status: 'error', errorType: 'unauthorized', error: 'token expired' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ devices: [] }),
+      });
+    });
+    const { fetchDevices } = await import('../../src/api');
+
+    // Act
+    const result = await fetchDevices();
+
+    // Assert — retried and succeeded
+    expect(result).toEqual({ devices: [] });
+    expect(getAccessToken).toHaveBeenCalled();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('401 retry does not loop infinitely', async () => {
+    // Arrange
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
@@ -159,16 +191,9 @@ describe('api', () => {
     });
     const { fetchDevices } = await import('../../src/api');
 
-    // Act
-    try {
-      await fetchDevices();
-    } catch {
-      // expected
-    }
-
-    // Assert — the module should have attempted re-auth
-    // The re-auth is triggered by importing and calling auth functions
-    expect(getAccessToken).toHaveBeenCalled();
+    // Act & Assert — second 401 throws instead of retrying again
+    await expect(fetchDevices()).rejects.toThrow('token expired');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('uses VITE_API_BASE_URL env var for base URL', async () => {
@@ -223,5 +248,15 @@ describe('api', () => {
 
     // Assert — getAccessToken called once for initial auth, NOT again for re-auth
     expect(getAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when getAccessToken returns null (auth redirect in progress)', async () => {
+    // Arrange
+    const { getAccessToken } = await import('../../src/auth');
+    (getAccessToken as any).mockResolvedValue(null);
+    const { fetchDevices } = await import('../../src/api');
+
+    // Act & Assert
+    await expect(fetchDevices()).rejects.toThrow('Authentication in progress');
   });
 });

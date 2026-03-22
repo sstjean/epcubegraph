@@ -72,7 +72,7 @@ export function GaugeDial({
     }
   } else {
     // Unidirectional: arc fills from start
-    const ratio = range > 0 ? Math.min(Math.max(Math.abs(value) / max, 0), 1) : 0;
+    const ratio = range > 0 ? Math.min(Math.max((value - min) / range, 0), 1) : 0;
     const valueAngle = START_ANGLE + ARC_SPAN * ratio;
     fgArc = ratio > 0 ? describeArc(cx, cy, r, START_ANGLE, valueAngle) : '';
     valueNow = Math.abs(value);

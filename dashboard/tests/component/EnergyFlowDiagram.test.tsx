@@ -131,6 +131,17 @@ describe('EnergyFlowDiagram', () => {
     expect(texts).toContain('discharging');
   });
 
+  it('shows "idle" label when battery watts is below threshold', () => {
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ batteryWatts: 0 })]} />
+    );
+
+    const texts = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
+    expect(texts).toContain('idle');
+    expect(texts).not.toContain('charging');
+    expect(texts).not.toContain('discharging');
+  });
+
   // Flow line power labels
   it('displays watt values on active flow lines', () => {
     const { container } = render(

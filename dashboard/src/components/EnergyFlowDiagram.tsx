@@ -219,7 +219,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
               {formatKwh(m.batteryStoredKwh)}
             </text>
             <text x={BATTERY.x} y={BATTERY.y + RING_R + 44} text-anchor="middle" class="flow-node-sublabel">
-              {batteryCharging ? 'charging' : 'discharging'}
+              {batteryActive ? (batteryCharging ? 'charging' : 'discharging') : 'idle'}
             </text>
           </g>
 

@@ -76,13 +76,13 @@ describe('GaugeDial', () => {
     expect(meter).toBeTruthy();
   });
 
-  it('handles negative values using absolute value for arc (grid export)', () => {
+  it('handles negative values on unidirectional gauge (clamps to zero fill)', () => {
     const { container } = render(
       <GaugeDial value={-1500} max={10000} label="Grid (Export)" displayValue="-1.5 kW" unit="export" color="#10b981" />
     );
 
     const paths = container.querySelectorAll('path');
-    expect(paths.length).toBe(2); // should render foreground arc for abs(value)
+    expect(paths.length).toBe(1); // bg arc only — negative value is below min=0
     expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('1500');
   });
 

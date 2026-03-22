@@ -7,7 +7,7 @@ export async function initializeMsal(): Promise<PublicClientApplication> {
     auth: {
       clientId: import.meta.env.VITE_ENTRA_CLIENT_ID,
       authority: `https://login.microsoftonline.com/${import.meta.env.VITE_ENTRA_TENANT_ID}`,
-      redirectUri: window.location.origin,
+      redirectUri: `${window.location.origin}/`,
     },
   });
   await msalInstance.handleRedirectPromise();
