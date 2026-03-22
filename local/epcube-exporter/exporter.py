@@ -183,6 +183,10 @@ def _solve_captcha(max_attempts=5):
         point_json = json.dumps({"x": x_pos, "y": 5}, separators=(",", ":"))
         encrypted_point = _aes_encrypt(point_json, secret_key)
 
+        # Human-like delay before submitting the solved puzzle
+        delay = 1.9 + (secrets.randbelow(1500) - 500) / 1000  # 1.4–2.9s
+        time.sleep(delay)
+
         result = _api_request("POST", "/common/captcha/check", {
             "captchaType": "blockPuzzle",
             "pointJson": encrypted_point,
