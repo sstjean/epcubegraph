@@ -26,7 +26,7 @@ interface DeviceCardProps {
 }
 
 export function DeviceCard({ name, online, metrics }: DeviceCardProps) {
-  const gridDirection = metrics.gridWatts >= 0 ? 'Import' : 'Export';
+  const gridDirection = metrics.gridWatts === 0 ? 'Idle' : metrics.gridWatts > 0 ? 'Import' : 'Export';
 
   return (
     <article class="device-card" aria-label={`Device ${name}`}>

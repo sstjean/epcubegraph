@@ -94,6 +94,15 @@ describe('DeviceCard', () => {
     expect(screen.getByText('Grid (Export)')).toBeTruthy();
   });
 
+  it('shows grid power with "Idle" label when zero', () => {
+    // Arrange & Act
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 0 }} />);
+
+    // Assert
+    expect(screen.getByText('0.0 W')).toBeTruthy();
+    expect(screen.getByText('Grid (Idle)')).toBeTruthy();
+  });
+
   it('uses sufficient contrast colors on badges (FR-015)', () => {
     // Arrange & Act
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);

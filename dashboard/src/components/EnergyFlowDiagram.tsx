@@ -169,7 +169,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             </g>
             <text x={GRID.x} y={GRID.y + 30} text-anchor="middle" class="flow-node-label">Grid</text>
             <text x={GRID.x} y={GRID.y + 44} text-anchor="middle" class="flow-node-sublabel">
-              {m.gridWatts >= 0 ? 'importing' : 'exporting'}
+              {gridActive ? (gridImporting ? 'importing' : 'exporting') : 'idle'}
             </text>
           </g>
 

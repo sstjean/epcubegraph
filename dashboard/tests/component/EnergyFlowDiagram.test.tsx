@@ -112,6 +112,17 @@ describe('EnergyFlowDiagram', () => {
     expect(texts).toContain('exporting');
   });
 
+  it('shows "idle" label when grid watts is zero', () => {
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ gridWatts: 0 })]} />
+    );
+
+    const texts = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
+    expect(texts).toContain('idle');
+    expect(texts).not.toContain('importing');
+    expect(texts).not.toContain('exporting');
+  });
+
   // Battery direction
   it('shows "charging" label when battery watts is positive', () => {
     const { container } = render(
