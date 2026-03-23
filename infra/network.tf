@@ -27,6 +27,11 @@ resource "azurerm_subnet" "infrastructure" {
   address_prefixes                = ["10.0.0.0/23"]
   default_outbound_access_enabled = false
 
+  # Service endpoint required for Container Apps to mount Azure File Shares
+  # through the storage account firewall (private endpoints alone are insufficient
+  # because the kubelet's SMB mount may not resolve via private DNS zones).
+  service_endpoints = ["Microsoft.Storage"]
+
   delegation {
     name = "container-apps"
     service_delegation {

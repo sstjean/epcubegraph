@@ -30,6 +30,10 @@ resource "azurerm_storage_account" "main" {
     default_action = "Deny"
     bypass         = ["AzureServices"]
     ip_rules       = var.allowed_ips
+
+    # Allow Container Apps infrastructure subnet to mount Azure File Shares.
+    # Required because SMB mounts from kubelet may bypass private DNS resolution.
+    virtual_network_subnet_ids = [azurerm_subnet.infrastructure.id]
   }
 }
 
