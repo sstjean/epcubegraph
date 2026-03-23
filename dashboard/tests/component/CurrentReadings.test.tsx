@@ -14,7 +14,7 @@ vi.mock('../../src/api', () => ({
 vi.mock('../../src/utils/polling', () => ({
   createPollingInterval: vi.fn().mockReturnValue(1),
   clearPollingInterval: vi.fn(),
-  DEFAULT_INTERVAL_MS: 30_000,
+  DEFAULT_INTERVAL_MS: 5_000,
 }));
 
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
