@@ -1,6 +1,6 @@
 # Quickstart: Web Dashboard for Energy Telemetry
 
-**Branch**: `002-web-dashboard` | **Date**: 2026-03-16
+**Branch**: `002-web-dashboard` | **Date**: 2026-03-22
 
 ---
 
@@ -31,6 +31,7 @@ npm install
 | `preact-router` | Client-side routing |
 | `@azure/msal-browser` | Entra ID OAuth 2.0 PKCE auth for SPAs |
 | `uplot` | Canvas-based time-series charting |
+| `@microsoft/applicationinsights-web` | Azure Application Insights client telemetry (FR-020) |
 
 ### Dev Dependencies
 
@@ -61,6 +62,9 @@ VITE_ENTRA_TENANT_ID=<your-entra-tenant-id>
 
 # API scope (matches the API app registration from Feature 001)
 VITE_ENTRA_API_SCOPE=api://<api-app-client-id>/user_impersonation
+
+# Application Insights (optional for local dev — omit to disable telemetry)
+# VITE_APPINSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
 ```
 
 > **Note**: These are not secrets. The client ID and tenant ID are public identifiers. No client secret is needed for SPAs (PKCE flow).
@@ -141,7 +145,7 @@ cd infra
 # Initialize Terraform
 terraform init
 
-# Plan and apply (adds Static Web App + Grafana to existing infra)
+# Plan and apply (adds Static Web App + Application Insights to existing infra)
 terraform plan -var-file=terraform.tfvars
 terraform apply -var-file=terraform.tfvars
 
@@ -174,21 +178,6 @@ swa deploy dist --deployment-token <token>
 
 ---
 
-## 7. Grafana Setup
-
-After infrastructure deployment, Grafana is accessible at:
-```
-https://<environment-name>-grafana.<region>.azurecontainerapps.io
-```
-
-1. Log in with admin credentials (password from Key Vault: `grafana-admin-password`)
-2. The Infinity data source is auto-provisioned (connects to the REST API with OAuth2) — verify at Settings → Data Sources
-3. Create a new dashboard → Add panel → Select "EP Cube Graph API" data source
-4. Set URL to `/query_range?query=epcube_battery_state_of_capacity_percent&start=$__from&end=$__to&step=1m`
-5. Configure the parser to extract `data.result[0].values` as time-series data
-
----
-
 ## Project Structure
 
 ```
@@ -206,12 +195,15 @@ dashboard/
 │   ├── auth.ts              # MSAL configuration + token acquisition
 │   ├── api.ts               # Typed API client (fetch wrapper)
 │   ├── types.ts             # TypeScript interfaces for API responses
+│   ├── telemetry.ts         # Application Insights init + error tracking (FR-020)
 │   ├── vite-env.d.ts        # Vite client type declarations
 │   ├── components/
 │   │   ├── CurrentReadings.tsx
 │   │   ├── HistoricalGraph.tsx
 │   │   ├── HistoryView.tsx
 │   │   ├── DeviceCard.tsx
+│   │   ├── GaugeDial.tsx
+│   │   ├── EnergyFlowDiagram.tsx
 │   │   ├── TimeRangeSelector.tsx
 │   │   └── ErrorBoundary.tsx
 │   └── utils/
@@ -223,13 +215,17 @@ dashboard/
 │   │   ├── auth.test.ts
 │   │   ├── formatting.test.ts
 │   │   ├── main.test.tsx
-│   │   └── polling.test.ts
+│   │   ├── polling.test.ts
+│   │   └── telemetry.test.ts
 │   └── component/
 │       ├── App.test.tsx
 │       ├── CurrentReadings.test.tsx
+│       ├── EnergyFlowDiagram.test.tsx
 │       ├── HistoricalGraph.test.tsx
 │       ├── HistoryView.test.tsx
 │       ├── DeviceCard.test.tsx
+│       ├── GaugeDial.test.tsx
+│       ├── ErrorBoundary.test.tsx
 │       └── TimeRangeSelector.test.tsx
 └── public/
     └── favicon.ico
@@ -246,7 +242,7 @@ dashboard/
 | `preview` | `vite preview` | Preview production build locally |
 | `test` | `vitest run` | Run all tests once |
 | `test:watch` | `vitest` | Run tests in watch mode |
-| `test:coverage` | `vitest run --coverage` | Run tests with 100% coverage enforcement |
+| `typecheck` | `tsc --noEmit` | Type-check without emitting (constitution: Local Type-Checking Parity) |
 
 ---
 

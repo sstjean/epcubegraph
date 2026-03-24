@@ -10,20 +10,20 @@
 
 Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gateways:
 
-1. **Ingestion tier** (Azure Container Apps): epcube-exporter polls EP Cube devices via the cloud API (monitoring-us.epcube.com) and exposes Prometheus metrics; VictoriaMetrics scrapes them directly via `-promscrape.config` within the same Container Apps environment.
-2. **Storage tier** (Azure Container Apps): VictoriaMetrics single-node stores time-series with 5-year retention, handles deduplication natively.
-3. **API tier** (Azure Container Apps): A C# ASP.NET Core Minimal API service queries VictoriaMetrics via PromQL and exposes a versioned REST API authenticated with Entra ID (OAuth 2.0 JWT) and authorized via `user_impersonation` scope. Also exposes grid energy balance via PromQL (`epcube_grid_import_kwh - epcube_grid_export_kwh`). Emits structured JSON logs and exposes a `/metrics` endpoint for self-monitoring via `prometheus-net`.
+1. **Ingestion tier** (Azure Container Apps): epcube-exporter polls EP Cube devices via the cloud API (monitoring-us.epcube.com) and exposes Prometheus metrics; the data store scrapes them directly within the same Container Apps environment.
+2. **Storage tier** (Azure Container Apps): Time-series data store with indefinite retention, handling deduplication natively. *(Currently VictoriaMetrics — migration to Azure SQL Database planned.)*
+3. **API tier** (Azure Container Apps): A C# ASP.NET Core Minimal API service queries the data store and exposes a versioned REST API authenticated with Entra ID (OAuth 2.0 JWT) and authorized via `user_impersonation` scope. Also exposes grid energy balance (import minus export). Emits structured JSON logs and exposes a `/metrics` endpoint for self-monitoring via `prometheus-net`.
 
 ## Technical Context
 
 **Language/Version**: C# / .NET 10
-**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (VictoriaMetrics queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint), Swashbuckle.AspNetCore (Swagger/OpenAPI)
-**Storage**: VictoriaMetrics single-node on Azure Container Apps (promscrape pull ingestion, PromQL queries)
-**Testing**: xUnit, coverlet (coverage), Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory), Testcontainers for .NET (integration tests with VictoriaMetrics)
-**Target Platform**: Azure Container Apps (all services: VictoriaMetrics, epcube-exporter, API)
+**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web (Entra ID JWT validation + scope enforcement), HttpClient (data store queries, built-in), prometheus-net.AspNetCore (Prometheus /metrics endpoint + HTTP metrics), Swashbuckle.AspNetCore (Swagger/OpenAPI)
+**Storage**: Time-series data store on Azure Container Apps *(currently VictoriaMetrics — migration to Azure SQL Database planned)*
+**Testing**: xUnit, coverlet (coverage), Microsoft.AspNetCore.Mvc.Testing (WebApplicationFactory), Testcontainers for .NET (integration tests with data store)
+**Target Platform**: Azure Container Apps (all services: data store, epcube-exporter, API)
 **Project Type**: Web service (API) + cloud-deployed data ingestion
 **Performance Goals**: API queries for 30 days of data return within 2 seconds (SC-003), validated by integration test
-**Constraints**: Single-user system; VictoriaMetrics single-node; 100% test coverage (constitution)
+**Constraints**: Single-user system; single-node data store; 100% test coverage (constitution)
 **Scale/Scope**: 1 user, 2–4 EP Cube devices, ~20 metrics at 1-minute intervals ≈ 28K data points/day
 
 ## Constitution Check
@@ -32,18 +32,18 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 
 | # | Principle | Status | Notes |
 |---|-----------|--------|-------|
-| I | Simplicity | ✅ PASS | Uses epcube-exporter (cloud API poller), VictoriaMetrics (no custom TSDB), ASP.NET Core Minimal API (minimal framework). Everything runs in a single Azure Container Apps environment. |
-| II | YAGNI | ✅ PASS | No speculative abstractions. Single-node VictoriaMetrics, single-user auth, no plugin system, no multi-tenant support. Every component maps to a current FR. |
-| III | TDD | ✅ PASS | xUnit + coverlet enforced at 100%. Acceptance tests via Testcontainers for .NET with real VictoriaMetrics. Red-Green-Refactor mandated. |
+| I | Simplicity | ✅ PASS | Uses epcube-exporter (cloud API poller), single-node data store, ASP.NET Core Minimal API (minimal framework). Everything runs in a single Azure Container Apps environment. |
+| II | YAGNI | ✅ PASS | No speculative abstractions. Single-node data store, single-user auth, no plugin system, no multi-tenant support. Every component maps to a current FR. |
+| III | TDD | ✅ PASS | xUnit + coverlet enforced at 100%. Acceptance tests via Testcontainers for .NET. Red-Green-Refactor mandated. |
 | — | Dev Workflow | ✅ PASS | Feature branch `001-data-ingestor`, atomic commits, CI gate with full test suite. |
-| — | Performance | ✅ PASS | VictoriaMetrics handles time-range queries efficiently (no full scans). API query <2s for 30 days (SC-003). Validated by integration test. |
-| — | Platform: Azure | ✅ PASS | VictoriaMetrics + API on Azure Container Apps. Justified exception: VictoriaMetrics is not Azure-native but spec documents the choice (clarification Q3). |
+| — | Performance | ✅ PASS | Data store handles time-range queries efficiently. API query <2s for 30 days (SC-003). Validated by integration test. |
+| — | Platform: Azure | ✅ PASS | Data store + API on Azure Container Apps. Storage backend migration to Azure SQL Database planned. |
 | — | Platform: Docker | ✅ PASS | All services containerized in Azure Container Apps. Dockerfiles in repo. |
 | — | Security: TLS | ✅ PASS | All endpoints HTTPS. Azure Container Apps provides TLS termination. |
 | — | Security: Auth | ✅ PASS | API: Entra ID OAuth 2.0 JWT (FR-010). Exporter debug page: OAuth authorization code flow with session cookies. Health/metrics endpoints unauthenticated (no telemetry data). |
 | — | Security: Authz | ✅ PASS | `user_impersonation` scope required on all telemetry endpoints (FR-010a). Health and metrics endpoints are unauthenticated but expose no telemetry data. |
-| — | Security: Input Validation | ✅ PASS | FR-019 requires param presence/type validation. PromQL passthrough is unrestricted by design (clarification Q9). |
-| — | Security: Zero-Trust | ⚠ COMPLEXITY | Internal service communication (API→VM queries, promscrape→exporter /metrics) uses no per-request auth. See Complexity Tracking. |
+| — | Security: Input Validation | ✅ PASS | FR-019 requires param presence/type validation. Query passthrough is unrestricted by design (clarification Q9). |
+| — | Security: Zero-Trust | ⚠ COMPLEXITY | Internal service communication (API→data store queries, scraper→exporter /metrics) uses no per-request auth. See Complexity Tracking. |
 | — | Security: Secrets | ✅ PASS | Bearer token in Azure Key Vault, injected as Container Apps secret. No secrets in source. |
 | — | DevOps: IaC | ✅ PASS | All Azure infrastructure defined in Terraform under `infra/`. No manual portal resource creation. |
 | — | DevOps: CI/CD | ✅ PASS | CI gate enforces full test suite before merge. Pipeline deploys on main branch merge. |
@@ -51,13 +51,13 @@ Build a three-tier telemetry ingestion pipeline for EP Cube solar/battery gatewa
 | — | DevOps: Rollback | ✅ PASS | Container Apps uses tagged container images. No `latest` tag in production. Revision-based rollback supported natively. |
 | — | DevOps: Local | ✅ PASS | `infra/deploy.sh` builds and deploys everything. Operator only provides `terraform.tfvars` values (environment name, EP Cube credentials). |
 
-### Complexity Tracking — VictoriaMetrics Exception
+### Complexity Tracking — Storage Backend Exception
 
-The constitution requires Azure-native services. VictoriaMetrics is not Azure-native. This is documented as a justified exception per the spec clarification Q3. Azure Monitor Managed Prometheus was evaluated and rejected because VictoriaMetrics is simpler (single container, no Azure-specific config, direct PromQL support, lower cost for single-user scale).
+The constitution requires Azure-native services. The current storage backend (VictoriaMetrics) is not Azure-native. Migration to Azure SQL Database (serverless) is planned, which will resolve this exception.
 
 ### Complexity Tracking — Internal Service Communication Without Per-Request Auth
 
-The constitution's zero-trust principle requires "internal services MUST NOT trust each other without explicit, per-request credential verification" and "Network location MUST NOT be treated as proof of trust." Two internal communication paths have no per-request authentication: (1) API queries VictoriaMetrics via HTTP over the Container Apps internal network, and (2) VictoriaMetrics promscrape scrapes epcube-exporter's `/metrics` endpoint. This is justified because: (1) VictoriaMetrics is internal-only (no external ingress) — unreachable from the internet; (2) `/metrics` and `/health` endpoints expose only operational counters and process metrics, never telemetry data (FR-021, FR-022); (3) the Container Apps environment provides network isolation at the platform level. Alternative rejected: mTLS between all containers adds certificate lifecycle management complexity disproportionate to the threat model of a single-user system with no multi-tenant data.
+The constitution's zero-trust principle requires "internal services MUST NOT trust each other without explicit, per-request credential verification" and "Network location MUST NOT be treated as proof of trust." Two internal communication paths have no per-request authentication: (1) API queries the data store via HTTP over the Container Apps internal network, and (2) the data store scrapes epcube-exporter's `/metrics` endpoint. This is justified because: (1) the data store is internal-only (no external ingress) — unreachable from the internet; (2) `/metrics` and `/health` endpoints expose only operational counters and process metrics, never telemetry data (FR-021, FR-022); (3) the Container Apps environment provides network isolation at the platform level. Alternative rejected: mTLS between all containers adds certificate lifecycle management complexity disproportionate to the threat model of a single-user system with no multi-tenant data.
 
 ## Project Structure
 
@@ -92,8 +92,8 @@ api/
 │       │   ├── HealthResponse.cs     # Health check record
 │       │   └── ErrorResponse.cs      # Error envelope (Prometheus-compatible)
 │       ├── Services/
-│       │   ├── IVictoriaMetricsClient.cs  # PromQL query interface
-│       │   ├── VictoriaMetricsClient.cs   # HttpClient-based implementation
+       │   ├── IVictoriaMetricsClient.cs  # Data store query interface (name pending rename)
+       │   ├── VictoriaMetricsClient.cs   # HttpClient-based implementation (name pending rename)
 │       │   └── GridCalculator.cs          # Grid energy balance query
 │       ├── Validate.cs              # Input validation helpers (FR-019)
 │       └── Endpoints/
@@ -109,16 +109,16 @@ api/
 │       │   ├── DeviceInfoTests.cs
 │       │   ├── ValidateTests.cs
 │       │   ├── ModelSerializationTests.cs
-│       │   └── VictoriaMetricsClientTests.cs
-│       ├── Integration/
-│       │   ├── ApiIntegrationTests.cs
-│       │   ├── EndpointTests.cs
-│       │   ├── SecurityTests.cs
-│       │   ├── ProgramMiddlewareTests.cs
-│       │   ├── VictoriaMetricsIntegrationTests.cs
-│       │   └── PerformanceTests.cs        # SC-003 latency validation
-│       └── Fixtures/
-│           ├── VictoriaMetricsFixture.cs  # Testcontainers setup
+       │   └── VictoriaMetricsClientTests.cs  # Data store client tests (name pending rename)
+       ├── Integration/
+       │   ├── ApiIntegrationTests.cs
+       │   ├── EndpointTests.cs
+       │   ├── SecurityTests.cs
+       │   ├── ProgramMiddlewareTests.cs
+       │   ├── VictoriaMetricsIntegrationTests.cs  # Data store integration tests (name pending rename)
+       │   └── PerformanceTests.cs        # SC-003 latency validation
+       └── Fixtures/
+           ├── VictoriaMetricsFixture.cs  # Testcontainers setup (name pending rename)
 │           ├── TestWebApplicationFactory.cs
 │           └── MockableTestFactory.cs
 ├── Dockerfile
@@ -131,11 +131,11 @@ local/
 │   ├── exporter.py          # Cloud API poller + Prometheus metrics server
 │   └── test_exporter.py     # Python test suite (49 tests)
 ├── mock-exporter/           # Mock data for local development
-├── docker-compose.local.yml       # Local dev stack (mock data + VictoriaMetrics)
+├── docker-compose.local.yml       # Local dev stack (mock data)
 ├── docker-compose.prod-local.yml  # Local dev stack (real cloud data)
 └── vmagent/
     ├── scrape-local.yml           # Scrape config for local mock-exporter
-    └── scrape-prod-local.yml      # Scrape config for local VictoriaMetrics
+    └── scrape-prod-local.yml      # Scrape config for local data store
 
 # Azure infrastructure (Terraform)
 infra/
@@ -147,7 +147,7 @@ infra/
 ├── keyvault.tf              # Key Vault for EP Cube creds + OAuth client secret
 ├── storage.tf               # Log Analytics + storage account + file share
 ├── network.tf               # VNet, subnets, private endpoints + DNS for KV and Storage
-├── container-apps.tf        # Container Apps (VNet-integrated): VictoriaMetrics, API, exporter
+├── container-apps.tf        # Container Apps (VNet-integrated): data store, API, exporter
 ├── deploy.sh                # Single-command deployment script
 ├── validate-deployment.sh   # Post-deployment resource validation (deploy.sh --validate)
 ├── terraform.tfvars.example # Variable values template
@@ -166,9 +166,9 @@ infra/
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| VictoriaMetrics (non-Azure-native) | Direct Prometheus remote-write compatibility, PromQL, simple single-container deployment | Azure Monitor Managed Prometheus: more complex config, higher cost at single-user scale, less direct PromQL control |
-| Internal service communication without per-request auth (zero-trust) | API→VM and promscrape→exporter use unauthenticated HTTP within Container Apps internal network | mTLS between all containers: adds certificate lifecycle management disproportionate to single-user threat model. Endpoints expose no telemetry data. |
+| Non-Azure-native storage backend (pending migration) | Currently VictoriaMetrics; migration to Azure SQL Database planned | Azure Monitor Managed Prometheus was evaluated and rejected. Azure SQL migration will resolve this exception. |
+| Internal service communication without per-request auth (zero-trust) | API→data store and scraper→exporter use unauthenticated HTTP within Container Apps internal network | mTLS between all containers: adds certificate lifecycle management disproportionate to single-user threat model. Endpoints expose no telemetry data. |
 | VNet + Private Endpoints for KV and Storage | Container Apps must access Key Vault secrets via managed identity through private network; data-plane firewalls stay at Deny. Also required for Storage file share mount. | Passing secrets as direct Terraform values: violates constitution (secrets MUST use Key Vault). Adding Container Apps outbound IPs to firewall: unreliable — Consumption plan IPs are dynamic and shared. |
-| Storage file share access_key (zero-trust: Explicit Verification) | `azurerm_container_app_environment_storage` requires `access_key` — Azure Container Apps has no managed identity option for file share mounts. This is an Azure platform limitation. Private endpoint ensures traffic stays on private network; access_key provides authentication (not identity-based). | No alternative exists: NFS shares also require access_key in Terraform; Azure Disk not supported in Consumption workload profile; ephemeral volumes lose data on restart. Tracked for remediation when Azure adds identity-based file mount support. |
+| Storage file share access_key (zero-trust: Explicit Verification) | `azurerm_container_app_environment_storage` requires `access_key` — Azure Container Apps has no managed identity option for file share mounts. This is an Azure platform limitation. Private endpoint ensures traffic stays on private network; access_key provides authentication (not identity-based). | No alternative exists. Tracked for remediation when Azure adds identity-based file mount support. Will be revisited during Azure SQL migration. |
 | API dev auth bypass (`NoAuthHandler.cs`) | Enables local development without Entra ID configuration (`Authentication:DisableAuth` setting) | Requiring Entra ID for local dev adds friction without security benefit (bypass only activates in Development environment) |
 | Single environment (Environment Parity deferral) | Only one Azure environment exists during 001-data-ingestor. Constitution's Environment Parity (NON-NEGOTIABLE) is trivially satisfied with one environment but requires staging/production parity when multi-environment support is added. | Deferred to Phase 8 / Issue [#12](https://github.com/sstjean/epcubegraph/issues/12). Adding a second environment before the initial feature is complete adds scope without benefit. |

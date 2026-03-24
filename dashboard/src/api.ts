@@ -1,8 +1,8 @@
 import { getAccessToken } from './auth';
 import type {
   DeviceListResponse,
-  InstantQueryResponse,
-  RangeQueryResponse,
+  CurrentReadingsResponse,
+  RangeReadingsResponse,
   DeviceMetricsResponse,
   HealthResponse,
 } from './types';
@@ -42,25 +42,25 @@ export async function fetchDevices(): Promise<DeviceListResponse> {
   return response.json();
 }
 
-export async function fetchInstantQuery(query: string): Promise<InstantQueryResponse> {
-  const params = new URLSearchParams({ query });
-  const response = await authFetch(`${getBaseUrl()}/query?${params}`);
+export async function fetchCurrentReadings(metric: string): Promise<CurrentReadingsResponse> {
+  const params = new URLSearchParams({ metric });
+  const response = await authFetch(`${getBaseUrl()}/readings/current?${params}`);
   return response.json();
 }
 
-export async function fetchRangeQuery(
-  query: string,
+export async function fetchRangeReadings(
+  metric: string,
   start: number,
   end: number,
   step: number,
-): Promise<RangeQueryResponse> {
+): Promise<RangeReadingsResponse> {
   const params = new URLSearchParams({
-    query,
+    metric,
     start: String(start),
     end: String(end),
     step: String(step),
   });
-  const response = await authFetch(`${getBaseUrl()}/query_range?${params}`);
+  const response = await authFetch(`${getBaseUrl()}/readings/range?${params}`);
   return response.json();
 }
 
@@ -68,7 +68,7 @@ export async function fetchGridPower(
   start?: number,
   end?: number,
   step?: number,
-): Promise<RangeQueryResponse> {
+): Promise<RangeReadingsResponse> {
   const params = new URLSearchParams();
   if (start !== undefined) params.set('start', String(start));
   if (end !== undefined) params.set('end', String(end));

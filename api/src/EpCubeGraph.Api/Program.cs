@@ -11,7 +11,7 @@ using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Structured JSON logging (T042)
+// Structured JSON logging
 builder.Logging.AddJsonConsole();
 
 // Authentication & Authorization
@@ -19,18 +19,15 @@ var disableAuth = string.Equals(builder.Configuration["Authentication:DisableAut
     || string.Equals(Environment.GetEnvironmentVariable("EPCUBE_DISABLE_AUTH"), "true", StringComparison.OrdinalIgnoreCase);
 if (builder.Environment.IsDevelopment() && disableAuth)
 {
-    // Local development: skip Entra ID, allow all requests
     builder.Services.AddAuthentication("NoAuth")
         .AddScheme<AuthenticationSchemeOptions, NoAuthHandler>("NoAuth", null);
     builder.Services.AddAuthorization();
 }
 else
 {
-    // Production: Entra ID JWT validation (T006)
     builder.Services
         .AddMicrosoftIdentityWebApiAuthentication(builder.Configuration);
 
-    // Require user_impersonation scope as default policy (T006)
     builder.Services.AddAuthorization(options =>
     {
         options.DefaultPolicy = new AuthorizationPolicyBuilder()
@@ -40,31 +37,27 @@ else
     });
 }
 
-// Service registration (T031)
-builder.Services
-    .AddHttpClient<IVictoriaMetricsClient, VictoriaMetricsClient>(client =>
-    {
-        var url = builder.Configuration["VictoriaMetrics:Url"] ?? "http://localhost:8428";
-        client.BaseAddress = new Uri(url);
-        client.Timeout = TimeSpan.FromSeconds(10);
-    });
+// PostgreSQL data store
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? "Host=localhost;Port=5432;Database=epcubegraph;Username=epcube;Password=epcube_local";
+builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connectionString));
 
-// CORS — allow dashboard SWA origin when configured (FR-019)
+// CORS
 builder.Services.AddCors();
 
-// JSON serialization — camelCase (T009)
+// JSON serialization — camelCase
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 });
 
-// Swagger/OpenAPI (T009)
+// Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Global error handling (T009)
+// Global error handling
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler(appBuilder =>
@@ -83,14 +76,14 @@ if (!app.Environment.IsDevelopment())
     });
 }
 
-// Swagger (development only) (T009)
+// Swagger (development only)
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-// CORS — configure allowed origin after Build() so test config overrides apply (FR-019)
+// CORS
 var allowedOrigin = app.Configuration["Cors:AllowedOrigin"];
 if (!string.IsNullOrEmpty(allowedOrigin))
 {
@@ -104,22 +97,22 @@ if (!string.IsNullOrEmpty(allowedOrigin))
 }
 app.UseCors();
 
-// Prometheus HTTP metrics middleware (T041)
+// Prometheus HTTP metrics middleware (app observability)
 app.UseHttpMetrics();
 
-// Auth middleware (T006)
+// Auth middleware
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Prometheus /metrics endpoint — unauthenticated, outside /api/v1 (T041)
+// Prometheus /metrics endpoint — unauthenticated, outside /api/v1
 app.MapMetrics().AllowAnonymous();
 
-// API v1 route group — authenticated endpoints (T031)
+// API v1 route group — authenticated endpoints
 var v1 = app.MapGroup("/api/v1");
 v1.RequireAuthorization();
 
 v1.MapHealthEndpoints();
-v1.MapQueryEndpoints();
+v1.MapReadingsEndpoints();
 v1.MapDevicesEndpoints();
 v1.MapGridEndpoints();
 

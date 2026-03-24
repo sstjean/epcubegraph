@@ -6,7 +6,7 @@
 
 ## Overview
 
-This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a time-series database that stores data in a Prometheus-compatible format — there are no relational tables or document collections. The "entities" below describe the logical data model mapped to VictoriaMetrics metrics and labels.
+This feature uses a time-series data store. *(Currently VictoriaMetrics — migration to Azure SQL Database planned.)* The data is stored in a Prometheus-compatible format — there are no relational tables or document collections. The "entities" below describe the logical data model mapped to metrics and labels.
 
 ---
 
@@ -14,7 +14,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **What it represents**: An EP Cube device (1.0 or 2.0) as identified by epcube-exporter via the cloud API.
 
-**Storage**: Not stored as a separate record. Device identity is encoded in VictoriaMetrics metric labels, populated automatically by epcube-exporter.
+**Storage**: Not stored as a separate record. Device identity is encoded in metric labels, populated automatically by epcube-exporter.
 
 | Label | Source | Example | Description |
 |-------|--------|---------|-------------|
@@ -85,7 +85,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **What it represents**: Net grid energy consumption, computed at query time by the API.
 
-**Storage**: Computed by the API service at query time using PromQL.
+**Storage**: Computed by the API service at query time.
 
 | Metric / Query | Type | Unit | Description |
 |----------------|------|------|-------------|
@@ -93,7 +93,7 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **Sign convention**: Positive = net import from grid, Negative = net export to grid.
 
-**Implementation**: The API `/grid` endpoint executes this PromQL `query_range` against VictoriaMetrics. Grid import and export are directly available from the EP Cube cloud API — no derivation from solar/battery is needed.
+**Implementation**: The API `/grid` endpoint executes this query against the data store. Grid import and export are directly available from the EP Cube cloud API — no derivation from solar/battery is needed.
 
 ---
 
@@ -114,10 +114,10 @@ This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a t
 
 **What it represents**: A logical grouping — an ordered sequence of Readings for a given device and metric over a time range.
 
-**Not a stored entity**: Time Series is a query concept. VictoriaMetrics returns time series via PromQL `query_range` with a specified `start`, `end`, and `step`.
+**Not a stored entity**: Time Series is a query concept. The data store returns time series via range queries with a specified `start`, `end`, and `step`.
 
-**PromQL query pattern**:
-```promql
+**Query pattern example**:
+```
 epcube_battery_state_of_capacity_percent{device="epcube_battery"}[24h:1m]
 ```
 
@@ -136,7 +136,7 @@ Device (labels)
   └── Grid Net (computed at query time: import - export)
 ```
 
-All relationships are implicit via shared `device` label. There are no foreign keys or joins — VictoriaMetrics uses label matching.
+All relationships are implicit via shared `device` label. There are no foreign keys or joins — the data store uses label matching.
 
 ---
 
@@ -154,10 +154,10 @@ Offline ──scrape success──▶ Online (scrape_success=1)
 
 ## Deduplication
 
-VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If promscrape retries a scrape or overlapping scrape windows produce duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
+The data store handles deduplication natively. If overlapping scrape windows produce duplicate data points (same metric, same timestamp, same value), only one copy is kept.
 
 ---
 
 ## Retention
 
-VictoriaMetrics is configured with `-retentionPeriod=5y`. Data older than 5 years is automatically purged during background compaction. No application-level retention logic is needed.
+Data retention is indefinite. All ingested data is retained permanently. No application-level retention or purge logic is needed.

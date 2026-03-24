@@ -25,4 +25,27 @@ public record ErrorResponse(
 
 public record HealthResponse(
     [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("victoriametrics")] string VictoriaMetrics);
+    [property: JsonPropertyName("datastore")] string Datastore);
+
+// New clean response types — no Prometheus JSON shape
+
+public record Reading(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("timestamp")] long Timestamp,
+    [property: JsonPropertyName("value")] double Value);
+
+public record CurrentReadingsResponse(
+    [property: JsonPropertyName("metric")] string Metric,
+    [property: JsonPropertyName("readings")] IReadOnlyList<Reading> Readings);
+
+public record TimeSeriesPoint(
+    [property: JsonPropertyName("timestamp")] long Timestamp,
+    [property: JsonPropertyName("value")] double Value);
+
+public record TimeSeries(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("values")] IReadOnlyList<TimeSeriesPoint> Values);
+
+public record RangeReadingsResponse(
+    [property: JsonPropertyName("metric")] string Metric,
+    [property: JsonPropertyName("series")] IReadOnlyList<TimeSeries> Series);

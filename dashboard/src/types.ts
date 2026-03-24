@@ -15,30 +15,30 @@ export interface DeviceListResponse {
   devices: Device[];
 }
 
-export interface InstantQueryResponse {
-  status: 'success' | 'error';
-  data: {
-    resultType: 'vector';
-    result: Array<{
-      metric: Record<string, string>;
-      value: [number, string];
-    }>;
-  };
-  errorType?: string;
-  error?: string;
+export interface Reading {
+  device_id: string;
+  timestamp: number;
+  value: number;
 }
 
-export interface RangeQueryResponse {
-  status: 'success' | 'error';
-  data: {
-    resultType: 'matrix';
-    result: Array<{
-      metric: Record<string, string>;
-      values: Array<[number, string]>;
-    }>;
-  };
-  errorType?: string;
-  error?: string;
+export interface CurrentReadingsResponse {
+  metric: string;
+  readings: Reading[];
+}
+
+export interface TimeSeriesPoint {
+  timestamp: number;
+  value: number;
+}
+
+export interface TimeSeries {
+  device_id: string;
+  values: TimeSeriesPoint[];
+}
+
+export interface RangeReadingsResponse {
+  metric: string;
+  series: TimeSeries[];
 }
 
 export interface DeviceMetricsResponse {
@@ -48,7 +48,7 @@ export interface DeviceMetricsResponse {
 
 export interface HealthResponse {
   status: 'healthy' | 'unhealthy';
-  victoriametrics: 'reachable' | 'unreachable';
+  datastore: 'reachable' | 'unreachable';
 }
 
 export interface ErrorResponse {

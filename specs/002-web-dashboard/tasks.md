@@ -7,14 +7,14 @@
 
 **Organization**: Tasks grouped by user story for independent implementation and testing.
 
-**GitHub Issues**: #33 (U2-1, US1 P1), #34 (U2-2, US2 P2), #35 (U2-3, US3 P3)
+**GitHub Issues**: #33 (US1 P1), #34 (US2 P2)
 
-**Regenerated**: 2026-03-19 — from updated plan.md. Incorporates FR-015 (basic accessibility: semantic HTML, ARIA labels, keyboard navigation, color contrast). All prior spec fixes retained: corrected metric names (epcube_*), no ip field, grid sign convention (positive=import, negative=export), FR-014 graceful auth, FR-013 tiered downsampling with 30d fixed step, Grafana Infinity plugin.
+**Regenerated**: 2025-06-22 — full regeneration. Removes Grafana (FR-009 descoped, #35 closed), adds FR-020 (Application Insights), fixes calendar month step (no longer constrained by VictoriaMetrics), renames HealthResponse field to `datastore`.
 
 ## Format: `[ID] [P?] [Story?] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies on incomplete tasks)
-- **[Story]**: Which user story (US1, US2, US3) this task belongs to
+- **[Story]**: Which user story (US1, US2) this task belongs to
 - Exact file paths included in all descriptions
 
 ---
@@ -24,7 +24,7 @@
 **Purpose**: Project initialization, directory structure, build tooling
 
 - [x] T001 Create dashboard/ directory structure per plan.md: dashboard/{src/{components,utils},tests/{unit,component},public}, create public/favicon.ico placeholder
-- [x] T002 Initialize dashboard/package.json with runtime deps (preact, preact-router, @azure/msal-browser, uplot) and dev deps (vite, typescript, @preact/preset-vite, vitest, happy-dom, @testing-library/preact, @testing-library/jest-dom, @testing-library/user-event, @vitest/coverage-v8), include browserslist targeting Chrome/Firefox/Safari/Edge current + previous major version (FR-001, SC-006), run npm install
+- [x] T002 Initialize dashboard/package.json with runtime deps (preact, preact-router, @azure/msal-browser, uplot, @microsoft/applicationinsights-web) and dev deps (vite, typescript, @preact/preset-vite, vitest, happy-dom, @testing-library/preact, @testing-library/jest-dom, @testing-library/user-event, @vitest/coverage-v8), include browserslist targeting Chrome/Firefox/Safari/Edge current + previous major version (FR-001, SC-006), run npm install
 - [x] T003 [P] Create dashboard/tsconfig.json with strict mode, ES2022 target, jsxImportSource: "preact", module: "ESNext", moduleResolution: "bundler", paths aliases
 - [x] T004 [P] Create dashboard/vite.config.ts (Preact plugin via @preact/preset-vite) and dashboard/vitest.config.ts (happy-dom environment, 100% coverage thresholds for branches/functions/lines/statements, test include paths)
 
@@ -34,31 +34,31 @@
 
 **Purpose**: Core modules that MUST be complete before ANY user story — types, auth, API client, utilities
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+**CRITICAL**: No user story work can begin until this phase is complete
 
 ### Tests for Foundational (TDD — write tests FIRST, confirm they FAIL)
 
 - [x] T005 [P] Write auth unit tests in dashboard/tests/unit/auth.test.ts: MSAL PublicClientApplication init, acquireTokenSilent success path, loginRedirect fallback on InteractionRequiredAuthError, getAccessToken returns bearer token string, handles interaction_required error, logout clears session, loginRedirect preserves current route/view state via state parameter (FR-014), re-auth redirect on token expiry mid-session restores previous view
-- [x] T006 [P] Write API client unit tests in dashboard/tests/unit/api.test.ts: fetchDevices returns DeviceListResponse, fetchInstantQuery attaches bearer token, fetchRangeQuery sends correct start/end/step params, fetchGridPower calls grid endpoint, fetchDeviceMetrics returns metric list, fetchHealth returns health status, error response parsing (400/401/403/404/422/503), 401 triggers re-auth flow (FR-014), base URL from VITE_API_BASE_URL env var
-- [x] T007 [P] Write formatting unit tests in dashboard/tests/unit/formatting.test.ts: formatWatts auto-scales W/kW/MW with 1 decimal, formatPercent 0-100 with % suffix, formatKwh formats kWh with 1 decimal and "—" for NaN/null, formatTimestamp locale-aware date/time from epoch, formatRelativeTime "5m ago"/"2h ago" strings, edge cases: NaN returns "—", null returns "—", negative watts handled correctly
+- [x] T006 [P] Write API client unit tests in dashboard/tests/unit/api.test.ts: fetchDevices returns DeviceListResponse, fetchInstantQuery attaches bearer token, fetchRangeQuery sends correct start/end/step params, fetchGridPower calls grid endpoint, fetchDeviceMetrics returns metric list, fetchHealth returns health status (datastore field), error response parsing (400/401/403/404/422/503), 401 triggers re-auth flow (FR-014), base URL from VITE_API_BASE_URL env var
+- [x] T007 [P] Write formatting unit tests in dashboard/tests/unit/formatting.test.ts: formatWatts auto-scales W/kW/MW with 1 decimal, formatPercent 0-100 with % suffix, formatKwh formats kWh with 1 decimal and dash for NaN/null, formatTimestamp locale-aware date/time from epoch, formatRelativeTime "5m ago"/"2h ago" strings, edge cases: NaN returns dash, null returns dash, negative watts handled correctly
 - [x] T008 [P] Write polling unit tests in dashboard/tests/unit/polling.test.ts: createPollingInterval starts timer at 30000ms default (FR-012), callback executes at interval, clearPollingInterval stops timer, immediate first-call option, cleanup on unmount, DEFAULT_INTERVAL_MS equals 30000
 
 ### Implementation for Foundational
 
-- [x] T009 [P] Create TypeScript interfaces in dashboard/src/types.ts: Device (device, class, alias?, manufacturer?, product_code?, uid?, online — no ip field), DeviceListResponse, InstantQueryResponse, RangeQueryResponse, DeviceMetricsResponse, HealthResponse, ErrorResponse (all per data-model.md), TimeRange type ('today' | '7d' | '30d' | '1y' | 'custom'), TimeRangeValue interface {start: number, end: number, step: number}, AppState interface
-- [x] T010 [P] Create dashboard/staticwebapp.config.json per contracts/dashboard-config.md: navigationFallback rewrite to /index.html (exclude /assets/*, /*.ico, /*.png, /*.svg), 404 override to /index.html, security headers (X-Content-Type-Options: nosniff, X-Frame-Options: DENY, Referrer-Policy: strict-origin-when-cross-origin, Content-Security-Policy allowing connect-src to login.microsoftonline.com and *.azurecontainerapps.io)
-- [x] T011 [P] Create dashboard/index.html SPA entry point: semantic HTML5 with lang attribute, <main> landmark wrapping #app mount div, Vite module script tag pointing to /src/main.tsx (FR-015)
-- [x] T012 Create dashboard/src/vite-env.d.ts with Vite client type declarations for import.meta.env (VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE)
-- [x] T013 Implement dashboard/src/auth.ts: MSAL PublicClientApplication config from VITE_ENTRA_CLIENT_ID and VITE_ENTRA_TENANT_ID env vars, acquireTokenSilent with InteractionRequiredAuthError fallback to loginRedirect, loginRedirect passes current route + view state as state parameter to restore on return (FR-014), getAccessToken helper returning bearer token string, logout function, isAuthenticated check
-- [x] T014 Implement dashboard/src/api.ts: typed fetch wrapper using auth.getAccessToken() for Authorization header, base URL from VITE_API_BASE_URL env var, functions: fetchDevices() → DeviceListResponse, fetchInstantQuery(query) → InstantQueryResponse, fetchRangeQuery(query, start, end, step) → RangeQueryResponse, fetchGridPower(start?, end?, step?) → RangeQueryResponse, fetchDeviceMetrics(device) → DeviceMetricsResponse, fetchHealth() → HealthResponse, error handling: parse ErrorResponse, 401 status triggers re-auth via auth.ts (FR-014)
-- [x] T015 [P] Implement dashboard/src/utils/formatting.ts: formatWatts(watts: number) → string (auto-scale W/kW/MW with 1 decimal), formatPercent(value: number) → string, formatKwh(kwh: number) → string (kWh with 1 decimal, "—" for NaN/null), formatTimestamp(epoch: number) → string (locale-aware), formatRelativeTime(epoch: number) → string ("5m ago"), null/NaN guards returning "—"
-- [x] T016 [P] Implement dashboard/src/utils/polling.ts: createPollingInterval(callback, intervalMs, immediate?) → IntervalId, clearPollingInterval(id) cleanup, DEFAULT_INTERVAL_MS = 30_000 (30s per FR-012, half of 1-minute collection interval)
+- [x] T009 [P] Create TypeScript interfaces in dashboard/src/types.ts: Device, DeviceListResponse, InstantQueryResponse, RangeQueryResponse, DeviceMetricsResponse, HealthResponse (status + datastore fields), ErrorResponse (all per data-model.md), TimeRange type, TimeRangeValue interface, AppState interface
+- [x] T010 [P] Create dashboard/staticwebapp.config.json per contracts/dashboard-config.md: navigationFallback, security headers (CSP allowing connect-src to login.microsoftonline.com, *.azurecontainerapps.io, *.applicationinsights.azure.com, *.monitor.azure.com)
+- [x] T011 [P] Create dashboard/index.html SPA entry point: semantic HTML5 with lang attribute, main landmark wrapping #app mount div (FR-015)
+- [x] T012 Create dashboard/src/vite-env.d.ts with Vite client type declarations for import.meta.env (VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE, VITE_APPINSIGHTS_CONNECTION_STRING)
+- [x] T013 Implement dashboard/src/auth.ts: MSAL PublicClientApplication config, acquireTokenSilent with InteractionRequiredAuthError fallback to loginRedirect, loginRedirect passes current route + view state as state parameter (FR-014), getAccessToken helper, logout, isAuthenticated check
+- [x] T014 Implement dashboard/src/api.ts: typed fetch wrapper using auth.getAccessToken() for Authorization header, base URL from VITE_API_BASE_URL, functions: fetchDevices, fetchInstantQuery, fetchRangeQuery, fetchGridPower, fetchDeviceMetrics, fetchHealth, error handling with 401 re-auth (FR-014)
+- [x] T015 [P] Implement dashboard/src/utils/formatting.ts: formatWatts, formatPercent, formatKwh, formatTimestamp, formatRelativeTime with null/NaN guards
+- [x] T016 [P] Implement dashboard/src/utils/polling.ts: createPollingInterval, clearPollingInterval, DEFAULT_INTERVAL_MS = 30_000 (FR-012)
 
 **Checkpoint**: Foundation ready — types defined, auth works with graceful failure handling (FR-014), API client fetches data and handles 401 re-auth, utilities format output. All foundational tests pass.
 
 ---
 
-## Phase 3: User Story 1 — View Current Energy Readings (Priority: P1, #33) 🎯 MVP
+## Phase 3: User Story 1 — View Current Energy Readings (Priority: P1, #33) MVP
 
 **Goal**: Display real-time solar generation, battery charge/discharge, home load consumption, and grid import/export for all connected devices with online/offline indicators and 30-second auto-refresh
 
@@ -68,46 +68,41 @@
 
 ### Tests for User Story 1 (TDD — write tests FIRST, confirm they FAIL)
 
-- [x] T017 [P] [US1] Write ErrorBoundary component tests in dashboard/tests/component/ErrorBoundary.test.tsx: renders children when no error, shows error message + "Retry" button on catch, shows "API unreachable" banner with role="alert" when isApiReachable=false, retry button calls onRetry callback and is keyboard-focusable, handles connectivity errors gracefully
-- [x] T018 [P] [US1] Write DeviceCard component tests in dashboard/tests/component/DeviceCard.test.tsx: renders as <article> with aria-label including device name (FR-015), shows online badge with aria-label "Online"/"Offline" (FR-015), renders 5 GaugeDial components: Solar (0–12kW), Battery SOC (0–100%), Battery Power (±20kW bidirectional), Home Load (0–10kW), Grid (±20kW bidirectional with Import/Export label), verifies formatted display values via formatWatts/formatPercent, sufficient color contrast on online/offline badge (green #16a34a on white, red #dc2626 on white — both ≥4.5:1 per FR-015)
-- [x] T019 [P] [US1] Write CurrentReadings component tests in dashboard/tests/component/CurrentReadings.test.tsx: renders as <section> with heading (FR-015), renders loading state with aria-busy="true" initially, fetches devices and instant queries on mount, renders DeviceCard for each device, shows error state when API fails, triggers polling refresh every 30 seconds via createPollingInterval, shows ErrorBoundary when API unreachable, updates readings on poll without full re-render
-- [x] T020 [P] [US1] Write App component tests in dashboard/tests/component/App.test.tsx: renders <nav> landmark with navigation links (FR-015), route "/" renders CurrentReadings, route "/history" renders HistoryView, navigation links are keyboard-navigable (FR-015), wraps content in ErrorBoundary
-- [x] T021 [P] [US1] Write main.test.tsx unit test in dashboard/tests/unit/main.test.tsx: verifies MSAL initialization, verifies unauthenticated user redirected to login, verifies authenticated user sees app
+- [x] T017 [P] [US1] Write ErrorBoundary component tests in dashboard/tests/component/ErrorBoundary.test.tsx: renders children when no error, shows error message + "Retry" button on catch, shows "API unreachable" banner with role="alert" when isApiReachable=false, retry button calls onRetry callback and is keyboard-focusable
+- [x] T018 [P] [US1] Write DeviceCard component tests in dashboard/tests/component/DeviceCard.test.tsx: renders as article with aria-label (FR-015), shows online/offline badge, renders 5 GaugeDial components (Solar, Battery SOC, Battery Power, Home Load, Grid), formatted values, color contrast verification (FR-015)
+- [x] T019 [P] [US1] Write CurrentReadings component tests in dashboard/tests/component/CurrentReadings.test.tsx: renders as section with heading (FR-015), loading skeleton with aria-busy, fetches devices and instant queries on mount, renders DeviceCard per device group, error state on API failure, polls every 30s (FR-012)
+- [x] T020 [P] [US1] Write App component tests in dashboard/tests/component/App.test.tsx: renders nav with links (FR-015), route "/" renders CurrentReadings, route "/history" renders HistoryView, keyboard-navigable (FR-015)
+- [x] T021 [P] [US1] Write main.test.tsx unit test in dashboard/tests/unit/main.test.tsx: MSAL initialization, unauthenticated user redirected to login, authenticated user sees app
 
 ### Implementation for User Story 1
 
-- [x] T022 [P] [US1] Implement ErrorBoundary component in dashboard/src/components/ErrorBoundary.tsx: Preact class component with componentDidCatch, renders error message + "Retry" button (keyboard-focusable), accepts isApiReachable prop to show connectivity banner with role="alert" (FR-015), onRetry callback prop
-- [x] T023 [P] [US1] Implement DeviceCard component in dashboard/src/components/DeviceCard.tsx: renders as <article> with aria-label (FR-015), accepts name + online + DeviceCardMetrics props, renders device name, online/offline badge with aria-label (green #16a34a / red #dc2626 — ≥4.5:1 contrast per FR-015), gauge grid with 5 GaugeDial components: Solar (0–12kW, formatWatts), Battery SOC (0–100%, formatPercent), Battery Power (±20kW bidirectional, charging/discharging label), Home Load (0–10kW, formatWatts), Grid (±20kW bidirectional, Import/Export label per sign convention). Also implements GaugeDial SVG arc gauge component in dashboard/src/components/GaugeDial.tsx and app.css for layout
-- [x] T024 [US1] Implement CurrentReadings component in dashboard/src/components/CurrentReadings.tsx: renders as <section> with <h2> heading (FR-015), fetches device list via fetchDevices(), issues 6 instant queries for epcube_battery_state_of_capacity_percent, epcube_battery_power_watts, epcube_solar_instantaneous_generation_watts, epcube_grid_power_watts, epcube_home_load_power_watts, epcube_battery_stored_kwh, groups battery+solar devices by alias into DeviceGroups (see plan.md Design Decisions), renders DeviceCard per group, sets up polling via createPollingInterval (30s default per FR-012), shows loading skeleton with aria-busy="true" on initial fetch (FR-015), wraps in ErrorBoundary, displays lastRefreshed timestamp via formatRelativeTime
-- [x] T025 [US1] Create dashboard/src/main.tsx entry point: initialize MSAL via auth.ts, check authentication (redirect to login if not authenticated), restore view state from MSAL redirect state parameter (FR-014), mount Preact app to #app div
-- [x] T026 [US1] Create dashboard/src/App.tsx: <nav> landmark with links "Current" (/) and "History" (/history) (FR-015), preact-router mapping "/" to CurrentReadings and "/history" to HistoryView, wrap in ErrorBoundary
+- [x] T022 [P] [US1] Implement ErrorBoundary component in dashboard/src/components/ErrorBoundary.tsx: componentDidCatch, error message + "Retry" button (keyboard-focusable), isApiReachable prop with role="alert" banner (FR-015)
+- [x] T023 [P] [US1] Implement GaugeDial component in dashboard/src/components/GaugeDial.tsx and DeviceCard component in dashboard/src/components/DeviceCard.tsx: article with aria-label (FR-015), 5 gauge dials (Solar 0-12kW, SOC 0-100%, Battery Power +/-20kW bidirectional, Home Load 0-10kW, Grid +/-20kW bidirectional), CSS in dashboard/src/app.css
+- [x] T024 [US1] Implement CurrentReadings component in dashboard/src/components/CurrentReadings.tsx: fetches device list + 6 instant queries per poll cycle, groups battery+solar devices by alias, renders DeviceCard per group, polling via createPollingInterval (30s), loading skeleton, ErrorBoundary, lastRefreshed timestamp
+- [x] T025 [US1] Create dashboard/src/main.tsx entry point: MSAL init, auth check, restore view state from MSAL redirect (FR-014), mount Preact app
+- [x] T026 [US1] Create dashboard/src/App.tsx: nav with "Current" (/) and "History" (/history) links (FR-015), preact-router, ErrorBoundary wrapper
 
-**Checkpoint**: Dashboard loads in browser, authenticates via MSAL, shows current device readings with correct metric names (epcube_*), online/offline status, auto-refreshes every 30 seconds. Auth failures redirect gracefully preserving view state. Semantic HTML and keyboard navigation throughout (FR-015). User Story 1 is independently functional and testable.
+### Energy Flow Diagram and Responsive Layout (FR-017, FR-018)
 
-### Energy Flow Diagram & Responsive Layout (FR-017, FR-018)
+- [x] T024a [P] [US1] Write EnergyFlowDiagram component tests in dashboard/tests/component/EnergyFlowDiagram.test.tsx: SVG flow nodes, line activation at >10W threshold, direction indicators, SOC ring, battery state labels, device name and online badges
+- [x] T024b [P] [US1] Write CurrentReadings view toggle tests in dashboard/tests/component/CurrentReadings.test.tsx: default view is flow, radiogroup toggle, Flow/Gauges switch
+- [x] T024c [US1] Implement EnergyFlowDiagram component in dashboard/src/components/EnergyFlowDiagram.tsx: per-device SVG flow diagram, animated dashed lines, directional dots, SOC ring, 10W activation threshold (FR-017)
+- [x] T024d [US1] Add view toggle to CurrentReadings: flow or gauges state (default flow), radiogroup, conditional rendering (FR-017)
+- [x] T024e [P] [US1] Add responsive CSS to dashboard/src/app.css: flow diagram layout, animations, view toggle styles, breakpoints (FR-018)
+- [x] T024f [P] Fix mock exporter missing metrics in local/mock-exporter/metrics_server.py: add epcube_battery_power_watts, epcube_grid_power_watts, epcube_battery_stored_kwh, epcube_battery_peak_stored_kwh
 
-> Tasks T024a–T024f below were added after initial plan generation to implement FR-017 and FR-018.
+### Deployment Infrastructure (US1 — dashboard must be deployed for US1 to be complete)
 
-- [x] T024a [P] [US1] Write EnergyFlowDiagram component tests in dashboard/tests/component/EnergyFlowDiagram.test.tsx: renders one article per device group, device name and online/offline badges, SVG structure with flow lines for Solar→Gateway, Grid↔Gateway, Gateway↔Battery, Gateway→Home, flow line activation when power > 10W threshold, inactive lines dimmed, grid importing/exporting labels based on sign convention, battery charging/discharging states, SOC ring arc rendering, power labels on active lines via formatWatts, flow-reverse class for bidirectional lines, empty groups, SOC clamping 0–100%
-- [x] T024b [P] [US1] Write CurrentReadings view toggle tests in dashboard/tests/component/CurrentReadings.test.tsx: default view is flow diagram, toggle radiogroup with Flow/Gauges buttons, clicking Gauges switches to DeviceCard gauge grid, clicking Flow switches back, aria role="radiogroup", no flow diagram rendered when groups are empty
-- [x] T024c [US1] Implement EnergyFlowDiagram component in dashboard/src/components/EnergyFlowDiagram.tsx: per-device SVG flow diagram (380×380 viewBox), node positions — Solar (top), Grid (left), Gateway/EP Cube (center), Battery (right), Home (bottom), FlowLine sub-component with animated dashed lines (CSS animation), directional dots (SVG animateMotion), perpendicular power labels, 10W activation threshold, battery SOC ring (describeArc helper), charge/discharge icon, importing/exporting sublabels, inline SVG icons per node (FR-017)
-- [x] T024d [US1] Add view toggle to CurrentReadings component: 'flow' | 'gauges' state (default 'flow'), radiogroup with two toggle buttons, conditionally renders EnergyFlowDiagram (flow view) or DeviceCard grid (gauges view) (FR-017)
-- [x] T024e [P] [US1] Add responsive CSS to dashboard/src/app.css: energy-flow-diagram container, energy-flow-svg responsive scaling, flow node labels/values/sublabels, flow line label styling, flow-line/flow-reverse CSS animations (dash-offset keyframes), flow-dot styling, view-toggle button styles with active state, increase main max-width to 1200px, device-cards grid minmax adjustment, responsive breakpoint at 480px (FR-018)
-- [x] T024f [P] Fix mock exporter missing metrics in local/mock-exporter/metrics_server.py: add epcube_battery_power_watts (derived from energy balance), epcube_grid_power_watts (instantaneous), epcube_battery_stored_kwh (derived from SOC × capacity), epcube_battery_peak_stored_kwh to match real exporter output
-
-### Deployment Infrastructure (moved from Phase 5/6 into US1 — dashboard must be deployed for US1 to be complete)
-
-> Tasks below were originally in Phase 5 (US3) and Phase 6 (Polish). Moved into US1 scope because "View Current Energy Readings **in a Browser**" requires the dashboard to be deployed, not just built locally. Grafana-only tasks (T035–T037) remain in Phase 5 under US3.
-
-- [x] T033 [P] [US1] Add dashboard Entra ID app registration in infra/entra.tf: azuread_application.dashboard (public client, sign_in_audience="AzureADMyOrg", single_page_application redirect URIs from SWA default hostname + localhost:5173, required_resource_access for user_impersonation scope on API app), azuread_service_principal.dashboard
-- [x] T034 [P] [US1] Create Azure Static Web Apps resource (Free tier, sku_tier="Free", sku_size="Free") in infra/static-web-app.tf
+- [x] T033 [P] [US1] Add dashboard Entra ID app registration in infra/entra.tf: azuread_application.dashboard (public client, SPA redirect URIs)
+- [x] T034 [P] [US1] Create Azure Static Web Apps resource (Free tier) in infra/static-web-app.tf
 - [x] T038a [P] [US1] Add SWA Terraform outputs in infra/outputs.tf: swa_default_hostname, swa_api_key (sensitive), dashboard_client_id
-- [x] T039 [P] [US1] Create dashboard/.env.example with VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE, VITE_DISABLE_AUTH placeholder values
-- [x] T040a [US1] Run terraform validate and terraform fmt -check to verify SWA + Entra infrastructure changes compile and are formatted correctly
-- [x] T041 [P] [US1] Add dashboard job to .github/workflows/ci.yml: trigger on paths dashboard/**, steps: checkout, setup Node.js 22, npm ci, npm run test:coverage (fail if <100%), npm run build
-- [x] T042 [P] [US1] Add SWA deployment step to .github/workflows/cd.yml: Phase 4 in both staging and production — get SWA deployment token from Terraform output, setup Node.js 22, npm ci + npm run build with Vite env vars (API URL, Entra client/tenant IDs, API scope), deploy via Azure/static-web-apps-deploy@v1. Add SWA smoke test: curl SWA URL and verify HTML contains `<div id="app">`
+- [x] T039 [P] [US1] Create dashboard/.env.example with VITE_API_BASE_URL, VITE_ENTRA_CLIENT_ID, VITE_ENTRA_TENANT_ID, VITE_ENTRA_API_SCOPE, VITE_DISABLE_AUTH, VITE_APPINSIGHTS_CONNECTION_STRING placeholder values
+- [x] T040a [US1] Run terraform validate and terraform fmt -check to verify SWA + Entra infrastructure changes
+- [x] T041 [P] [US1] Add dashboard job to .github/workflows/ci.yml: checkout, setup Node.js 22, npm ci, npm run typecheck, npm run test:coverage (fail if <100%), npm run build
+- [x] T042 [P] [US1] Add SWA deployment step to .github/workflows/cd.yml: build with Vite env vars, deploy via Azure/static-web-apps-deploy@v1, SWA smoke test
+- [x] T043a [US1] Bug fix (#44): Add CORS to API — AddCors(), Cors:AllowedOrigin config, Cors__AllowedOrigin env var in container-apps.tf, CORS integration tests (FR-019)
 
-**Checkpoint**: Dashboard SPA deployed to Azure Static Web Apps via CI/CD. Entra ID app registration enables MSAL PKCE auth. SWA serves the Preact SPA. Smoke tests verify deployment. User Story 1 is complete — current readings viewable in a browser at the deployed URL.
+**Checkpoint**: Dashboard SPA deployed to Azure Static Web Apps via CI/CD. Entra ID auth + CORS working. User Story 1 is complete — current readings viewable in a browser.
 
 ---
 
@@ -115,63 +110,59 @@
 
 **Goal**: Interactive time-series charts via uPlot with selectable ranges (today, 7d, 30d, 1y, custom), tiered data resolution (FR-013), broken line gap visualization (FR-008), aggregation notice when downsampled, within 2-second performance target
 
-**Independent Test**: With historical data available, select each predefined time range and verify graph renders with accurate data points within 2 seconds. Verify tiered step values (today→60s, 7d→3600s, 30d→86400s, 1y→2592000s). Verify custom date range auto-selects tier. Verify aggregation notice shown when downsampled. Verify empty range shows "no data" message. Verify data gaps render as broken lines.
+**Independent Test**: With historical data available, select each predefined time range and verify graph renders with accurate data points within 2 seconds. Verify tiered step values (today=60s, 7d=3600s, 30d=86400s, 1y=calendar month). Verify custom date range auto-selects tier. Verify aggregation notice shown when downsampled. Verify empty range shows "no data" message. Verify data gaps render as broken lines.
 
 **FRs covered**: FR-004, FR-005, FR-007, FR-008, FR-013, FR-015
 
 ### Tests for User Story 2 (TDD — write tests FIRST, confirm they FAIL)
 
-- [ ] T027 [P] [US2] Write TimeRangeSelector component tests in dashboard/tests/component/TimeRangeSelector.test.tsx: renders today/7d/30d/1y/custom preset buttons with aria-pressed on active (FR-015), keyboard Tab navigates between presets (FR-015), emits onChange with correct start/end timestamps and tiered step (today→60s, 7d→3600s, 30d→86400s, 1y→2592000s), shows custom date inputs with <label> elements when "custom" selected (FR-015), validates custom range (start < end), custom range auto-selects tier by duration (≤1d→60s, ≤7d→3600s, ≤30d→86400s, >30d→2592000s), hides custom inputs for preset selections
+- [ ] T027 [P] [US2] Write TimeRangeSelector component tests in dashboard/tests/component/TimeRangeSelector.test.tsx: renders today/7d/30d/1y/custom preset buttons with aria-pressed on active (FR-015), keyboard Tab navigates between presets (FR-015), emits onChange with correct start/end timestamps and tiered step (today=60s, 7d=3600s, 30d=86400s, 1y=calendar month), shows custom date inputs with label elements when "custom" selected (FR-015), validates custom range (start < end), custom range auto-selects tier by duration (1d or less=60s, 7d or less=3600s, 30d or less=86400s, over 30d=calendar month), hides custom inputs for preset selections
 - [ ] T028 [P] [US2] Write HistoricalGraph component tests in dashboard/tests/component/HistoricalGraph.test.tsx: converts RangeQueryResponse to uPlot.AlignedData format, renders uPlot canvas with accessible description via aria-label (FR-015), shows "No data available for this time range" for empty result (FR-007), handles data gaps with null values (not NaN) for broken line rendering (FR-008), mergeTimeSeries produces null for missing timestamps, renders multiple series (solar, battery, grid) with correct labels and colors, displays aggregation notice with role="status" when step > 60s ("Data shown at hourly/daily/monthly resolution" per FR-013), no aggregation notice when step=60s (daily view)
-- [ ] T029 [P] [US2] Write HistoryView component tests in dashboard/tests/component/HistoryView.test.tsx: expand existing stub test (section + heading already tested from Phase 3 routing) — add tests for: renders TimeRangeSelector and HistoricalGraph, passes TimeRangeValue (start, end, step) from selector to graph, defaults to "today" preset on mount, updates graph when time range changes
+- [ ] T029 [P] [US2] Write HistoryView component tests in dashboard/tests/component/HistoryView.test.tsx: renders TimeRangeSelector and HistoricalGraph, passes TimeRangeValue from selector to graph, defaults to "today" preset on mount, updates graph when time range changes
 
 ### Implementation for User Story 2
 
-- [ ] T030 [P] [US2] Implement TimeRangeSelector component in dashboard/src/components/TimeRangeSelector.tsx: buttons for today/7d/30d/1y/custom presets with aria-pressed on active (FR-015), keyboard-navigable (FR-015), calculates start/end timestamps for each preset (today=start of day local, 7d/30d/1y=now minus duration), custom shows date input fields with <label> (FR-015, unrestricted range), tiered step calculation per FR-013: today→60s, 7d→3600s, 30d→86400s, 1y→2592000s (30d fixed step for VM compatibility), custom auto-tiers by duration (≤1d→60s, ≤7d→3600s, ≤30d→86400s, >30d→2592000s), emits TimeRangeValue via onChange prop
-- [ ] T031 [US2] Implement HistoricalGraph component in dashboard/src/components/HistoricalGraph.tsx: accepts TimeRangeValue props, fetches range queries for epcube_solar_instantaneous_generation_watts, epcube_battery_power_watts, epcube_grid_power_watts via fetchRangeQuery + fetchGridPower with correct step, converts responses to uPlot.AlignedData (timestamps + value arrays, null for missing data points — not NaN — per FR-008), initializes uPlot with responsive sizing and aria-label (FR-015), line series per metric with color coding (sufficient contrast per FR-015), tooltip showing formatted values, shows "No data available for this time range" when results empty (FR-007), displays aggregation notice with role="status" above chart when step > 60s with tier label (3600→"hourly", 86400→"daily", 2592000→"monthly") per FR-013
-- [ ] T032 [US2] Implement HistoryView component in dashboard/src/components/HistoryView.tsx: renders as <section> with <h2> heading (FR-015), renders TimeRangeSelector + HistoricalGraph, manages selectedTimeRange state (default "today"), passes TimeRangeValue from selector onChange to HistoricalGraph props
+- [ ] T030 [P] [US2] Implement TimeRangeSelector component in dashboard/src/components/TimeRangeSelector.tsx: buttons for today/7d/30d/1y/custom presets with aria-pressed on active (FR-015), keyboard-navigable (FR-015), calculates start/end timestamps for each preset, custom shows date input fields with label (FR-015, unrestricted range), tiered step calculation per FR-013: today=60s, 7d=3600s, 30d=86400s, 1y=calendar month aligned step, custom auto-tiers by duration (1d or less=60s, 7d or less=3600s, 30d or less=86400s, over 30d=calendar month), emits TimeRangeValue via onChange prop
+- [ ] T031 [US2] Implement HistoricalGraph component in dashboard/src/components/HistoricalGraph.tsx: accepts TimeRangeValue props, fetches range queries for solar, battery, grid metrics via fetchRangeQuery + fetchGridPower with correct step, converts responses to uPlot.AlignedData (timestamps + value arrays, null for missing data points per FR-008), initializes uPlot with responsive sizing and aria-label (FR-015), line series per metric with color coding, tooltip with formatted values, shows "No data available for this time range" when results empty (FR-007), displays aggregation notice with role="status" above chart when step > 60s with tier label (3600=hourly, 86400=daily, calendar month=monthly) per FR-013
+- [ ] T032 [US2] Implement HistoryView component in dashboard/src/components/HistoryView.tsx: renders as section with h2 heading (FR-015), renders TimeRangeSelector + HistoricalGraph, manages selectedTimeRange state (default "today"), passes TimeRangeValue from selector onChange to HistoricalGraph props
 
-**Checkpoint**: Dashboard shows interactive time-series charts for all five time range presets plus custom, applies tiered step values, shows aggregation notice when downsampled, renders data gaps as broken lines, handles empty ranges. Renders within 2 seconds for 30-day data. Keyboard-navigable and accessible throughout (FR-015). User Stories 1 AND 2 both work independently.
-
----
-
-## Phase 5: User Story 3 — Grafana Integration (Priority: P3, #35)
-
-**Goal**: Deploy Grafana on Container Apps with Infinity plugin (REST API via OAuth2), configure service principal for Grafana API access
-
-> **Note**: Dashboard SWA deployment and Entra ID app registration (T033, T034, T038a, T039, T040a, T041, T042) were moved to Phase 3 / US1 — the dashboard must be deployed for "View Current Energy Readings in a Browser" to be complete. Only Grafana-specific tasks remain here.
-
-**Independent Test**: Grafana Container App runs with Infinity plugin installed. Grafana data source connection test succeeds against the REST API (acceptance scenario #4). terraform validate passes.
-
-**FRs covered**: FR-009, FR-010, SC-004
-
-### Implementation for User Story 3
-
-- [ ] T035 [P] [US3] Add grafana_image variable (default "grafana/grafana:11.5.2", no :latest) in infra/variables.tf, add Grafana admin password (random_password + azurerm_key_vault_secret) in infra/keyvault.tf
-- [ ] T036 [P] [US3] Add Grafana service principal app registration in infra/entra.tf: azuread_application.grafana_sp (confidential client with client secret), grant user_impersonation scope on API app, add azuread_service_principal.grafana_sp, store client secret in Key Vault via azurerm_key_vault_secret.grafana_sp_client_secret
-- [ ] T037 [US3] Create Grafana Container App in infra/grafana.tf: azurerm_container_app with ingress on port 3000 (external), min_replicas=0/max_replicas=1, 0.25 vCPU/0.5Gi memory, Azure File Share volume mount for /var/lib/grafana (azurerm_container_app_environment_storage + azurerm_storage_share), GF_INSTALL_PLUGINS="yesoreyeram-infinity-datasource", Infinity plugin data source provisioned via YAML at /etc/grafana/provisioning/datasources/ (type: yesoreyeram-infinity-datasource, URL: API FQDN /api/v1, OAuth2 client credentials from service principal per contracts/dashboard-config.md), GF_SECURITY_ADMIN_PASSWORD from Key Vault, GF_SERVER_ROOT_URL, management lock (CanNotDelete)
-- [ ] T038b [US3] Add Grafana Terraform outputs in infra/outputs.tf: grafana_fqdn, grafana_sp_client_id
-- [ ] T040b [US3] Run terraform validate and terraform fmt -check to verify Grafana infrastructure changes compile and are formatted correctly
-
-**Checkpoint**: terraform validate passes. Grafana Container App configured with Infinity plugin and OAuth2 service principal for API access. All three user stories are independently functional.
+**Checkpoint**: Dashboard shows interactive time-series charts for all five time range presets plus custom. Applies tiered resolution with calendar-month aggregation for yearly views. Aggregation notice shown when downsampled. Data gaps rendered as broken lines. Empty ranges handled. Renders within 2 seconds for 30-day data. Keyboard-navigable and accessible (FR-015). User Stories 1 AND 2 both work independently.
 
 ---
 
-## Phase 6: Polish & Cross-Cutting Concerns
+## Phase 5: Application Insights Telemetry (FR-020)
 
-**Purpose**: Accessibility verification, security review, end-to-end validation
+**Purpose**: Client-side error telemetry via Azure Application Insights
 
-> **Note**: T041 (CI dashboard job) and T042 (CD SWA deploy) were moved to Phase 3 / US1 and are complete.
+**FRs covered**: FR-020
 
-- [x] T043a [US1] Bug fix (#44): Add CORS to API — `builder.Services.AddCors()` with `Cors:AllowedOrigin` config, `app.UseCors()` before auth middleware, `Cors__AllowedOrigin` env var in container-apps.tf set to SWA hostname, CORS integration test in ProgramMiddlewareTests.cs (FR-019)
-- [ ] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID), verify Grafana password stored in Key Vault and injected as secret env var, verify Grafana service principal client secret in Key Vault, verify all new infra resources have management locks
-- [ ] T044 [P] Accessibility spot-check (FR-015): verify all pages keyboard-navigable (Tab through nav, cards, buttons), verify semantic landmarks (<nav>, <main>, <section>, <article>), verify ARIA attributes on interactive elements (aria-label, aria-pressed, aria-busy, role="alert", role="status"), verify color contrast ≥4.5:1 on all text/badges
-- [ ] T045 Run full test suite with coverage: cd dashboard && npm run test:coverage — verify 100% coverage (branches, functions, lines, statements). Verify performance: load CurrentReadings with mock data and confirm render <2s (SC-001); load HistoricalGraph with 30d mock data (~43K points) and confirm render <2s (SC-002)
-- [ ] T046 Run quickstart.md end-to-end validation: cd dashboard, npm install, npm test, npm run test:coverage (100% pass), npm run build (dist/ output), cd ../infra, terraform validate, terraform fmt -check
+### Tests for FR-020 (TDD — write tests FIRST, confirm they FAIL)
+
+- [ ] T046 [P] Write telemetry unit tests in dashboard/tests/unit/telemetry.test.ts: initTelemetry initializes ApplicationInsights when connection string is set, initTelemetry is no-op when connection string is empty/undefined, trackException calls appInsights.trackException, trackApiError calls appInsights.trackEvent with url and status, trackPageLoad calls appInsights.trackPageView, module is mock-friendly (exports simple wrapper functions)
+
+### Implementation for FR-020
+
+- [ ] T047 [P] Implement dashboard/src/telemetry.ts: lazy init of @microsoft/applicationinsights-web when VITE_APPINSIGHTS_CONNECTION_STRING is set, export initTelemetry(), trackException(error), trackApiError(url, status), trackPageLoad() wrapper functions. No PII captured. Silent when connection string absent (local dev/tests).
+- [ ] T048 [US1] Wire telemetry into dashboard: call initTelemetry() in main.tsx after MSAL init, call trackApiError() in api.ts on 4xx/5xx responses, call trackPageLoad() in App.tsx on route change, wrap ErrorBoundary componentDidCatch with trackException()
+- [ ] T049 [P] Create Azure Application Insights Terraform resource in infra/application-insights.tf: azurerm_application_insights linked to existing Log Analytics workspace, add appinsights_connection_string output to infra/outputs.tf, add VITE_APPINSIGHTS_CONNECTION_STRING to CD workflow env vars
+
+**Checkpoint**: Application Insights captures unhandled exceptions, failed API calls, and page load performance in production/staging. Silent in local dev and tests.
 
 ---
 
-## Dependencies & Execution Order
+## Phase 6: Polish and Cross-Cutting Concerns
+
+**Purpose**: Security review, accessibility verification, end-to-end validation
+
+- [x] T043a [US1] Bug fix (#44): Add CORS to API — AddCors(), Cors:AllowedOrigin config, Cors__AllowedOrigin env var in container-apps.tf, CORS integration tests (FR-019)
+- [ ] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID), verify all infra resources have management locks
+- [ ] T044 [P] Accessibility spot-check (FR-015): verify all pages keyboard-navigable (Tab through nav, cards, buttons), verify semantic landmarks (nav, main, section, article), verify ARIA attributes on interactive elements (aria-label, aria-pressed, aria-busy, role="alert", role="status"), verify color contrast at least 4.5:1 on all text/badges
+- [ ] T045 Run full test suite with coverage: cd dashboard and npm run typecheck and npm run test:coverage — verify 100% coverage (branches, functions, lines, statements). Verify performance: load CurrentReadings with mock data <2s (SC-001); load HistoricalGraph with 30d mock data (~43K points) <2s (SC-002)
+- [ ] T050 Run quickstart.md end-to-end validation: cd dashboard, npm install, npm test, npm run test:coverage (100% pass), npm run build (dist/ output), cd ../infra, terraform validate, terraform fmt -check
+
+---
+
+## Dependencies and Execution Order
 
 ### Phase Dependencies
 
@@ -179,16 +170,15 @@
 - **Foundational (Phase 2)**: Depends on Setup completion — BLOCKS all user stories
 - **US1 (Phase 3)**: Depends on Foundational — requires types.ts, auth.ts, api.ts, formatting.ts, polling.ts
 - **US2 (Phase 4)**: Depends on Foundational — requires types.ts, api.ts, formatting.ts; can run in parallel with US1
-- **US3 (Phase 5)**: No code dependency on US1 or US2 (pure Terraform); can start after Setup
-- **Polish (Phase 6)**: Depends on all user stories being complete
+- **FR-020 (Phase 5)**: Can start after Foundational — only depends on types; telemetry wiring into main/api/ErrorBoundary depends on those files existing
+- **Polish (Phase 6)**: Depends on all phases being complete
 
 ### User Story Dependencies
 
-- **US1 (P1, #33)**: Can start after Foundational — no dependencies on US2 or US3
-- **US2 (P2, #34)**: Can start after Foundational — no dependencies on US1 or US3 (separate components, separate route)
-- **US3 (P3, #35)**: Can start after US1 — SWA + Entra infra done in US1, only Grafana tasks remain (infra/ Terraform)
+- **US1 (P1, #33)**: Can start after Foundational — no dependencies on US2
+- **US2 (P2, #34)**: Can start after Foundational — no dependencies on US1 (separate components, separate route)
 - **US1 and US2** can run in parallel since they involve different component files
-- **US3** can run in parallel with US2 since it involves only infra/ files (Terraform), not dashboard/ code
+- **FR-020** can run in parallel with US2 since telemetry is a separate module (dashboard/src/telemetry.ts + infra/application-insights.tf)
 
 ### Within Each User Story
 
@@ -201,41 +191,15 @@
 
 ## Parallel Opportunities
 
-### Phase 1 (Setup)
-```
-T001 (directories) → T002 (npm install)
-                   ↘ T003 [P] (tsconfig)
-                   ↘ T004 [P] (vite + vitest config)
-```
-
 ### Phase 2 (Foundational)
-```
-# Tests first (all parallel):
-T005 [P], T006 [P], T007 [P], T008 [P]
+Tests first (all parallel): T005, T006, T007, T008
+Static files (parallel, no deps): T009 (types.ts), T010 (staticwebapp.config), T011 (index.html)
+Implementation (sequential where deps exist): T012 then T013 (auth) then T014 (api); T015 (formatting) and T016 (polling) parallel
 
-# Static files (parallel, no deps):
-T009 [P] (types.ts), T010 [P] (staticwebapp.config.json), T011 [P] (index.html)
-
-# Implementation (sequential where deps exist):
-T012 (vite-env.d.ts)
-T013 (auth.ts, depends on T009, T012)
-T014 (api.ts, depends on T009, T013)
-T015 [P] (formatting.ts), T016 [P] (polling.ts)
-```
-
-### Phase 3 (US1) + Phase 4 (US2) + Phase 5 (US3) — can run in parallel
-```
-US1: T017 [P], T018 [P], T019 [P], T020 [P], T021 [P] → T022 [P], T023 [P] → T024 → T025 → T026
-US2: T027 [P], T028 [P], T029 [P] → T030 [P] → T031 → T032
-US3: T035 [P], T036 [P] → T037 → T038b → T040b
-```
-
-### Phase 6 (Polish)
-```
-T043 [P], T044 [P]
-T045 (depends on all code tasks)
-T046 (depends on all above)
-```
+### Phase 3 (US1) + Phase 4 (US2) + Phase 5 (FR-020) — can run in parallel
+US1: T017-T021 tests then T022-T023 components then T024 then T025 then T026; T024a-T024f (flow diagram) then T033-T042 (infra/CD)
+US2: T027-T029 tests then T030 then T031 then T032
+FR-020: T046 test then T047 then T048 then T049
 
 ---
 
@@ -245,45 +209,47 @@ T046 (depends on all above)
 
 1. Complete Phase 1: Setup
 2. Complete Phase 2: Foundational (CRITICAL — blocks all stories)
-3. Complete Phase 3: US1 (current readings)
-4. **STOP and VALIDATE**: Dashboard shows live device readings with auto-refresh
+3. Complete Phase 3: US1 (current readings + deploy)
+4. STOP and VALIDATE: Dashboard shows live device readings with auto-refresh
 5. Deploy/demo if ready — basic dashboard is functional
 
 ### Incremental Delivery
 
-1. Setup + Foundational → Foundation ready
-2. US1 → Current readings visible → MVP!
-3. US2 → Historical graphs with tiered downsampling → Enhanced analytics
-4. US3 → Infrastructure deployed (SWA + Grafana with Infinity plugin) → Full deployment
-5. Polish → CI/CD enforced, accessibility verified, security reviewed → Production-ready
+1. Setup + Foundational = Foundation ready
+2. US1 = Current readings visible = MVP
+3. US2 = Historical graphs with tiered downsampling = Enhanced analytics
+4. FR-020 = Application Insights telemetry = Operational visibility
+5. Polish = Security verified, accessibility checked = Production-ready
 
-### Parallel Strategy
+---
 
-With capacity for parallel work:
+## Summary
 
-1. Complete Setup + Foundational together
-2. Once Foundational is done:
-   - Stream A: US1 (current readings components) + US2 (graph components) — different .tsx files
-   - Stream B: US3 (Terraform infrastructure) — different file tree entirely (infra/)
-3. Streams converge at Polish phase
+| Phase | Tasks | Complete | Remaining |
+|-------|-------|----------|-----------|
+| 1. Setup | 4 | 4 | 0 |
+| 2. Foundational | 12 | 12 | 0 |
+| 3. US1 (P1, #33) | 22 | 22 | 0 |
+| 4. US2 (P2, #34) | 6 | 0 | 6 |
+| 5. FR-020 | 4 | 0 | 4 |
+| 6. Polish | 5 | 1 | 4 |
+| **Total** | **53** | **39** | **14** |
 
 ---
 
 ## Notes
 
-- All file paths are relative to repository root (`/Users/steve/repos/epcubegraph/`)
+- All file paths are relative to repository root
 - TDD is mandated by constitution — tests MUST fail before implementation
 - 100% code coverage enforced via Vitest in CI (branches, functions, lines, statements)
 - FR-015 accessibility (semantic HTML, ARIA, keyboard nav, contrast) baked into each component — not a separate task
-- US1 and US2 are pure SPA code (TypeScript/Preact), US3 is pure Terraform — different skill sets
-- Components use `.tsx` extension (Preact JSX), utility/core modules use `.ts`
+- US1 and US2 are pure SPA code (TypeScript/Preact), FR-020 spans SPA + Terraform
+- Components use .tsx extension (Preact JSX), utility/core modules use .ts
 - Metric names: epcube_battery_state_of_capacity_percent, epcube_battery_power_watts, epcube_solar_instantaneous_generation_watts, epcube_home_load_power_watts, epcube_grid_power_watts (via /api/v1/grid)
 - Grid sign convention: positive = net import from grid, negative = net export to grid
-- Device interface has no ip field — only device, class, alias?, manufacturer?, product_code?, uid?, online
+- Device interface has no ip field — only device, class, alias, manufacturer, product_code, uid, online
 - FR-014: auth failures mid-session redirect to re-auth preserving current view state
-- FR-013: tiered downsampling uses 2592000s (30d) fixed step for yearly/calendar month (VM compatibility)
-- Grafana uses Infinity plugin from day one — no direct VictoriaMetrics data source
-- Commit after each task or logical group, linked to the relevant GitHub issue (#33, #34, #35)
+- FR-013: tiered downsampling uses calendar month for yearly views (not fixed 30d like the old VM-constrained implementation)
+- Commit after each task or logical group, linked to the relevant GitHub issue (#33, #34)
 - Stop at any checkpoint to validate the story independently
-- The dashboard consumes Feature 001's API — no new backend code, only client-side TypeScript
-- SC-001 (<2s current display) and SC-002 (<2s graph render) are structurally covered by technology choice (uPlot canvas + lightweight Preact) and validated in the quickstart end-to-end test (T044)
+- The dashboard consumes Feature 001 API — no new backend code, only client-side TypeScript (except CORS and App Insights Terraform)

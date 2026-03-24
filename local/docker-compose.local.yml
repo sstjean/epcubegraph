@@ -5,57 +5,41 @@
 # (via ./deploy.sh).
 #
 # Services:
-#   mock-exporter  → generates fake EP Cube Prometheus metrics
-#   vmagent        → scrapes mock-exporter, writes to local VictoriaMetrics
-#   victoriametrics → local time-series DB
+#   mock-exporter  → generates fake EP Cube metrics and writes to PostgreSQL
+#   postgres       → local database
 #
 # Usage:
 #   docker compose -f docker-compose.local.yml up -d
 #   cd ../api/src/EpCubeGraph.Api && dotnet run
 #
-# After ~2 minutes, mock data appears in VictoriaMetrics:
-#   curl 'http://localhost:8428/api/v1/query?query=epcube_battery_state_of_capacity_percent'
-#
-# Web UIs:
-#   VictoriaMetrics (vmui):  http://localhost:8428/vmui
-#   vmagent targets:         http://localhost:8429/targets
+# After ~2 minutes, mock data appears in PostgreSQL:
+#   psql postgresql://epcube:epcube_local@localhost:5432/epcubegraph -c "SELECT COUNT(*) FROM readings"
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: epcube
+      POSTGRES_PASSWORD: epcube_local
+      POSTGRES_DB: epcubegraph
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   mock-exporter:
     build:
       context: ./mock-exporter
       dockerfile: Dockerfile
+    environment:
+      - POSTGRES_DSN=postgresql://epcube:epcube_local@postgres:5432/epcubegraph
     ports:
       - "9191:9191"
-    restart: unless-stopped
-
-  victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.106.1
-    command:
-      - "-retentionPeriod=30d"
-      - "-storageDataPath=/victoria-metrics-data"
-      - "-httpListenAddr=:8428"
-    ports:
-      - "8428:8428"
-    volumes:
-      - vm-data:/victoria-metrics-data
-    restart: unless-stopped
-
-  vmagent:
-    image: victoriametrics/vmagent:v1.106.1
-    command:
-      - "-promscrape.config=/etc/vmagent/scrape.yml"
-      - "-remoteWrite.url=http://victoriametrics:8428/api/v1/write"
-      - "-httpListenAddr=:8429"
-    ports:
-      - "8429:8429"
-    volumes:
-      - ./vmagent/scrape-local.yml:/etc/vmagent/scrape.yml:ro
     depends_on:
-      - mock-exporter
-      - victoriametrics
+      - postgres
     restart: unless-stopped
 
 volumes:
-  vm-data:
+  pg-data:
     driver: local

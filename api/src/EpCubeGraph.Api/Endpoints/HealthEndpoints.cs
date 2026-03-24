@@ -15,18 +15,14 @@ public static class HealthEndpoints
         return group;
     }
 
-    private static async Task<IResult> HandleHealth(IVictoriaMetricsClient client, CancellationToken ct)
+    private static async Task<IResult> HandleHealth(IMetricsStore store, CancellationToken ct)
     {
-        try
-        {
-            await client.LabelsAsync(ct);
+        var ok = await store.PingAsync(ct);
+        if (ok)
             return Results.Ok(new HealthResponse("healthy", "ok"));
-        }
-        catch
-        {
-            return Results.Json(
-                new HealthResponse("unhealthy", "unreachable"),
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+
+        return Results.Json(
+            new HealthResponse("unhealthy", "unreachable"),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 }

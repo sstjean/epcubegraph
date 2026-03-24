@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using System.Text.Json;
+using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -16,20 +16,13 @@ namespace EpCubeGraph.Api.Tests.Fixtures;
 
 /// <summary>
 /// WebApplicationFactory that bypasses Entra ID auth and injects a
-/// configurable mock IVictoriaMetricsClient so endpoint handler logic
+/// configurable mock IMetricsStore so endpoint handler logic
 /// can be exercised in tests.
 /// </summary>
 public class MockableTestFactory : WebApplicationFactory<Program>
 {
-    /// <summary>
-    /// The mock VM client shared with tests.  Tests configure its
-    /// behaviour before making HTTP calls.
-    /// </summary>
-    public ConfigurableMockVmClient MockClient { get; } = new();
+    public ConfigurableMockStore MockStore { get; } = new();
 
-    /// <summary>
-    /// When non-null, overrides the ASPNETCORE_ENVIRONMENT.
-    /// </summary>
     public string? EnvironmentOverride { get; set; }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -45,23 +38,22 @@ public class MockableTestFactory : WebApplicationFactory<Program>
                 ["AzureAd:TenantId"] = "00000000-0000-0000-0000-000000000000",
                 ["AzureAd:ClientId"] = "00000000-0000-0000-0000-000000000001",
                 ["AzureAd:Audience"] = "api://00000000-0000-0000-0000-000000000001",
-                ["VictoriaMetrics:Url"] = "http://localhost:0",
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Port=0;Database=test",
                 ["Cors:AllowedOrigin"] = "https://test-dashboard.example.com"
             });
         });
 
         builder.ConfigureTestServices(services =>
         {
-            // Remove ALL existing IVictoriaMetricsClient registrations
-            // (the typed HttpClient factory registers multiple descriptors)
+            // Remove all existing IMetricsStore registrations
             var descriptors = services
-                .Where(d => d.ServiceType == typeof(IVictoriaMetricsClient))
+                .Where(d => d.ServiceType == typeof(IMetricsStore))
                 .ToList();
             foreach (var d in descriptors)
                 services.Remove(d);
 
             // Register our mock as the sole implementation
-            services.AddSingleton<IVictoriaMetricsClient>(MockClient);
+            services.AddSingleton<IMetricsStore>(MockStore);
 
             // Bypass Entra ID: add "Test" scheme that always succeeds
             services.AddAuthentication("Test")
@@ -76,10 +68,6 @@ public class MockableTestFactory : WebApplicationFactory<Program>
         });
     }
 
-    /// <summary>
-    /// Authentication handler that always succeeds with a test identity
-    /// carrying the user_impersonation scope.
-    /// </summary>
     private sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
         public TestAuthHandler(
@@ -104,96 +92,77 @@ public class MockableTestFactory : WebApplicationFactory<Program>
 }
 
 /// <summary>
-/// Configurable mock of IVictoriaMetricsClient.
-/// By default returns a success response. Tests can set ShouldThrow
-/// to simulate HTTP failures, or provide custom response JSON.
+/// Configurable mock of IMetricsStore.
+/// Tests configure behaviour before making HTTP calls.
 /// </summary>
-public sealed class ConfigurableMockVmClient : IVictoriaMetricsClient
+public sealed class ConfigurableMockStore : IMetricsStore
 {
     public bool ShouldThrow { get; set; }
-    public string ThrowMessage { get; set; } = "VictoriaMetrics unavailable";
+    public string ThrowMessage { get; set; } = "Database unavailable";
 
     /// <summary>
-    /// When true, throws InvalidOperationException instead of HttpRequestException.
-    /// This bypasses endpoint-level catch(HttpRequestException) blocks and
-    /// triggers the global exception handler in Program.cs.
+    /// When true, throws InvalidOperationException to test error handling.
     /// </summary>
     public bool ThrowUnhandled { get; set; }
 
-    public string QueryResponse { get; set; } =
-        """{"status":"success","data":{"resultType":"vector","result":[]}}""";
+    public IReadOnlyList<DeviceInfo> DevicesResult { get; set; } = Array.Empty<DeviceInfo>();
+    public IReadOnlyList<string> DeviceMetricsResult { get; set; } = Array.Empty<string>();
+    public IReadOnlyList<Reading> CurrentReadingsResult { get; set; } = Array.Empty<Reading>();
+    public IReadOnlyList<TimeSeries> RangeResult { get; set; } = Array.Empty<TimeSeries>();
+    public IReadOnlyList<TimeSeries> GridResult { get; set; } = Array.Empty<TimeSeries>();
+    public bool PingResult { get; set; } = true;
 
-    public string QueryRangeResponse { get; set; } =
-        """{"status":"success","data":{"resultType":"matrix","result":[]}}""";
-
-    public string SeriesResponse { get; set; } =
-        """{"status":"success","data":[]}""";
-
-    public string LabelsResponse { get; set; } =
-        """{"status":"success","data":["__name__","device"]}""";
-
-    public string LabelValuesResponse { get; set; } =
-        """{"status":"success","data":["epcube_battery","epcube_solar"]}""";
-
-    // Track calls for assertions
-    public string? LastSeriesMatch { get; private set; }
-    public string? LastSeriesStart { get; private set; }
-    public string? LastSeriesEnd { get; private set; }
-
-    /// <summary>
-    /// Reset all configurable state to defaults.
-    /// Call before each test to avoid cross-test contamination.
-    /// </summary>
     public void Reset()
     {
         ShouldThrow = false;
-        ThrowMessage = "VictoriaMetrics unavailable";
+        ThrowMessage = "Database unavailable";
         ThrowUnhandled = false;
-        QueryResponse = """{"status":"success","data":{"resultType":"vector","result":[]}}""";
-        QueryRangeResponse = """{"status":"success","data":{"resultType":"matrix","result":[]}}""";
-        SeriesResponse = """{"status":"success","data":[]}""";
-        LabelsResponse = """{"status":"success","data":["__name__","device"]}""";
-        LabelValuesResponse = """{"status":"success","data":["epcube_battery","epcube_solar"]}""";
-        LastSeriesMatch = null;
-        LastSeriesStart = null;
-        LastSeriesEnd = null;
+        DevicesResult = Array.Empty<DeviceInfo>();
+        DeviceMetricsResult = Array.Empty<string>();
+        CurrentReadingsResult = Array.Empty<Reading>();
+        RangeResult = Array.Empty<TimeSeries>();
+        GridResult = Array.Empty<TimeSeries>();
+        PingResult = true;
     }
 
-    public Task<JsonElement> QueryAsync(string query, string? time = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
     {
         if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
-        if (ShouldThrow) throw new HttpRequestException(ThrowMessage);
-        return Task.FromResult(Parse(QueryResponse));
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(DevicesResult);
     }
 
-    public Task<JsonElement> QueryRangeAsync(string query, string start, string end, string step, CancellationToken ct = default)
+    public Task<IReadOnlyList<string>> GetDeviceMetricsAsync(string deviceId, CancellationToken ct = default)
+    {
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(DeviceMetricsResult);
+    }
+
+    public Task<IReadOnlyList<Reading>> GetCurrentReadingsAsync(string metricName, CancellationToken ct = default)
     {
         if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
-        if (ShouldThrow) throw new HttpRequestException(ThrowMessage);
-        return Task.FromResult(Parse(QueryRangeResponse));
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(CurrentReadingsResult);
     }
 
-    public Task<JsonElement> SeriesAsync(string match, string? start = null, string? end = null, CancellationToken ct = default)
+    public Task<IReadOnlyList<TimeSeries>> GetRangeReadingsAsync(
+        string metricName, long startEpoch, long endEpoch, int stepSeconds, CancellationToken ct = default)
     {
-        LastSeriesMatch = match;
-        LastSeriesStart = start;
-        LastSeriesEnd = end;
-        if (ShouldThrow) throw new HttpRequestException(ThrowMessage);
-        return Task.FromResult(Parse(SeriesResponse));
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(RangeResult);
     }
 
-    public Task<JsonElement> LabelsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<TimeSeries>> GetGridReadingsAsync(
+        long startEpoch, long endEpoch, int stepSeconds, CancellationToken ct = default)
     {
-        if (ShouldThrow) throw new HttpRequestException(ThrowMessage);
-        return Task.FromResult(Parse(LabelsResponse));
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(GridResult);
     }
 
-    public Task<JsonElement> LabelValuesAsync(string labelName, CancellationToken ct = default)
+    public Task<bool> PingAsync(CancellationToken ct = default)
     {
-        if (ShouldThrow) throw new HttpRequestException(ThrowMessage);
-        return Task.FromResult(Parse(LabelValuesResponse));
+        if (ShouldThrow) return Task.FromResult(false);
+        return Task.FromResult(PingResult);
     }
-
-    private static JsonElement Parse(string json) =>
-        JsonDocument.Parse(json).RootElement.Clone();
 }

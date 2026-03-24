@@ -1,5 +1,7 @@
 # Research: Input Validation for ASP.NET Core 8 Minimal API
 
+> **⚠️ Note**: Some validation rules reference PromQL query syntax. When the storage backend migrates from VictoriaMetrics to Azure SQL Database, the query validation logic will need to be updated.
+
 **Date**: 2026-03-07  
 **Requirement**: FR-019 — "The API MUST validate all incoming request parameters for presence and type"  
 **Scope**: ~9 endpoints, single-user system, ASP.NET Core 8 Minimal API

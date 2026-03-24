@@ -2,6 +2,8 @@
 
 **Branch**: `001-data-ingestor` | **Date**: 2026-03-07 | **Spec**: [spec.md](spec.md)
 
+> **⚠️ Deprecation Note**: This research was conducted when VictoriaMetrics was the chosen storage backend. VictoriaMetrics is being removed from the project and replaced with Azure SQL Database (serverless). Topics below are retained as historical reference. VictoriaMetrics-specific decisions (vmauth, promscrape, PromQL proxy) no longer apply to the target architecture.
+
 ---
 
 ## Topic 1: VictoriaMetrics Remote-Write Authentication Proxy

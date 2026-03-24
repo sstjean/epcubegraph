@@ -3,7 +3,7 @@
 **Feature Branch**: `002-web-dashboard`  
 **Created**: 2026-03-07  
 **Status**: Revised  
-**Input**: User description: "Web dashboard for viewing EP Cube energy telemetry data with Grafana integration"
+**Input**: User description: "Web dashboard for viewing EP Cube energy telemetry data"
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -44,55 +44,38 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 
 ---
 
-### User Story 3 - View Data via Grafana Dashboards (Priority: P3)
-
-As the system owner, I want to use Grafana to create custom dashboards for my energy data so that I can leverage Grafana's rich visualisation and alerting capabilities as an alternative or complement to the native web dashboard.
-
-The system exposes a data source compatible with Grafana so that Grafana can query the same telemetry data without custom middleware.
-
-**Why this priority**: Grafana provides powerful, flexible dashboarding that may better suit advanced monitoring needs, but the native dashboard must work first.
-
-**Independent Test**: Configure Grafana to connect to the data source, create a basic dashboard with a time-series panel, and verify it displays the same data as the native web dashboard.
-
-**Acceptance Scenarios**:
-
-1. **Given** Grafana is configured with the Infinity plugin to connect to the telemetry REST API, **When** I open a Grafana dashboard, **Then** I can visualise the same telemetry data with Grafana's charting tools.
-2. **Given** I create a Grafana panel for solar generation over the last 7 days, **When** the panel renders, **Then** the data matches what the native web dashboard shows for the same range.
-3. **Given** Grafana is connected, **When** I set up an alert threshold on battery level, **Then** Grafana can trigger alerts based on the telemetry data.
-4. **Given** Grafana is configured with the Infinity plugin, **When** the data source connection is tested in Grafana Settings, **Then** the connection test succeeds and returns sample data.
-
----
-
 ### Edge Cases
 
 - What happens when the API is unreachable from the browser? The dashboard must display a clear connectivity error and offer a retry option.
 - What happens when the data store contains gaps (e.g., from gateway downtime)? Graphs must render gaps as broken lines (discontinuous segments) rather than interpolating false data.
 - What happens when the user's browser session expires? The dashboard must redirect to re-authentication without losing the current view state. Note: "offline" in the dashboard context is a data-staleness indicator (no recent data received from the API for that device), not a direct device connectivity probe.
 - What happens when a very large time range is selected (e.g., 1 year)? The dashboard automatically downsamples to the appropriate resolution tier based on range duration and displays a notice that data is aggregated. Custom date ranges are not capped — they use the same tiered auto-selection as presets.
+- What happens when the API returns data for only one of the two devices? The dashboard displays both device cards; the missing device uses the existing stale-data/offline indicator (FR-006) rather than introducing a separate "unavailable" state.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
 - **FR-001**: System MUST provide a web application accessible via modern web browsers (Chrome, Firefox, Safari, Edge — current and previous major version).
-- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge (including remaining stored energy in kWh), home load consumption, and grid import/export readings for each connected device.
+- **FR-002**: Dashboard MUST display current solar generation, battery charge/discharge (including remaining stored energy in kWh), home load consumption, and grid import/export readings for each of the 2 connected EP Cube devices, arranged in a side-by-side grid layout.
 - **FR-003**: Dashboard MUST display readings that are no more than one collection interval old (default: 1 minute).
 - **FR-004**: Dashboard MUST provide interactive historical graphs with selectable time ranges: today, last 7 days, last 30 days, last year, and custom date range.
 - **FR-005**: Dashboard MUST render graphs for up to 30 days of data within 2 seconds.
 - **FR-006**: Dashboard MUST clearly indicate when a device is offline or data is stale. Data is considered stale when it is older than 3× the collection interval (default: 3 minutes).
 - **FR-007**: Dashboard MUST clearly indicate when no data exists for a selected time range.
 - **FR-008**: Dashboard MUST honestly represent data gaps in graphs using broken lines (discontinuous segments that stop and resume around gaps); no false interpolation is permitted.
-- **FR-009**: System MUST expose telemetry data via the existing versioned REST API in a format compatible with Grafana's Infinity plugin (generic JSON/REST data source). No separate Grafana-specific endpoint is required.
+- **FR-009**: *Removed — Grafana integration descoped.*
 - **FR-010**: All dashboard access MUST be authenticated per the constitution's security requirements.
 - **FR-011**: Dashboard MUST consume data exclusively through the versioned API from feature 001-data-ingestor.
 - **FR-012**: Dashboard MUST automatically poll for updated readings at half the collection interval (default: every 30 seconds) to keep displayed data current without manual refresh.
-- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level. Note: "calendar month intervals" uses a 30-day fixed step (2592000s) for VictoriaMetrics compatibility. When data is downsampled, VictoriaMetrics applies its default aggregation (last value per step for gauge metrics). No custom aggregation function is specified.
+- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level.
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 - **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast (≥4.5:1 ratio) for readability. No formal WCAG audit or automated accessibility test suite is required.
-- **FR-016**: Dashboard MUST display current readings within 2 seconds of page load (SC-001). This is structurally ensured by the lightweight SPA framework (Preact 3KB) combined with instant metric queries.
+- **FR-016**: *Removed — duplicate of SC-001.*
 - **FR-017**: Dashboard MUST provide an animated energy flow diagram as the default current-readings view, showing per-device energy flow between Solar, Grid, EP Cube gateway, Battery, and Home nodes. Flow lines animate directionally to indicate power flow direction, display power values (watts/kW), and dim to inactive when power is below a threshold. Battery node displays SOC ring, stored kWh, and charge/discharge state. A toggle allows switching between the flow diagram and the gauge dial view.
 - **FR-018**: Dashboard UI MUST scale responsively to viewport size, adjusting layout, font sizes, and component dimensions across desktop and mobile breakpoints.
 - **FR-019**: API MUST include CORS headers allowing the SWA dashboard origin to make cross-origin requests. The allowed origin MUST be configured via environment variable (not hardcoded) and MUST restrict methods to GET and headers to Authorization and Content-Type.
+- **FR-020**: Dashboard MUST integrate Azure Application Insights for client-side error telemetry, capturing unhandled exceptions, failed API calls, and page load performance. The instrumentation connection string MUST be configured via environment variable.
 
 ### Key Entities
 
@@ -105,9 +88,9 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 ### Measurable Outcomes
 
 - **SC-001**: Current readings are displayed within 2 seconds of opening the dashboard.
-- **SC-002**: Historical graphs for up to 30 days of data render within 2 seconds.
-- **SC-003**: The dashboard displays readings that are no more than one collection interval old (default: 1 minute).
-- **SC-004**: Grafana can query and display the same telemetry data using the Infinity plugin against the versioned REST API without custom middleware.
+- **SC-002**: Historical graphs for up to 30 days of data render within 2 seconds. Measured from time-range selection to chart paint complete.
+- **SC-003**: Displayed readings are no more than one collection interval old (default: 1 minute). Measured as delta between last API data timestamp and wall clock.
+- **SC-004**: *Removed — Grafana integration descoped.*
 - **SC-005**: 100% of dashboard access is authenticated; no unauthenticated access is possible.
 - **SC-006**: The dashboard works correctly on Chrome, Firefox, Safari, and Edge (current and previous major version).
 
@@ -115,9 +98,10 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 
 - The telemetry API from feature 001-data-ingestor is available and operational.
 - A single user (the system owner) is the primary consumer; multi-user dashboards are not required.
-- Grafana will be self-hosted or hosted on Azure alongside the server components.
-- The native web dashboard and Grafana are complementary — the user may use either or both.
-- Grafana service principal client secret rotation is managed outside the dashboard feature scope. Key Vault expiry monitoring should be configured as part of the operational runbook.
+- The system has 2 EP Cube gateway devices. The dashboard layout is a fixed 2-device grid; dynamic device discovery or unlimited scaling is not required.
+- The backend data store is being migrated from VictoriaMetrics to Azure SQL Database. Since we own all clients, the API contract will be redesigned (no Prometheus compatibility constraint). The dashboard must be updated to align with the new API contract after the migration.
+- Historical telemetry data is retained indefinitely (no automatic deletion or expiry). The dashboard time range presets and custom ranges may access the full history of stored data.
+
 
 ## Clarifications
 
@@ -126,12 +110,20 @@ The system exposes a data source compatible with Grafana so that Grafana can que
 - Q: What age of data should trigger the stale/offline indicator? → A: 3× the collection interval (default: 3 minutes)
 - Q: How should the dashboard keep current readings up to date? → A: Auto-poll every half collection interval (default: 30 seconds)
 - Q: How should data gaps be visualized in historical graphs? → A: Broken line (discontinuous segments, no connection across gaps)
-- Q: What Grafana data source type should be used? → A: Existing REST API via Grafana Infinity plugin (generic JSON/REST)
+- Q: What Grafana data source type should be used? → A: *Descoped — Grafana integration removed (FR-009).*
 - Q: How should large time ranges beyond 30 days be handled? → A: Tiered downsampling — daily at collection interval, weekly at hourly, monthly at daily, yearly/custom >30d at calendar month — with visible aggregation notice. Custom ranges are unrestricted and auto-select the closest tier.
 
 ### Session 2026-03-19
 
 - Q: What level of accessibility should the dashboard meet? → A: Basic accessibility — semantic HTML, keyboard navigable, sufficient color contrast. No formal WCAG audit or automated a11y test suite (single-user personal tool).
+
+### Session 2026-03-22
+
+- Q: How many EP Cube gateway devices should the dashboard support simultaneously? → A: 2 devices, displayed in a grid layout.
+- Q: Does the data store migration change any dashboard-facing API contract? → A: Yes — since we own all clients, the API will be redesigned for Azure SQL (no Prometheus format constraint). Same endpoints but the response shapes, query syntax, and field names will change. The dashboard will be updated as part of the migration.
+- Q: What is the minimum data retention period for historical telemetry? → A: Indefinite (never delete, grow forever).
+- Q: When the API returns data for only 1 of the 2 devices, how should the dashboard behave? → A: Show both cards; display the missing device as "offline" using the existing stale-data indicator (FR-006).
+- Q: Should the dashboard expose any operational health signal beyond what the user sees in the UI? → A: Integrate Application Insights for client-side error telemetry.
 
 ## Dependencies
 

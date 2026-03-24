@@ -5,7 +5,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-RUN pip install --no-cache-dir --root-user-action=ignore opencv-python-headless pycryptodome numpy PyJWT[crypto]
+RUN pip install --no-cache-dir --root-user-action=ignore opencv-python-headless pycryptodome numpy PyJWT[crypto] psycopg2-binary
 COPY exporter.py .
 
 EXPOSE 9250

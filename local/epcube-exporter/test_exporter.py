@@ -533,9 +533,12 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn(exporter.__version__, html)
         self.assertIn("Version:", html)
 
-    def test_auto_refresh_meta(self):
+    def test_auto_refresh_via_fetch(self):
         html = exporter._render_status_page(self._make_status(), self._make_health())
-        self.assertIn('http-equiv="refresh"', html)
+        # Meta refresh removed; replaced with JS fetch-based background refresh
+        self.assertNotIn('http-equiv="refresh"', html)
+        self.assertIn('setInterval', html)
+        self.assertIn('fetch(location.href)', html)
 
     def test_utctime_class_for_js(self):
         snap = {
@@ -1262,6 +1265,182 @@ class TestStaleDataReauth(unittest.TestCase):
         # Verify metrics were generated with good data (non-zero)
         self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
         self.assertIn("75", c._metrics_text)
+
+
+# ---------------------------------------------------------------------------
+# PostgresWriter tests
+# ---------------------------------------------------------------------------
+
+class TestPostgresWriter(unittest.TestCase):
+    """Tests for PostgresWriter using mocked psycopg2."""
+
+    def _make_mock_psycopg2(self):
+        """Create a mock psycopg2 module with connection and cursor."""
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_schema(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+
+        mock_pg.connect.assert_called_once_with("postgresql://test:test@localhost/test")
+        mock_cursor.execute.assert_called_once()
+        # The schema SQL should contain CREATE TABLE
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS devices", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS readings", call_args)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        writer.upsert_device("epcube1_battery", "storage_battery",
+                             alias="Test Device", manufacturer="Canadian Solar",
+                             product_code="EP Cube", uid="SN123")
+
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
+        self.assertIn("INSERT INTO devices", call_args[0][0])
+        self.assertIn("ON CONFLICT", call_args[0][0])
+        self.assertEqual(call_args[0][1][0], "epcube1_battery")
+        self.assertEqual(call_args[0][1][1], "storage_battery")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        readings = [
+            ("epcube1_battery", "battery_state_of_capacity_percent", now, 75.0),
+            ("epcube1_battery", "grid_power_watts", now, 500.0),
+        ]
+        writer.write_readings(readings)
+
+        mock_pg.extras.execute_values.assert_called_once()
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_empty_readings_is_noop(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn.reset_mock()
+
+        writer.write_readings([])
+        mock_conn.commit.assert_not_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_reconnects_on_closed_connection(self, mock_pg):
+        mock_conn1, _ = self._make_mock_psycopg2()
+        mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
+
+        # First call returns conn1 (for init), then conn1.closed=True forces reconnect
+        mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn1.closed = True  # simulate connection dropped
+
+        writer.upsert_device("d1", "storage_battery")
+
+        # Should have connected twice
+        self.assertEqual(mock_pg.connect.call_count, 2)
+
+    @patch.object(exporter, "psycopg2")
+    def test_close(self, mock_pg):
+        mock_conn, _ = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer.close()
+
+        mock_conn.close.assert_called_once()
+
+
+class TestPollWithPostgres(unittest.TestCase):
+    """Tests that poll() writes to Postgres when a writer is configured."""
+
+    @patch.object(exporter, "psycopg2")
+    def test_poll_writes_to_postgres(self, mock_pg):
+        mock_conn, mock_cursor = MagicMock(), MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+
+        pg_writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+
+        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Should have called upsert_device (2 per device: battery + solar)
+        upsert_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'INSERT INTO devices' in str(call)]
+        self.assertGreaterEqual(len(upsert_calls), 2)
+
+        # Should have called write_readings via execute_values
+        self.assertTrue(mock_pg.extras.execute_values.called)
+
+    def test_poll_without_postgres_still_works(self):
+        """Poll works fine when pg_writer is None."""
+        c = _make_collector()  # no pg_writer
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Prometheus metrics should still be generated
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+
+    @patch.object(exporter, "psycopg2")
+    def test_poll_continues_on_postgres_error(self, mock_pg):
+        """Poll should not fail if Postgres write raises an exception."""
+        pg_writer = MagicMock()
+        pg_writer.upsert_device.side_effect = Exception("DB connection lost")
+
+        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()  # Should NOT raise
+
+        # Prometheus metrics should still be generated
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
 
 
 if __name__ == "__main__":

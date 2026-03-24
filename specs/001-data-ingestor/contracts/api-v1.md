@@ -2,6 +2,8 @@
 
 **Version**: 1.0.0 | **Branch**: `001-data-ingestor` | **Date**: 2026-03-07
 
+> **⚠️ Migration Note**: This API contract currently uses Prometheus-compatible query syntax and response formats inherited from the VictoriaMetrics storage backend, which is being removed. Since we own all clients (web dashboard, iPhone, iPad), the response format, query syntax, and field names will change during the Azure SQL Database migration. This contract documents the *current* implementation; a v2 contract will be authored during migration.
+
 ---
 
 ## Base URL
@@ -42,7 +44,7 @@ Authorization: Bearer <entra-id-jwt>
 
 List all known devices with their metadata.
 
-**Description**: Returns device identity information from `epcube_device_info` metrics stored in VictoriaMetrics. Each device entry includes the labels exposed by epcube-exporter.
+**Description**: Returns device identity information from `epcube_device_info` metrics stored in the data store. Each device entry includes the labels exposed by epcube-exporter.
 
 **Response**: `200 OK`
 
@@ -69,19 +71,19 @@ List all known devices with their metadata.
 }
 ```
 
-**Implementation**: Queries `epcube_device_info` and `epcube_scrape_success` from VictoriaMetrics.
+**Implementation**: Queries `epcube_device_info` and `epcube_scrape_success` from the data store.
 
 ---
 
 ### GET /api/v1/query
 
-Execute an instant PromQL query against VictoriaMetrics (FR-008).
+Execute an instant query against the data store (FR-008).
 
 **Query parameters**:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | yes | PromQL expression |
+| `query` | string | yes | Query expression *(currently PromQL — will change with Azure SQL migration)* |
 | `time` | string | no | Evaluation timestamp (RFC3339 or Unix epoch). Defaults to now. |
 
 **Response**: `200 OK`
@@ -109,20 +111,20 @@ Execute an instant PromQL query against VictoriaMetrics (FR-008).
 
 | Status | Condition |
 |--------|-----------|
-| `400 Bad Request` | Invalid PromQL syntax or missing `query` parameter |
-| `422 Unprocessable Entity` | Valid PromQL but query execution error |
+| `400 Bad Request` | Invalid query syntax or missing `query` parameter |
+| `422 Unprocessable Entity` | Query execution error |
 
 ---
 
 ### GET /api/v1/query_range
 
-Execute a range PromQL query for time-series data (FR-008, FR-009).
+Execute a range query for time-series data (FR-008, FR-009).
 
 **Query parameters**:
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `query` | string | yes | PromQL expression |
+| `query` | string | yes | PromQL expression *(will change with Azure SQL migration)* |
 | `start` | string | yes | Start timestamp (RFC3339 or Unix epoch) |
 | `end` | string | yes | End timestamp (RFC3339 or Unix epoch) |
 | `step` | string | yes | Query resolution step (e.g., `1m`, `5m`, `1h`) |
@@ -174,7 +176,7 @@ GET /api/v1/query_range?query=epcube_battery_state_of_capacity_percent{device="e
 
 | Status | Condition |
 |--------|-----------|
-| `400 Bad Request` | Missing required parameters or invalid PromQL |
+| `400 Bad Request` | Missing required parameters or invalid query |
 | `422 Unprocessable Entity` | `start` > `end`, or step too small |
 
 ---
@@ -246,14 +248,14 @@ List values for a specific label.
 
 ### GET /api/v1/health
 
-Health check endpoint (unauthenticated). Currently returns a static response (no runtime dependency check). The 503 path is reserved for a future VictoriaMetrics connectivity check.
+Health check endpoint (unauthenticated). Currently returns a static response (no runtime dependency check). The 503 path is reserved for a future data store connectivity check.
 
 **Response**: `200 OK`
 
 ```json
 {
   "status": "healthy",
-  "victoriametrics": "ok"
+  "datastore": "ok"
 }
 ```
 
@@ -262,7 +264,7 @@ Health check endpoint (unauthenticated). Currently returns a static response (no
 ```json
 {
   "status": "unhealthy",
-  "victoriametrics": "unreachable"
+  "datastore": "unreachable"
 }
 ```
 
@@ -270,7 +272,7 @@ Health check endpoint (unauthenticated). Currently returns a static response (no
 
 ## Convenience Endpoints
 
-These are higher-level endpoints that wrap PromQL queries for common use cases. They simplify client integration.
+These are higher-level endpoints that wrap data store queries for common use cases. They simplify client integration.
 
 ### GET /api/v1/devices/{device}/metrics
 
@@ -341,13 +343,13 @@ Get the grid energy balance (FR-003a).
 
 **Sign convention**: Positive = net import from grid (kWh), Negative = net export to grid (kWh).
 
-**Implementation**: Executes PromQL `epcube_grid_import_kwh - epcube_grid_export_kwh`. Grid import and export totals are directly available from the EP Cube cloud API.
+**Implementation**: Computes `epcube_grid_import_kwh - epcube_grid_export_kwh` via the data store. Grid import and export totals are directly available from the EP Cube cloud API.
 
 ---
 
 ## Common Response Envelope
 
-All PromQL-passthrough endpoints (`/query`, `/query_range`, `/series`, `/labels`, `/label/{name}/values`) return the standard Prometheus HTTP API response format:
+All query-passthrough endpoints (`/query`, `/query_range`, `/series`, `/labels`, `/label/{name}/values`) currently return a Prometheus-compatible response format. This will be replaced with a simpler JSON format during the Azure SQL migration since we own all clients:
 
 ```json
 {
@@ -380,7 +382,7 @@ public record DeviceListResponse(
 
 public record HealthResponse(
     [property: JsonPropertyName("status")] string Status,           // "healthy" or "unhealthy"
-    [property: JsonPropertyName("victoriametrics")] string VictoriaMetrics); // "reachable" or "unreachable"
+    [property: JsonPropertyName("datastore")] string Datastore); // "reachable" or "unreachable"
 
 public record DeviceMetricsResponse(
     [property: JsonPropertyName("device")] string Device,
@@ -392,9 +394,9 @@ public record ErrorResponse(
     [property: JsonPropertyName("error")] string Error);         // human-readable message
 ```
 
-`ErrorResponse` is used for all error responses (400, 422) across PromQL-passthrough and convenience endpoints. It matches the Prometheus error envelope so clients have one error-handling path.
+`ErrorResponse` is used for all error responses (400, 422) across query-passthrough and convenience endpoints.
 
-PromQL-passthrough endpoints return raw VictoriaMetrics JSON (not wrapped in custom models) to preserve compatibility with Grafana and other Prometheus-ecosystem tools.
+Query-passthrough endpoints currently return raw data store JSON. Since we own all clients, the response format will be simplified during the Azure SQL migration.
 
 ---
 
@@ -402,7 +404,7 @@ PromQL-passthrough endpoints return raw VictoriaMetrics JSON (not wrapped in cus
 
 ### GET /metrics
 
-Prometheus-format metrics for self-monitoring (FR-021). **Unauthenticated** — served outside the `/api/v1` auth group.
+Self-monitoring metrics endpoint (FR-021). **Unauthenticated** — served outside the `/api/v1` auth group.
 
 **Response**: `200 OK` (content-type: `text/plain; version=0.0.4; charset=utf-8`)
 
@@ -419,13 +421,13 @@ http_request_duration_seconds_bucket{code="200",method="GET",controller="",actio
 process_cpu_seconds_total 1.23
 ```
 
-**Note**: This endpoint exposes only HTTP performance counters and process metrics — no telemetry data. Served by `prometheus-net.AspNetCore` via `app.MapMetrics()`.
+**Note**: This endpoint exposes only HTTP performance counters and process metrics — no telemetry data. Served by `prometheus-net.AspNetCore` via `app.MapMetrics()`. *The `/metrics` endpoint format is consumed by infrastructure tooling, not our clients, so its Prometheus format is fine.*
 
 ---
 
 ## Input Validation (FR-019)
 
-All endpoints validate incoming query/path parameters for presence and type before forwarding to VictoriaMetrics. Invalid input returns `400 Bad Request` with the `ErrorResponse` envelope:
+All endpoints validate incoming query/path parameters for presence and type before forwarding to the data store. Invalid input returns `400 Bad Request` with the `ErrorResponse` envelope:
 
 ```json
 {

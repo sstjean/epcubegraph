@@ -45,7 +45,7 @@ All other dependencies (`HttpClient`, `System.Text.Json`, `IConfiguration`) are 
 | `xunit` | Test framework |
 | `coverlet.collector` | Coverage reporting (100% required) |
 | `Microsoft.AspNetCore.Mvc.Testing` | WebApplicationFactory for integration tests |
-| `Testcontainers` | VictoriaMetrics integration tests |
+| `Testcontainers` | Data store integration tests |
 
 ---
 
@@ -126,7 +126,7 @@ dotnet watch run
 
 ## 5. Deploy to Azure
 
-A single command deploys everything (VictoriaMetrics, epcube-exporter, API):
+A single command deploys everything (data store, epcube-exporter, API):
 
 ```bash
 cd infra
@@ -184,11 +184,10 @@ cd infra
 ```
 
 This deploys:
-- **Azure Container Apps Environment** — hosting for VictoriaMetrics + vmauth + API
-- **VictoriaMetrics container** — time-series storage (`-retentionPeriod=5y`)
-- **vmauth sidecar** — bearer token authentication for remote-write
+- **Azure Container Apps Environment** — hosting for data store + API + exporter
+- **Data store container** — time-series storage (indefinite retention) *(currently VictoriaMetrics — migration to Azure SQL Database planned)*
 - **API container** — ASP.NET Core service with Entra ID auth
-- **Azure Key Vault** — stores remote-write bearer token
+- **Azure Key Vault** — stores secrets
 - **Entra ID App Registration** — OAuth 2.0 for API authentication
 
 ---
@@ -205,7 +204,7 @@ epcubegraph/
 │   │       ├── appsettings.Development.json
 │   │       ├── EpCubeGraph.Api.csproj
 │   │       ├── Models/                # Response records (DeviceInfo, ErrorResponse)
-│   │       ├── Services/              # VictoriaMetrics client, grid calc
+│   │       ├── Services/              # Data store client, grid calc
 │   │       ├── Validate.cs            # Input validation helpers (FR-019)
 │   │       └── Endpoints/             # Minimal API route groups
 │   ├── tests/

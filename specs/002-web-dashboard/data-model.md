@@ -1,6 +1,6 @@
 # Data Model: Web Dashboard for Energy Telemetry
 
-**Branch**: `002-web-dashboard` | **Date**: 2026-03-16
+**Branch**: `002-web-dashboard` | **Date**: 2026-03-22
 
 ---
 
@@ -32,13 +32,15 @@ interface DeviceListResponse {
 }
 ```
 
-**Dashboard usage**: Rendered as device cards on the current readings view (US1). The `online` field drives the offline/stale indicator (FR-006). The `class` field determines which metrics to query for each device. The `alias` field is used to group battery and solar devices into a single DeviceCard per physical EP Cube unit (see plan.md Design Decisions).
+**Dashboard usage**: Rendered as device cards on the current readings view (US1). The system has 2 EP Cube devices, each exposing a battery and solar target (4 devices total in the API, grouped into 2 DeviceCards). The `online` field drives the offline/stale indicator (FR-006). The `class` field determines which metrics to query for each device. The `alias` field is used to group battery and solar devices into a single DeviceCard per physical EP Cube unit (see plan.md Design Decisions). When the API returns data for only 1 of the 2 physical devices, the missing device's card shows the stale-data/offline indicator (FR-006).
 
 ---
 
 ## Entity: Instant Query Result (API Response)
 
-**Source**: `GET /api/v1/query?query=<promql>` → Prometheus instant vector
+**Source**: `GET /api/v1/query` → current metric values
+
+> **Migration note**: The response format below reflects the current Prometheus-compatible shape. During the Azure SQL migration the API will be redesigned with a simpler JSON format — since we own all clients, there is no backward-compatibility constraint.
 
 ```typescript
 interface InstantQueryResponse {
@@ -67,7 +69,9 @@ interface InstantQueryResponse {
 
 ## Entity: Range Query Result (API Response)
 
-**Source**: `GET /api/v1/query_range?query=<promql>&start=<ts>&end=<ts>&step=<duration>` → Prometheus range matrix
+**Source**: `GET /api/v1/query_range?start=<ts>&end=<ts>&step=<duration>` → time-series data
+
+> **Migration note**: Same as above — response format will be redesigned during Azure SQL migration.
 
 ```typescript
 interface RangeQueryResponse {
@@ -142,9 +146,11 @@ interface DeviceMetricsResponse {
 ```typescript
 interface HealthResponse {
   status: 'healthy' | 'unhealthy';
-  victoriametrics: 'reachable' | 'unreachable';
+  datastore: 'reachable' | 'unreachable';
 }
 ```
+
+> **Note**: The field was previously named `victoriametrics`. Renamed to `datastore` as part of the storage-backend-agnostic redesign. The dashboard checks `status` primarily and treats `datastore` as supplementary.
 
 **Dashboard usage**: Connectivity indicator (edge case: API unreachable). Dashboard polls health endpoint to show/hide connectivity error banner (FR-006).
 
@@ -178,8 +184,24 @@ The dashboard maintains ephemeral UI state — not persisted across sessions:
 | `isAuthenticated` | `boolean` | `false` | Whether MSAL has an active account |
 | `isApiReachable` | `boolean` | `true` | Health endpoint reachability |
 | `lastRefreshed` | `Date \| null` | `null` | Timestamp of last data fetch |
+| `currentView` | `'flow' \| 'gauges'` | `'flow'` | Active view mode for current readings (FR-017) |
 
 **No persistent client-side storage**: No localStorage, no IndexedDB, no cookies for data. Session tokens stored in `sessionStorage` by MSAL.js (cleared on tab close). This is the simplest approach and avoids stale cache issues.
+
+---
+
+## Client-Side Telemetry (FR-020)
+
+The dashboard integrates `@microsoft/applicationinsights-web` for client-side error telemetry. This is NOT a data entity — it's an operational concern. The SDK sends telemetry directly to Azure Application Insights (no API involvement).
+
+**Tracked events**:
+- Unhandled exceptions (`trackException`)
+- Failed API calls — 4xx/5xx responses (`trackEvent` with url + status)
+- Page load performance (`trackPageView`)
+
+**Not tracked**: PII, user input, metric values, authentication tokens.
+
+**Init**: Lazy — only when `VITE_APPINSIGHTS_CONNECTION_STRING` is set. Silent in local dev and tests.
 
 ---
 

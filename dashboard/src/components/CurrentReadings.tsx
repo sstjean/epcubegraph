@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchDevices, fetchInstantQuery } from '../api';
+import { fetchDevices, fetchCurrentReadings } from '../api';
 import { DeviceCard } from './DeviceCard';
 import { EnergyFlowDiagram } from './EnergyFlowDiagram';
 import type { DeviceCardMetrics } from './DeviceCard';
-import type { Device, InstantQueryResponse } from '../types';
+import type { Device, CurrentReadingsResponse } from '../types';
 import { createPollingInterval, clearPollingInterval } from '../utils/polling';
 import { formatRelativeTime } from '../utils/formatting';
 
@@ -25,10 +25,10 @@ function getGroupName(device: Device): string {
   return match ? `EP Cube ${match[1]}` : base;
 }
 
-/** Find the metric value for a given device name from an instant query response. */
-function getMetricForDevice(response: InstantQueryResponse, deviceName: string): number {
-  const match = response.data?.result?.find((r) => r.metric.device === deviceName);
-  return match ? parseFloat(match.value[1]) : 0;
+/** Find the metric value for a given device name from a current readings response. */
+function getMetricForDevice(response: CurrentReadingsResponse, deviceName: string): number {
+  const match = response.readings?.find((r) => r.device_id === deviceName);
+  return match ? match.value : 0;
 }
 
 export function CurrentReadings() {
@@ -43,12 +43,12 @@ export function CurrentReadings() {
     try {
       const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored] = await Promise.all([
         fetchDevices(),
-        fetchInstantQuery('epcube_battery_state_of_capacity_percent'),
-        fetchInstantQuery('epcube_battery_power_watts'),
-        fetchInstantQuery('epcube_solar_instantaneous_generation_watts'),
-        fetchInstantQuery('epcube_grid_power_watts'),
-        fetchInstantQuery('epcube_home_load_power_watts'),
-        fetchInstantQuery('epcube_battery_stored_kwh'),
+        fetchCurrentReadings('battery_state_of_capacity_percent'),
+        fetchCurrentReadings('battery_power_watts'),
+        fetchCurrentReadings('solar_instantaneous_generation_watts'),
+        fetchCurrentReadings('grid_power_watts'),
+        fetchCurrentReadings('home_load_power_watts'),
+        fetchCurrentReadings('battery_stored_kwh'),
       ]);
 
       // Group devices by base alias

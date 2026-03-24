@@ -49,11 +49,12 @@ from Crypto.Util.Padding import pad
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 
 # Entra ID auth config (only used when auth is enabled)
 AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
@@ -74,6 +75,111 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# ---------------------------------------------------------------------------
+# PostgreSQL writer (optional — enabled via POSTGRES_DSN)
+# ---------------------------------------------------------------------------
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None  # type: ignore[assignment]
+
+
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS devices (
+    id SERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL UNIQUE,
+    device_class TEXT NOT NULL,
+    alias TEXT,
+    manufacturer TEXT,
+    product_code TEXT,
+    uid TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS readings (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    UNIQUE (device_id, metric_name, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
+    ON readings (device_id, metric_name, timestamp DESC);
+"""
+
+
+class PostgresWriter:
+    """Writes telemetry readings and device info to PostgreSQL."""
+
+    def __init__(self, dsn):
+        self._dsn = dsn
+        self._conn = None
+        self._ensure_schema()
+
+    def _get_conn(self):
+        """Get or re-establish the database connection."""
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(self._dsn)
+            self._conn.autocommit = False
+        return self._conn
+
+    def _ensure_schema(self):
+        """Create tables and indexes if they don't exist."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_SCHEMA_SQL)
+        conn.commit()
+        log.info("PostgreSQL schema verified")
+
+    def upsert_device(self, device_id, device_class, alias=None,
+                      manufacturer=None, product_code=None, uid=None):
+        """Insert or update a device record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO devices (device_id, device_class, alias, manufacturer, product_code, uid)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (device_id) DO UPDATE SET
+                       device_class = EXCLUDED.device_class,
+                       alias = EXCLUDED.alias,
+                       manufacturer = EXCLUDED.manufacturer,
+                       product_code = EXCLUDED.product_code,
+                       uid = EXCLUDED.uid,
+                       updated_at = NOW()""",
+                (device_id, device_class, alias, manufacturer, product_code, uid),
+            )
+        conn.commit()
+
+    def write_readings(self, readings):
+        """Batch-insert readings. Each reading is (device_id, metric_name, timestamp, value).
+
+        Uses ON CONFLICT to deduplicate (same device + metric + timestamp).
+        """
+        if not readings:
+            return
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO readings (device_id, metric_name, timestamp, value)
+                   VALUES %s
+                   ON CONFLICT (device_id, metric_name, timestamp) DO UPDATE SET
+                       value = EXCLUDED.value""",
+                readings,
+                template="(%s, %s, %s, %s)",
+            )
+        conn.commit()
+
+    def close(self):
+        """Close the database connection."""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
 
 # ---------------------------------------------------------------------------
 # Cloud API helpers
@@ -247,7 +353,7 @@ class EpCubeCollector:
     # Keep last 10 minutes of snapshots (at 60s interval = ~10 entries)
     HISTORY_MAX = 10
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, pg_writer=None):
         self._username = username
         self._password = password
         self._token = None
@@ -262,6 +368,7 @@ class EpCubeCollector:
         self._consecutive_errors = 0
         self._bat_peak = {}  # device_id → {date: str, peak: float}
         self._start_time = time.time()
+        self._pg = pg_writer
 
     def _ensure_auth(self):
         if not self._token or self._token_expiring_soon():
@@ -321,6 +428,8 @@ class EpCubeCollector:
         self._ensure_auth()
 
         lines = []
+        pg_readings = []  # (device_id, metric_name, timestamp, value)
+        pg_devices = []   # (device_id, class, alias, manufacturer, product_code, uid)
         now_utc = datetime.now(timezone.utc)
         snapshot = {
             "time": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -482,6 +591,26 @@ class EpCubeCollector:
                 il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
                 lines.append(f"epcube_device_info{{{il}}} 1")
 
+            # ── Accumulate Postgres readings ──
+            if self._pg:
+                bat_device_id = bat_labels["device"]
+                sol_device_id = sol_labels["device"]
+                pg_devices.append((bat_device_id, "storage_battery", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+                pg_devices.append((sol_device_id, "home_solar", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+                ts = now_utc
+                pg_readings.extend([
+                    (sol_device_id, "solar_instantaneous_generation_watts", ts, solar_w),
+                    (bat_device_id, "battery_state_of_capacity_percent", ts, soc),
+                    (bat_device_id, "grid_power_watts", ts, grid_w),
+                    (bat_device_id, "home_load_power_watts", ts, backup_w),
+                    (bat_device_id, "battery_power_watts", ts, battery_w),
+                    (bat_device_id, "self_sufficiency_rate", ts, self_help),
+                    (bat_device_id, "battery_stored_kwh", ts, bat_stored_kwh),
+                    (bat_device_id, "battery_peak_stored_kwh", ts, bat_peak_kwh),
+                ])
+
         # Also try to get daily energy totals
         # Build a lookup from device id to snapshot entry for merging
         snap_by_id = {d["id"]: d for d in snapshot["devices"]}
@@ -521,6 +650,17 @@ class EpCubeCollector:
                     snap_dev["grid_export_kwh"] = grid_to
                     snap_dev["backup_kwh"] = backup_kwh
 
+                # Accumulate daily totals for Postgres
+                if self._pg:
+                    bat_dev_id = f"epcube{dev['id']}_battery"
+                    sol_dev_id = f"epcube{dev['id']}_solar"
+                    pg_readings.extend([
+                        (sol_dev_id, "solar_cumulative_generation_kwh", now_utc, solar_kwh),
+                        (bat_dev_id, "grid_import_kwh", now_utc, grid_from),
+                        (bat_dev_id, "grid_export_kwh", now_utc, grid_to),
+                        (bat_dev_id, "home_supply_cumulative_kwh", now_utc, backup_kwh),
+                    ])
+
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
 
@@ -537,6 +677,16 @@ class EpCubeCollector:
                 self._history.append(snapshot)
 
         log.info("Poll complete: %d metric lines for %d device(s)", len(lines), len(self._devices))
+
+        # ── Write to PostgreSQL (if configured) ──
+        if self._pg and (pg_devices or pg_readings):
+            try:
+                for d in pg_devices:
+                    self._pg.upsert_device(*d)
+                self._pg.write_readings(pg_readings)
+                log.info("Postgres: wrote %d readings for %d devices", len(pg_readings), len(pg_devices) // 2)
+            except Exception as e:
+                log.error("Postgres write failed: %s", e)
 
     def get_health(self):
         """Return health status. Unhealthy if no poll in 5 min or 5+ consecutive errors."""
@@ -678,7 +828,6 @@ def _render_status_page(status, health):
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="30">
 <title>epcube-exporter status</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }}
@@ -716,10 +865,27 @@ def _render_status_page(status, health):
 </div>
 {tables_html}
 <script>
-document.querySelectorAll('.utctime').forEach(el => {{
-  const d = new Date(el.dataset.utc);
-  el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', hour12: true}});
-}});
+function convertTimes() {{
+  document.querySelectorAll('.utctime').forEach(el => {{
+    const d = new Date(el.dataset.utc);
+    el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', hour12: true}});
+  }});
+}}
+convertTimes();
+
+// Background auto-refresh: fetches new HTML and swaps body content in-place.
+// No full page reload = no focus stealing.
+setInterval(async () => {{
+  try {{
+    const resp = await fetch(location.href);
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.body.innerHTML = doc.body.innerHTML;
+    convertTimes();
+  }} catch (e) {{}}
+}}, 30000);
 </script>
 <div class="footer">Auto-refreshes every 30s &middot; Last 10 polls (~10 min) &middot;
   <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
@@ -1036,7 +1202,16 @@ def main():
         log.error("EPCUBE_USERNAME and EPCUBE_PASSWORD environment variables required")
         sys.exit(1)
 
-    collector = EpCubeCollector(username, password)
+    # Initialize Postgres writer if configured
+    pg_writer = None
+    if POSTGRES_DSN:
+        if psycopg2 is None:
+            log.error("POSTGRES_DSN is set but psycopg2 is not installed")
+            sys.exit(1)
+        pg_writer = PostgresWriter(POSTGRES_DSN)
+        log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
+
+    collector = EpCubeCollector(username, password, pg_writer=pg_writer)
 
     # Initial poll (blocks until first data is available)
     collector.poll()

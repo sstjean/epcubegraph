@@ -40,21 +40,21 @@ describe('api', () => {
     expect(result).toEqual(mockResponse);
   });
 
-  it('fetchInstantQuery attaches bearer token', async () => {
+  it('fetchCurrentReadings attaches bearer token', async () => {
     // Arrange
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ status: 'success', data: { resultType: 'vector', result: [] } }),
+      json: () => Promise.resolve({ metric: 'test_metric', readings: [] }),
     });
-    const { fetchInstantQuery } = await import('../../src/api');
+    const { fetchCurrentReadings } = await import('../../src/api');
 
     // Act
-    await fetchInstantQuery('up');
+    await fetchCurrentReadings('battery_soc');
 
     // Assert
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/query'),
+      expect.stringContaining('/readings/current'),
       expect.objectContaining({
         headers: expect.objectContaining({
           Authorization: 'Bearer mock-bearer-token',
@@ -63,17 +63,17 @@ describe('api', () => {
     );
   });
 
-  it('fetchRangeQuery sends correct start/end/step params', async () => {
+  it('fetchRangeReadings sends correct start/end/step params', async () => {
     // Arrange
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ status: 'success', data: { resultType: 'matrix', result: [] } }),
+      json: () => Promise.resolve({ metric: 'test_metric', series: [] }),
     });
-    const { fetchRangeQuery } = await import('../../src/api');
+    const { fetchRangeReadings } = await import('../../src/api');
 
     // Act
-    await fetchRangeQuery('epcube_battery_power_watts', 1000, 2000, 60);
+    await fetchRangeReadings('battery_power_watts', 1000, 2000, 60);
 
     // Assert
     const url = (globalThis.fetch as any).mock.calls[0][0] as string;
@@ -87,7 +87,7 @@ describe('api', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ status: 'success', data: { resultType: 'matrix', result: [] } }),
+      json: () => Promise.resolve({ metric: 'grid_power_watts', series: [] }),
     });
     const { fetchGridPower } = await import('../../src/api');
 
@@ -120,7 +120,7 @@ describe('api', () => {
 
   it('fetchHealth returns health status', async () => {
     // Arrange
-    const mockResponse = { status: 'healthy', victoriametrics: 'reachable' };
+    const mockResponse = { status: 'healthy', datastore: 'reachable' };
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,

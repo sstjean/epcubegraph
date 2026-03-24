@@ -33,5 +33,5 @@
 
 - All items passed validation.
 - Dependency on 001-data-ingestor (telemetry API) is documented.
-- Grafana integration included as User Story 3 (P3).
+- Grafana integration descoped (FR-009 removed).
 - Ready for `/speckit.clarify` or `/speckit.plan`.
