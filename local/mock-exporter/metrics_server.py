@@ -195,11 +195,15 @@ import os
 import threading
 from datetime import datetime as _dt, timezone as _tz
 
+from typing import Any
+
+psycopg2: Any = None
+
 try:
     import psycopg2
     import psycopg2.extras
 except ImportError:
-    psycopg2 = None  # type: ignore[assignment]
+    pass
 
 _POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 

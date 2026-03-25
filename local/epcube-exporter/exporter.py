@@ -80,11 +80,15 @@ logging.basicConfig(
 # PostgreSQL writer (optional — enabled via POSTGRES_DSN)
 # ---------------------------------------------------------------------------
 
+from typing import Any
+
+psycopg2: Any = None
+
 try:
     import psycopg2
     import psycopg2.extras
 except ImportError:
-    psycopg2 = None  # type: ignore[assignment]
+    pass
 
 
 _SCHEMA_SQL = """
