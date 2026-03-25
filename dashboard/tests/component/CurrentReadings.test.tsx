@@ -3,6 +3,7 @@ import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/pr
 import { h } from 'preact';
 import { fetchDevices, fetchCurrentReadings } from '../../src/api';
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
+import { withRetry } from '../../src/utils/retry';
 import { CurrentReadings } from '../../src/components/CurrentReadings';
 
 // Mock external dependencies
@@ -17,9 +18,23 @@ vi.mock('../../src/utils/polling', () => ({
   DEFAULT_INTERVAL_MS: 5_000,
 }));
 
+vi.mock('../../src/utils/retry', () => ({
+  withRetry: vi.fn((fn: () => Promise<unknown>) => fn()),
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  },
+  isRetryableError: vi.fn().mockReturnValue(true),
+}));
+
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchCurrentReadings = fetchCurrentReadings as ReturnType<typeof vi.fn>;
 const mockCreatePolling = createPollingInterval as ReturnType<typeof vi.fn>;
+const mockWithRetry = withRetry as ReturnType<typeof vi.fn>;
 
 const emptyMetricResponse = {
   metric: 'test_metric',
@@ -417,6 +432,91 @@ describe('CurrentReadings', () => {
     // Assert — negative grid value means exporting; flow diagram should show "exporting" sublabel
     await waitFor(() => {
       expect(screen.getByText('exporting')).toBeTruthy();
+    });
+  });
+
+  it('shows retry count during reconnection attempts', async () => {
+    // Arrange — withRetry calls onRetry before each retry delay
+    mockWithRetry.mockImplementation(async (fn: () => Promise<unknown>, options?: { onRetry?: (n: number) => void }) => {
+      if (options?.onRetry) {
+        options.onRetry(3);
+      }
+      return fn();
+    });
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Reconnecting… attempt 3 of 10/)).toBeTruthy();
+    });
+  });
+
+  it('clears retry count on successful load', async () => {
+    // Arrange — withRetry succeeds without calling onRetry
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — no retry notice visible
+    await waitFor(() => {
+      expect(screen.queryByText(/Reconnecting/)).toBeNull();
+    });
+  });
+
+  it('wraps loadData batch in withRetry', async () => {
+    // Arrange
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(mockWithRetry).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ maxRetries: 10 }),
+      );
+    });
+  });
+
+  it('skips polling tick while retry is in progress', async () => {
+    // Arrange — withRetry resolves after we capture the polling callback
+    let retryResolve!: (v: unknown) => void;
+    mockWithRetry.mockReturnValue(new Promise((r) => { retryResolve = r; }));
+    mockFetchDevices.mockResolvedValue({ devices: [] });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    let pollingCallback: (() => void) | undefined;
+    mockCreatePolling.mockImplementation((cb: () => void) => {
+      pollingCallback = cb;
+      return 1;
+    });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // loadData is called once on mount, now simulate a polling tick while still retrying
+    pollingCallback!();
+
+    // Resolve the first withRetry call
+    retryResolve([
+      { devices: [] },
+      emptyMetricResponse, emptyMetricResponse, emptyMetricResponse,
+      emptyMetricResponse, emptyMetricResponse, emptyMetricResponse,
+    ]);
+
+    await waitFor(() => {
+      // withRetry was only called once (mount) — the polling tick was skipped
+      expect(mockWithRetry).toHaveBeenCalledTimes(1);
     });
   });
 });

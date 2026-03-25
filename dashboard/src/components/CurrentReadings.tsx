@@ -6,6 +6,7 @@ import type { DeviceCardMetrics } from './DeviceCard';
 import type { Device, CurrentReadingsResponse } from '../types';
 import { createPollingInterval, clearPollingInterval } from '../utils/polling';
 import { formatRelativeTime } from '../utils/formatting';
+import { withRetry } from '../utils/retry';
 
 export interface DeviceGroup {
   name: string;
@@ -37,19 +38,28 @@ export function CurrentReadings() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<number>(0);
   const [view, setView] = useState<'gauges' | 'flow'>('flow');
+  const [retryAttempt, setRetryAttempt] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryingRef = useRef(false);
 
   const loadData = async () => {
+    if (retryingRef.current) return;
+    retryingRef.current = true;
+    setRetryAttempt(0);
+
     try {
-      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored] = await Promise.all([
-        fetchDevices(),
-        fetchCurrentReadings('battery_state_of_capacity_percent'),
-        fetchCurrentReadings('battery_power_watts'),
-        fetchCurrentReadings('solar_instantaneous_generation_watts'),
-        fetchCurrentReadings('grid_power_watts'),
-        fetchCurrentReadings('home_load_power_watts'),
-        fetchCurrentReadings('battery_stored_kwh'),
-      ]);
+      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored] = await withRetry(
+        () => Promise.all([
+          fetchDevices(),
+          fetchCurrentReadings('battery_state_of_capacity_percent'),
+          fetchCurrentReadings('battery_power_watts'),
+          fetchCurrentReadings('solar_instantaneous_generation_watts'),
+          fetchCurrentReadings('grid_power_watts'),
+          fetchCurrentReadings('home_load_power_watts'),
+          fetchCurrentReadings('battery_stored_kwh'),
+        ]),
+        { maxRetries: 10, onRetry: setRetryAttempt },
+      );
 
       // Group devices by base alias
       const groupMap = new Map<string, Device[]>();
@@ -97,10 +107,13 @@ export function CurrentReadings() {
       setGroups(deviceGroups);
       setLastRefreshed(Date.now() / 1000);
       setError(null);
+      setRetryAttempt(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
+      setRetryAttempt(0);
     } finally {
       setLoading(false);
+      retryingRef.current = false;
     }
   };
 
@@ -136,7 +149,10 @@ export function CurrentReadings() {
         </div>
       </div>
       {error && <p role="alert">Error: {error}</p>}
-      {loading && !error && <p class="status-message">Loading devices…</p>}
+      {retryAttempt > 0 && !error && (
+        <p role="status" class="retry-notice">Reconnecting… attempt {retryAttempt} of 10</p>
+      )}
+      {loading && !error && retryAttempt === 0 && <p class="status-message">Loading devices…</p>}
       {!loading && !error && groups.length === 0 && <p class="status-message">No devices found.</p>}
       {view === 'flow' && groups.length > 0 && (
         <EnergyFlowDiagram groups={groups} />

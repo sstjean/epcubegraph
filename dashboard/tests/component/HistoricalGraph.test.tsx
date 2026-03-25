@@ -3,11 +3,25 @@ import { render, screen, waitFor, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
 import { HistoricalGraph, mergeTimeSeries } from '../../src/components/HistoricalGraph';
 import { fetchRangeReadings, fetchGridPower } from '../../src/api';
+import { withRetry } from '../../src/utils/retry';
 import type { RangeReadingsResponse, TimeRangeValue } from '../../src/types';
 
 vi.mock('../../src/api', () => ({
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
+}));
+
+vi.mock('../../src/utils/retry', () => ({
+  withRetry: vi.fn((fn: () => Promise<unknown>) => fn()),
+  ApiError: class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.name = 'ApiError';
+      this.status = status;
+    }
+  },
+  isRetryableError: vi.fn().mockReturnValue(true),
 }));
 
 // Mock uPlot — happy-dom doesn't support canvas
@@ -31,6 +45,7 @@ vi.mock('uplot', () => {
 
 const mockFetchRangeReadings = fetchRangeReadings as ReturnType<typeof vi.fn>;
 const mockFetchGridPower = fetchGridPower as ReturnType<typeof vi.fn>;
+const mockWithRetry = withRetry as ReturnType<typeof vi.fn>;
 
 function makeRangeResponse(
   values: Array<[number, string]>,
@@ -295,6 +310,129 @@ describe('HistoricalGraph', () => {
         newRange.start,
         newRange.end,
         newRange.step,
+      );
+    });
+  });
+
+  it('cleans up uPlot instance on unmount', async () => {
+    // Arrange
+    mockFetchRangeReadings.mockResolvedValue(
+      makeRangeResponse([[1711152000, '500'], [1711152060, '600']])
+    );
+    mockFetchGridPower.mockResolvedValue(
+      makeRangeResponse([[1711152000, '100'], [1711152060, '150']])
+    );
+
+    const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    await waitFor(() => {
+      const container = document.querySelector('[aria-label]');
+      expect(container).toBeTruthy();
+    });
+
+    // Act — unmount triggers cleanup
+    unmount();
+
+    // Assert — no uPlot elements should remain
+    expect(document.querySelector('.uplot')).toBeNull();
+  });
+
+  it('ignores stale fetch results when unmounted during fetch', async () => {
+    // Arrange — use delayed promises that resolve after unmount
+    let resolveRange!: (v: RangeReadingsResponse) => void;
+    let resolveGrid!: (v: RangeReadingsResponse) => void;
+    mockFetchRangeReadings.mockReturnValue(new Promise<RangeReadingsResponse>((r) => { resolveRange = r; }));
+    mockFetchGridPower.mockReturnValue(new Promise<RangeReadingsResponse>((r) => { resolveGrid = r; }));
+
+    const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Act — unmount before fetch resolves (sets cancelled = true)
+    unmount();
+
+    // Resolve after unmount
+    const response = makeRangeResponse([[1711152000, '500']]);
+    resolveRange(response);
+    resolveGrid(response);
+
+    // Assert — no crash, no chart rendered
+    await new Promise((r) => setTimeout(r, 10));
+    expect(document.querySelector('.uplot')).toBeNull();
+  });
+
+  it('shows retry count during reconnection attempts', async () => {
+    // Arrange — withRetry calls onRetry before each retry, then succeeds
+    mockWithRetry.mockImplementation(async (fn: () => Promise<unknown>, options?: { onRetry?: (n: number) => void }) => {
+      if (options?.onRetry) {
+        options.onRetry(2);
+      }
+      return fn();
+    });
+    mockFetchRangeReadings.mockResolvedValue(
+      makeRangeResponse([[1711152000, '500']])
+    );
+    mockFetchGridPower.mockResolvedValue(
+      makeRangeResponse([[1711152000, '100']])
+    );
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Reconnecting… attempt 2 of 10/)).toBeTruthy();
+    });
+  });
+
+  it('shows error after all retries exhausted', async () => {
+    // Arrange — withRetry rejects after retries
+    mockWithRetry.mockRejectedValue(new Error('Service Unavailable'));
+    mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
+    mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/Error: Service Unavailable/)).toBeTruthy();
+    });
+  });
+
+  it('shows fallback error when rejection is not an Error instance', async () => {
+    // Arrange — withRetry rejects with a non-Error value
+    mockWithRetry.mockRejectedValue('something went wrong');
+    mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
+    mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(screen.getByText(/Error: Failed to load data/)).toBeTruthy();
+    });
+  });
+
+  it('wraps fetchData batch in withRetry', async () => {
+    // Arrange
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
+    mockFetchRangeReadings.mockResolvedValue(
+      makeRangeResponse([[1711152000, '500']])
+    );
+    mockFetchGridPower.mockResolvedValue(
+      makeRangeResponse([[1711152000, '100']])
+    );
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(mockWithRetry).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ maxRetries: 10 }),
       );
     });
   });

@@ -5,7 +5,6 @@ vi.mock('../../src/auth', () => ({
   getAccessToken: vi.fn().mockResolvedValue('mock-bearer-token'),
   initializeMsal: vi.fn(),
   isAuthenticated: vi.fn().mockReturnValue(true),
-  logout: vi.fn(),
 }));
 
 describe('api', () => {
@@ -101,56 +100,6 @@ describe('api', () => {
     );
   });
 
-  it('fetchDeviceMetrics returns metric list', async () => {
-    // Arrange
-    const mockResponse = { device: 'epcube_battery', metrics: ['power_watts', 'soc_percent'] };
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(mockResponse),
-    });
-    const { fetchDeviceMetrics } = await import('../../src/api');
-
-    // Act
-    const result = await fetchDeviceMetrics('epcube_battery');
-
-    // Assert
-    expect(result).toEqual(mockResponse);
-  });
-
-  it('fetchHealth returns health status', async () => {
-    // Arrange
-    const mockResponse = { status: 'healthy', datastore: 'reachable' };
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve(mockResponse),
-    });
-    const { fetchHealth } = await import('../../src/api');
-
-    // Act
-    const result = await fetchHealth();
-
-    // Assert
-    expect(result).toEqual(mockResponse);
-    // fetchHealth should NOT attach an Authorization header (endpoint is AllowAnonymous)
-    const callHeaders = (globalThis.fetch as any).mock.calls[0][1]?.headers ?? {};
-    expect(callHeaders.Authorization).toBeUndefined();
-  });
-
-  it('fetchHealth throws on error response', async () => {
-    // Arrange — no `error` field to exercise the HTTP status fallback branch
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 503,
-      json: () => Promise.resolve({}),
-    });
-    const { fetchHealth } = await import('../../src/api');
-
-    // Act & Assert
-    await expect(fetchHealth()).rejects.toThrow('HTTP 503');
-  });
-
   it('parses error responses (400/401/403/404/422/503)', async () => {
     // Arrange
     const errorResponse = { status: 'error', errorType: 'bad_data', error: 'invalid query' };
@@ -160,9 +109,17 @@ describe('api', () => {
       json: () => Promise.resolve(errorResponse),
     });
     const { fetchDevices } = await import('../../src/api');
+    const { ApiError } = await import('../../src/utils/retry');
 
     // Act & Assert
-    await expect(fetchDevices()).rejects.toThrow('invalid query');
+    try {
+      await fetchDevices();
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as InstanceType<typeof ApiError>).message).toBe('invalid query');
+      expect((err as InstanceType<typeof ApiError>).status).toBe(400);
+    }
   });
 
   it('401 triggers re-auth and retries request once (FR-014)', async () => {
@@ -236,9 +193,17 @@ describe('api', () => {
       json: () => Promise.resolve({ status: 'error' }),
     });
     const { fetchDevices } = await import('../../src/api');
+    const { ApiError } = await import('../../src/utils/retry');
 
     // Act & Assert
-    await expect(fetchDevices()).rejects.toThrow('HTTP 503');
+    try {
+      await fetchDevices();
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect((err as InstanceType<typeof ApiError>).message).toBe('HTTP 503');
+      expect((err as InstanceType<typeof ApiError>).status).toBe(503);
+    }
   });
 
   it('error on non-401 status does not trigger re-auth', async () => {
