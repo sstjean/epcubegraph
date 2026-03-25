@@ -21,11 +21,6 @@ export function formatKwh(value: number): string {
   return `${value.toFixed(1)} kWh`;
 }
 
-export function formatTimestamp(epoch: number): string {
-  if (epoch == null || Number.isNaN(epoch)) return '—';
-  return new Date(epoch * 1000).toLocaleString();
-}
-
 export function formatRelativeTime(epoch: number): string {
   if (epoch == null || Number.isNaN(epoch)) return '—';
   const seconds = Math.floor(Date.now() / 1000 - epoch);

@@ -166,7 +166,8 @@ describe('TimeRangeSelector', () => {
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
 
-    // Act — 1-day range
+    // Act — 1-day range (end first so start-change exercises field==='start' branch)
+    fireEvent.change(endInput, { target: { value: '2026-03-23' } });
     fireEvent.change(startInput, { target: { value: '2026-03-22' } });
     fireEvent.change(endInput, { target: { value: '2026-03-23' } });
 
@@ -234,6 +235,38 @@ describe('TimeRangeSelector', () => {
     }
   });
 
+  it('emits onChange when "Custom" button is clicked', () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" onChange={onChange} />);
+
+    // Act
+    fireEvent.click(screen.getByRole('button', { name: /custom/i }));
+
+    // Assert
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls[0][0]).toBe('custom');
+    expect(onChange.mock.calls[0][1]).toHaveProperty('step', 60);
+  });
+
+  it('emits onChange when end date is changed in custom mode', () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+    const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
+
+    // Act — set start first, then change end
+    fireEvent.change(startInput, { target: { value: '2026-03-20' } });
+    fireEvent.change(endInput, { target: { value: '2026-03-23' } });
+
+    // Assert — the end-date change path should have fired onChange
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1];
+    expect(lastCall).toBeTruthy();
+    expect(lastCall[1].start).toBeLessThan(lastCall[1].end);
+  });
+
   it('keyboard Tab navigates between preset buttons (FR-015)', () => {
     // Arrange
     render(<TimeRangeSelector selected="today" onChange={defaultOnChange} />);
@@ -244,4 +277,18 @@ describe('TimeRangeSelector', () => {
       expect(button.tabIndex).not.toBe(-1);
     }
   });
+
+  it('ignores invalid date input', () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+
+    // Act — fire nonsense value
+    fireEvent.change(startInput, { target: { value: 'not-a-date' } });
+
+    // Assert — onChange should not be called
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
 });

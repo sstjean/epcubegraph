@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@azure/msal-browser', () => {
   const mockAcquireTokenSilent = vi.fn();
   const mockLoginRedirect = vi.fn();
-  const mockLogout = vi.fn();
   const mockGetAllAccounts = vi.fn();
   const mockHandleRedirectPromise = vi.fn();
   const mockInitialize = vi.fn();
@@ -13,7 +12,6 @@ vi.mock('@azure/msal-browser', () => {
       initialize: mockInitialize,
       acquireTokenSilent: mockAcquireTokenSilent,
       loginRedirect: mockLoginRedirect,
-      logout: mockLogout,
       getAllAccounts: mockGetAllAccounts,
       handleRedirectPromise: mockHandleRedirectPromise,
     })),
@@ -25,7 +23,6 @@ vi.mock('@azure/msal-browser', () => {
     },
     mockAcquireTokenSilent,
     mockLoginRedirect,
-    mockLogout,
     mockGetAllAccounts,
     mockHandleRedirectPromise,
   };
@@ -136,19 +133,6 @@ describe('auth', () => {
     expect(result).toBe(false);
   });
 
-  it('logout clears session', async () => {
-    // Arrange
-    const { mockLogout } = await import('@azure/msal-browser') as any;
-    const { logout, initializeMsal } = await import('../../src/auth');
-    await initializeMsal();
-
-    // Act
-    await logout();
-
-    // Assert
-    expect(mockLogout).toHaveBeenCalled();
-  });
-
   it('getAccessToken triggers loginRedirect when no accounts', async () => {
     // Arrange
     const { mockGetAllAccounts, mockLoginRedirect } = await import('@azure/msal-browser') as any;
@@ -191,11 +175,4 @@ describe('auth', () => {
     expect(isAuthenticated()).toBe(false);
   });
 
-  it('logout is a no-op when MSAL not initialized', async () => {
-    // Arrange
-    const { logout } = await import('../../src/auth');
-
-    // Act & Assert (should not throw)
-    await expect(logout()).resolves.toBeUndefined();
-  });
 });

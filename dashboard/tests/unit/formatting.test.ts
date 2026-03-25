@@ -176,32 +176,6 @@ describe('formatting', () => {
     });
   });
 
-  describe('formatTimestamp', () => {
-    it('formats epoch to locale-aware date/time', async () => {
-      // Arrange
-      const { formatTimestamp } = await import('../../src/utils/formatting');
-      const epoch = 1710864000; // 2024-03-19T20:00:00Z
-
-      // Act
-      const result = formatTimestamp(epoch);
-
-      // Assert
-      expect(result).toBeTruthy();
-      expect(typeof result).toBe('string');
-    });
-
-    it('returns "—" for NaN', async () => {
-      // Arrange
-      const { formatTimestamp } = await import('../../src/utils/formatting');
-
-      // Act
-      const result = formatTimestamp(NaN);
-
-      // Assert
-      expect(result).toBe('—');
-    });
-  });
-
   describe('formatRelativeTime', () => {
     it('formats recent time as "Xm ago"', async () => {
       // Arrange

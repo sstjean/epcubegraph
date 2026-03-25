@@ -50,7 +50,3 @@ export function isAuthenticated(): boolean {
   return msalInstance.getAllAccounts().length > 0;
 }
 
-export async function logout(): Promise<void> {
-  if (!msalInstance) return;
-  await msalInstance.logout();
-}

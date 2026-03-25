@@ -41,22 +41,6 @@ export interface RangeReadingsResponse {
   series: TimeSeries[];
 }
 
-export interface DeviceMetricsResponse {
-  device: string;
-  metrics: string[];
-}
-
-export interface HealthResponse {
-  status: 'healthy' | 'unhealthy';
-  datastore: 'reachable' | 'unreachable';
-}
-
-export interface ErrorResponse {
-  status: 'error';
-  errorType: string;
-  error: string;
-}
-
 // Client-side types
 
 export type TimeRange = 'today' | '7d' | '30d' | '1y' | 'custom';
@@ -67,11 +51,4 @@ export interface TimeRangeValue {
   step: number;
 }
 
-export interface AppState {
-  selectedTimeRange: TimeRange;
-  customStart: Date | null;
-  customEnd: Date | null;
-  isAuthenticated: boolean;
-  isApiReachable: boolean;
-  lastRefreshed: Date | null;
-}
+
