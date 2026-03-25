@@ -78,7 +78,7 @@
 
 - [x] T022 [P] [US1] Implement ErrorBoundary component in dashboard/src/components/ErrorBoundary.tsx: componentDidCatch, error message + "Retry" button (keyboard-focusable), isApiReachable prop with role="alert" banner (FR-015)
 - [x] T023 [P] [US1] Implement GaugeDial component in dashboard/src/components/GaugeDial.tsx and DeviceCard component in dashboard/src/components/DeviceCard.tsx: article with aria-label (FR-015), 5 gauge dials (Solar 0-12kW, SOC 0-100%, Battery Power +/-20kW bidirectional, Home Load 0-10kW, Grid +/-20kW bidirectional), CSS in dashboard/src/app.css
-- [x] T024 [US1] Implement CurrentReadings component in dashboard/src/components/CurrentReadings.tsx: fetches device list + 6 instant queries per poll cycle, groups battery+solar devices by alias, renders DeviceCard per group, polling via createPollingInterval (30s), loading skeleton, ErrorBoundary, lastRefreshed timestamp
+- [x] T024 [US1] Implement CurrentReadings component in dashboard/src/components/CurrentReadings.tsx: fetches device list + 6 instant queries per poll cycle, groups battery+solar devices by alias, renders DeviceCard per group, polling via createPollingInterval (5s default, FR-012), loading skeleton, ErrorBoundary, lastRefreshed timestamp
 - [x] T025 [US1] Create dashboard/src/main.tsx entry point: MSAL init, auth check, restore view state from MSAL redirect (FR-014), mount Preact app
 - [x] T026 [US1] Create dashboard/src/App.tsx: nav with "Current" (/) and "History" (/history) links (FR-015), preact-router, ErrorBoundary wrapper
 
@@ -112,7 +112,7 @@
 
 **Independent Test**: With historical data available, select each predefined time range and verify graph renders with accurate data points within 2 seconds. Verify tiered step values (today=60s, 7d=3600s, 30d=86400s, 1y=calendar month). Verify custom date range auto-selects tier. Verify aggregation notice shown when downsampled. Verify empty range shows "no data" message. Verify data gaps render as broken lines.
 
-**FRs covered**: FR-004, FR-005, FR-007, FR-008, FR-013, FR-015
+**FRs covered**: FR-004, FR-005, FR-007, FR-008, FR-013, FR-015, FR-021, FR-022, FR-023, FR-024
 
 ### Tests for User Story 2 (TDD — write tests FIRST, confirm they FAIL)
 
@@ -125,6 +125,14 @@
 - [x] T030 [P] [US2] Implement TimeRangeSelector component in dashboard/src/components/TimeRangeSelector.tsx: buttons for today/7d/30d/1y/custom presets with aria-pressed on active (FR-015), keyboard-navigable (FR-015), calculates start/end timestamps for each preset, custom shows date input fields with label (FR-015, unrestricted range), tiered step calculation per FR-013: today=60s, 7d=3600s, 30d=86400s, 1y=calendar month aligned step, custom auto-tiers by duration (1d or less=60s, 7d or less=3600s, 30d or less=86400s, over 30d=calendar month), emits TimeRangeValue via onChange prop
 - [x] T031 [US2] Implement HistoricalGraph component in dashboard/src/components/HistoricalGraph.tsx: accepts TimeRangeValue props, fetches range queries for solar, battery, grid metrics via fetchRangeReadings + fetchGridPower with correct step, converts responses to uPlot.AlignedData (timestamps + value arrays, null for missing data points per FR-008), initializes uPlot with responsive sizing and aria-label (FR-015), line series per metric with color coding, tooltip with formatted values, shows "No data available for this time range" when results empty (FR-007), displays aggregation notice with role="status" above chart when step > 60s with tier label (3600=hourly, 86400=daily, calendar month=monthly) per FR-013
 - [x] T032 [US2] Implement HistoryView component in dashboard/src/components/HistoryView.tsx: renders as section with h2 heading (FR-015), renders TimeRangeSelector + HistoricalGraph, manages selectedTimeRange state (default "today"), passes TimeRangeValue from selector onChange to HistoricalGraph props
+
+### Historical Graph Improvements (#53)
+
+- [ ] T051 [P] [US2] Write HistoricalGraph per-device chart tests in dashboard/tests/component/HistoricalGraph.test.tsx: renders one chart per device (stacked vertically), each labeled with device name, contains Solar/Battery/Home Load/Grid series, data from different devices NOT merged into single chart (FR-021)
+- [ ] T052 [P] [US2] Write HistoricalGraph legend and formatting tests in dashboard/tests/component/HistoricalGraph.test.tsx: legend displays live values on cursor hover (time + value per series), legend shows label + color swatch when cursor outside chart (FR-022), series colors match legend labels and are consistent across charts (FR-023), Y-axis and legend values display kW with 1 decimal for >999W and whole watts for ≤999W (FR-024)
+- [ ] T053 [US2] Implement per-device charts in dashboard/src/components/HistoricalGraph.tsx: fetch data per device, render one uPlot instance per EP Cube device stacked vertically, label each with device name, keep series colors consistent across charts (FR-021, FR-023)
+- [ ] T054 [US2] Implement legend cursor interactivity and kW formatting in dashboard/src/components/HistoricalGraph.tsx: uPlot cursor plugin for live legend values on hover (FR-022), custom axis value formatter — kW with 1 decimal for >999W, whole watts for ≤999W (FR-024), apply same formatter to legend hover values
+- [ ] T055 [US2] Fix temporal gap detection in dashboard/src/components/HistoricalGraph.tsx: after merging timestamps, scan for gaps where consecutive timestamps differ by more than 2× the step interval; insert null values at gap boundaries to break the line in uPlot (FR-008). Add tests: given data with a 30-minute gap at 1-min step, chart renders broken line across the gap
 
 **Checkpoint**: Dashboard shows interactive time-series charts for all five time range presets plus custom. Applies tiered resolution with calendar-month aggregation for yearly views. Aggregation notice shown when downsampled. Data gaps rendered as broken lines. Empty ranges handled. Renders within 2 seconds for 30-day data. Keyboard-navigable and accessible (FR-015). User Stories 1 AND 2 both work independently.
 
@@ -230,10 +238,10 @@ FR-020: T046 test then T047 then T048 then T049
 | 1. Setup | 4 | 4 | 0 |
 | 2. Foundational | 12 | 12 | 0 |
 | 3. US1 (P1, #33) | 24 | 24 | 0 |
-| 4. US2 (P2, #34) | 6 | 6 | 0 |
+| 4. US2 (P2, #34) | 11 | 6 | 5 |
 | 5. FR-020 | 4 | 0 | 4 |
 | 6. Polish | 5 | 1 | 4 |
-| **Total** | **55** | **47** | **8** |
+| **Total** | **60** | **47** | **13** |
 
 ---
 
