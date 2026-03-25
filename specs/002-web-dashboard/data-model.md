@@ -36,68 +36,55 @@ interface DeviceListResponse {
 
 ---
 
-## Entity: Instant Query Result (API Response)
+## Entity: Current Readings (API Response)
 
-**Source**: `GET /api/v1/query` → current metric values
-
-> **Migration note**: The response format below reflects the current Prometheus-compatible shape. During the Azure SQL migration the API will be redesigned with a simpler JSON format — since we own all clients, there is no backward-compatibility constraint.
+**Source**: `GET /api/v1/readings/current?metric=<name>` → latest metric values per device
 
 ```typescript
-interface InstantQueryResponse {
-  status: 'success' | 'error';
-  data: {
-    resultType: 'vector';
-    result: Array<{
-      metric: Record<string, string>;  // Labels (device, class, __name__, etc.)
-      value: [number, string];          // [unix_timestamp, value_string]
-    }>;
-  };
-  errorType?: string;
-  error?: string;
+interface Reading {
+  device_id: string;   // Device identifier (e.g., "epcube_battery")
+  timestamp: number;   // Unix epoch seconds
+  value: number;       // Numeric reading
+}
+
+interface CurrentReadingsResponse {
+  metric: string;      // Metric name requested
+  readings: Reading[]; // One reading per device
 }
 ```
 
-**Dashboard usage**: Current readings view (US1). Dashboard issues instant queries for the latest values of key metrics per device:
-- `epcube_battery_state_of_capacity_percent` — Battery SOC (%)
-- `epcube_battery_power_watts` — Battery power (W, derived from energy balance)
-- `epcube_solar_instantaneous_generation_watts` — Solar generation (W)
-- `epcube_home_load_power_watts` — Home load consumption (W)
-- `epcube_grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
-- `epcube_battery_stored_kwh` — Battery stored energy (kWh, derived from SOC × capacity)
+**Dashboard usage**: Current readings view (US1). Dashboard fetches latest values via `fetchCurrentReadings()` for each metric:
+- `battery_state_of_capacity_percent` — Battery SOC (%)
+- `battery_power_watts` — Battery power (W, derived from energy balance)
+- `solar_instantaneous_generation_watts` — Solar generation (W)
+- `home_load_power_watts` — Home load consumption (W)
+- `grid_power_watts` — Grid import/export (W, via `/api/v1/grid`)
+- `battery_stored_kwh` — Battery stored energy (kWh, derived from SOC × capacity)
 
 ---
 
-## Entity: Range Query Result (API Response)
+## Entity: Range Readings (API Response)
 
-**Source**: `GET /api/v1/query_range?start=<ts>&end=<ts>&step=<duration>` → time-series data
-
-> **Migration note**: Same as above — response format will be redesigned during Azure SQL migration.
+**Source**: `GET /api/v1/readings/range?metric=<name>&start=<ts>&end=<ts>&step=<s>` → time-series data
 
 ```typescript
-interface RangeQueryResponse {
-  status: 'success' | 'error';
-  data: {
-    resultType: 'matrix';
-    result: Array<{
-      metric: Record<string, string>;
-      values: Array<[number, string]>;  // [[unix_ts, value_str], ...]
-    }>;
-  };
-  errorType?: string;
-  error?: string;
+interface TimeSeriesPoint {
+  timestamp: number;   // Unix epoch seconds
+  value: number;       // Numeric reading
+}
+
+interface TimeSeries {
+  device_id: string;           // Device identifier
+  values: TimeSeriesPoint[];   // Ordered time-series points
+}
+
+interface RangeReadingsResponse {
+  metric: string;      // Metric name requested
+  series: TimeSeries[];// One series per device
 }
 ```
 
-**Dashboard usage**: Historical graphs view (US2). Dashboard issues range queries for time-series data over the selected range. The `values` array maps directly to uPlot's data format after conversion:
-
-```typescript
-// Convert API response to uPlot data format
-function toUPlotData(result: RangeQueryResult): uPlot.AlignedData {
-  const timestamps = result.values.map(([ts]) => ts);
-  const values = result.values.map(([, v]) => parseFloat(v));
-  return [timestamps, values];
-}
-```
+**Dashboard usage**: Historical graphs view (US2). Dashboard fetches range data via `fetchRangeReadings()` for solar, battery, and home load metrics, plus `fetchGridPower()` for grid. The `mergeTimeSeries()` function aligns multiple series to a common timestamp array and converts to uPlot's `AlignedData` format, inserting `null` for missing data points to produce broken-line gaps (FR-008).
 
 **Time range presets**:
 | Preset | Start | End | Step |
@@ -116,59 +103,11 @@ function toUPlotData(result: RangeQueryResult): uPlot.AlignedData {
 
 ## Entity: Grid Power (Convenience Endpoint)
 
-**Source**: `GET /api/v1/grid?start=<ts>&end=<ts>&step=<duration>` → derived grid metric
+**Source**: `GET /api/v1/grid?start=<ts>&end=<ts>&step=<s>` → derived grid metric
 
-Same response format as `RangeQueryResponse`. Sign convention: positive = net import from grid (kWh), negative = net export to grid (kWh).
+Same response format as `RangeReadingsResponse`. Sign convention: positive = net import from grid (kWh), negative = net export to grid (kWh).
 
-**Dashboard usage**: Both current readings (latest grid value) and historical graphs (grid power over time).
-
----
-
-## Entity: Device Metrics (API Response)
-
-**Source**: `GET /api/v1/devices/{device}/metrics`
-
-```typescript
-interface DeviceMetricsResponse {
-  device: string;
-  metrics: string[];  // Available metric names for this device
-}
-```
-
-**Dashboard usage**: Determines which readings/graphs to show for each device type. Battery devices have ~8 metrics, solar devices have ~2 metrics.
-
----
-
-## Entity: Health (API Response)
-
-**Source**: `GET /api/v1/health` (unauthenticated)
-
-```typescript
-interface HealthResponse {
-  status: 'healthy' | 'unhealthy';
-  datastore: 'reachable' | 'unreachable';
-}
-```
-
-> **Note**: The field was previously named `victoriametrics`. Renamed to `datastore` as part of the storage-backend-agnostic redesign. The dashboard checks `status` primarily and treats `datastore` as supplementary.
-
-**Dashboard usage**: Connectivity indicator (edge case: API unreachable). Dashboard polls health endpoint to show/hide connectivity error banner (FR-006).
-
----
-
-## Entity: Error Response (API Response)
-
-**Source**: Any endpoint returning 400, 401, 403, 404, 422, or 503
-
-```typescript
-interface ErrorResponse {
-  status: 'error';
-  errorType: string;   // "bad_data", "execution", etc.
-  error: string;       // Human-readable message
-}
-```
-
-**Dashboard usage**: Displayed in error banners or toast notifications. User-facing messages are derived from the `error` field.
+**Dashboard usage**: Both current readings (latest grid value via `fetchGridPower()` with no params) and historical graphs (grid power over time with start/end/step).
 
 ---
 
@@ -182,7 +121,6 @@ The dashboard maintains ephemeral UI state — not persisted across sessions:
 | `customStart` | `Date \| null` | `null` | Custom range start (only when `selectedTimeRange === 'custom'`) |
 | `customEnd` | `Date \| null` | `null` | Custom range end |
 | `isAuthenticated` | `boolean` | `false` | Whether MSAL has an active account |
-| `isApiReachable` | `boolean` | `true` | Health endpoint reachability |
 | `lastRefreshed` | `Date \| null` | `null` | Timestamp of last data fetch |
 | `currentView` | `'flow' \| 'gauges'` | `'flow'` | Active view mode for current readings (FR-017) |
 

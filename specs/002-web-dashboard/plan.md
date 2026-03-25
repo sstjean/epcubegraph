@@ -91,7 +91,7 @@ dashboard/
 │   ├── api.ts                   # API client (fetch + bearer token)
 │   ├── auth.ts                  # MSAL.js init, token acquisition
 │   ├── types.ts                 # TypeScript interfaces for API responses
-│   ├── telemetry.ts             # Application Insights init + trackException/trackPageView (FR-020)
+│   ├── telemetry.ts             # (Phase 5 — not yet implemented) Application Insights init + trackException/trackPageView (FR-020)
 │   ├── components/
 │   │   ├── CurrentReadings.tsx  # US1: device cards with live metrics + view toggle
 │   │   ├── DeviceCard.tsx       # Per-device metric display via gauge dials
@@ -102,8 +102,8 @@ dashboard/
 │   │   ├── HistoryView.tsx      # US2: time range selector + graph container
 │   │   └── TimeRangeSelector.tsx # Presets: today, 7d, 30d, 1y, custom
 │   └── utils/
-│       ├── formatting.ts        # formatWatts, formatPercent, formatKwh, formatTimestamp
-│       └── polling.ts           # Auto-poll at 30s (half collection interval)
+│       ├── formatting.ts        # formatWatts, formatKw, formatPercent, formatKwh, formatRelativeTime
+│       └── polling.ts           # Auto-poll at 5s interval
 └── tests/
     ├── setup.ts                 # Test setup (happy-dom, jest-dom matchers)
     ├── component/               # @testing-library/preact component tests

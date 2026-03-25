@@ -67,7 +67,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - **FR-009**: *Removed — Grafana integration descoped.*
 - **FR-010**: All dashboard access MUST be authenticated per the constitution's security requirements.
 - **FR-011**: Dashboard MUST consume data exclusively through the versioned API from feature 001-data-ingestor.
-- **FR-012**: Dashboard MUST automatically poll for updated readings at half the collection interval (default: every 30 seconds) to keep displayed data current without manual refresh.
+- **FR-012**: Dashboard MUST automatically poll for updated readings every 5 seconds to keep displayed data current without manual refresh.
 - **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), weekly view at hourly intervals, monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤7d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level.
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 - **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast (≥4.5:1 ratio) for readability. No formal WCAG audit or automated accessibility test suite is required.
@@ -99,7 +99,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - The telemetry API from feature 001-data-ingestor is available and operational.
 - A single user (the system owner) is the primary consumer; multi-user dashboards are not required.
 - The system has 2 EP Cube gateway devices. The dashboard layout is a fixed 2-device grid; dynamic device discovery or unlimited scaling is not required.
-- The backend data store is being migrated from VictoriaMetrics to Azure SQL Database. Since we own all clients, the API contract will be redesigned (no Prometheus compatibility constraint). The dashboard must be updated to align with the new API contract after the migration.
+- The backend data store is PostgreSQL. The API uses a clean REST JSON contract — no Prometheus compatibility constraint. The dashboard consumes this API exclusively.
 - Historical telemetry data is retained indefinitely (no automatic deletion or expiry). The dashboard time range presets and custom ranges may access the full history of stored data.
 
 
@@ -108,7 +108,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 ### Session 2026-03-16
 
 - Q: What age of data should trigger the stale/offline indicator? → A: 3× the collection interval (default: 3 minutes)
-- Q: How should the dashboard keep current readings up to date? → A: Auto-poll every half collection interval (default: 30 seconds)
+- Q: How should the dashboard keep current readings up to date? → A: Auto-poll every 5 seconds
 - Q: How should data gaps be visualized in historical graphs? → A: Broken line (discontinuous segments, no connection across gaps)
 - Q: What Grafana data source type should be used? → A: *Descoped — Grafana integration removed (FR-009).*
 - Q: How should large time ranges beyond 30 days be handled? → A: Tiered downsampling — daily at collection interval, weekly at hourly, monthly at daily, yearly/custom >30d at calendar month — with visible aggregation notice. Custom ranges are unrestricted and auto-select the closest tier.
@@ -120,7 +120,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 ### Session 2026-03-22
 
 - Q: How many EP Cube gateway devices should the dashboard support simultaneously? → A: 2 devices, displayed in a grid layout.
-- Q: Does the data store migration change any dashboard-facing API contract? → A: Yes — since we own all clients, the API will be redesigned for Azure SQL (no Prometheus format constraint). Same endpoints but the response shapes, query syntax, and field names will change. The dashboard will be updated as part of the migration.
+- Q: Does the data store migration change any dashboard-facing API contract? → A: Yes — migration to PostgreSQL is complete. The API was redesigned with a clean JSON format. No Prometheus compatibility needed.
 - Q: What is the minimum data retention period for historical telemetry? → A: Indefinite (never delete, grow forever).
 - Q: When the API returns data for only 1 of the 2 devices, how should the dashboard behave? → A: Show both cards; display the missing device as "offline" using the existing stale-data indicator (FR-006).
 - Q: Should the dashboard expose any operational health signal beyond what the user sees in the UI? → A: Integrate Application Insights for client-side error telemetry.
