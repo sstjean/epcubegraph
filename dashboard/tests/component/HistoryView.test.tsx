@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 import { HistoryView } from '../../src/components/HistoryView';
-import { fetchRangeReadings, fetchGridPower } from '../../src/api';
+import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
 
 vi.mock('../../src/api', () => ({
+  fetchDevices: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
 }));
@@ -28,22 +29,26 @@ vi.mock('uplot', () => {
   };
 });
 
+const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchRangeReadings = fetchRangeReadings as ReturnType<typeof vi.fn>;
 const mockFetchGridPower = fetchGridPower as ReturnType<typeof vi.fn>;
 
-const dataResponse = {
-  metric: 'test_metric',
-  series: [{ device_id: 'epcube_battery', values: [{ timestamp: 1711152000, value: 500 }, { timestamp: 1711152060, value: 600 }] }],
+const deviceList = {
+  devices: [
+    { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery', product_code: 'EP Cube (devType=0)' },
+    { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar', product_code: 'EP Cube (devType=0)' },
+  ],
 };
 
-const emptyResponse = {
+const dataResponse = {
   metric: 'test_metric',
-  series: [],
+  series: [{ device_id: 'epcube1_battery', values: [{ timestamp: 1711152000, value: 500 }, { timestamp: 1711152060, value: 600 }] }],
 };
 
 describe('HistoryView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchDevices.mockResolvedValue(deviceList);
     mockFetchRangeReadings.mockResolvedValue(dataResponse);
     mockFetchGridPower.mockResolvedValue(dataResponse);
   });
@@ -65,7 +70,7 @@ describe('HistoryView', () => {
     render(<HistoryView />);
 
     // Assert — TimeRangeSelector preset buttons should be visible
-    expect(screen.getByRole('button', { name: /today/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /1d/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /7d/i })).toBeTruthy();
 
     // HistoricalGraph should be present (fetches data)
@@ -79,7 +84,7 @@ describe('HistoryView', () => {
     render(<HistoryView />);
 
     // Assert
-    const todayButton = screen.getByRole('button', { name: /today/i });
+    const todayButton = screen.getByRole('button', { name: /1d/ });
     expect(todayButton.getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -92,6 +97,7 @@ describe('HistoryView', () => {
     });
 
     vi.clearAllMocks();
+    mockFetchDevices.mockResolvedValue(deviceList);
     mockFetchRangeReadings.mockResolvedValue(dataResponse);
     mockFetchGridPower.mockResolvedValue(dataResponse);
 

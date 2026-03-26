@@ -1,19 +1,29 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
-import { TimeRangeSelector } from '../../src/components/TimeRangeSelector';
+import { TimeRangeSelector, formatDateLabel } from '../../src/components/TimeRangeSelector';
+import type { TimeRangeValue } from '../../src/types';
+
+// Fixed "now" for deterministic tests: 2026-03-25T12:00:00 local time
+const FIXED_NOW = new Date(2026, 2, 25, 12, 0, 0).getTime();
+const TODAY_START_SEC = Math.floor(new Date(2026, 2, 25, 0, 0, 0).getTime() / 1000);
+const NOW_SEC = Math.floor(FIXED_NOW / 1000);
+
+const todayValue: TimeRangeValue = { start: TODAY_START_SEC, end: NOW_SEC, step: 60 };
+const sevenDayValue: TimeRangeValue = { start: NOW_SEC - 7 * 86400, end: NOW_SEC, step: 3600 };
+const customValue: TimeRangeValue = { start: NOW_SEC - 86400, end: NOW_SEC, step: 60 };
 
 describe('TimeRangeSelector', () => {
   afterEach(cleanup);
 
   const defaultOnChange = vi.fn();
 
-  it('renders today/7d/30d/1y/custom preset buttons', () => {
+  it('renders 1d/7d/30d/1y/custom preset buttons', () => {
     // Arrange & Act
-    render(<TimeRangeSelector selected="today" onChange={defaultOnChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
 
     // Assert
-    expect(screen.getByRole('button', { name: /today/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /1d/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /7d/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /30d/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /1y/i })).toBeTruthy();
@@ -22,13 +32,13 @@ describe('TimeRangeSelector', () => {
 
   it('shows aria-pressed="true" on the active preset (FR-015)', () => {
     // Arrange & Act
-    render(<TimeRangeSelector selected="7d" onChange={defaultOnChange} />);
+    render(<TimeRangeSelector selected="7d" value={sevenDayValue} onChange={defaultOnChange} />);
 
     // Assert
     const activeButton = screen.getByRole('button', { name: /7d/i });
     expect(activeButton.getAttribute('aria-pressed')).toBe('true');
 
-    const inactiveButton = screen.getByRole('button', { name: /today/i });
+    const inactiveButton = screen.getByRole('button', { name: /1d/ });
     expect(inactiveButton.getAttribute('aria-pressed')).toBe('false');
   });
 
@@ -38,10 +48,10 @@ describe('TimeRangeSelector', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
 
-    render(<TimeRangeSelector selected="7d" onChange={onChange} />);
+    render(<TimeRangeSelector selected="7d" value={sevenDayValue} onChange={onChange} />);
 
     // Act
-    fireEvent.click(screen.getByRole('button', { name: /today/i }));
+    fireEvent.click(screen.getByRole('button', { name: /1d/ }));
 
     // Assert
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -64,7 +74,7 @@ describe('TimeRangeSelector', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
 
-    render(<TimeRangeSelector selected="today" onChange={onChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole('button', { name: /7d/i }));
@@ -83,7 +93,7 @@ describe('TimeRangeSelector', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
 
-    render(<TimeRangeSelector selected="today" onChange={onChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole('button', { name: /30d/i }));
@@ -102,7 +112,7 @@ describe('TimeRangeSelector', () => {
     const now = Date.now();
     vi.spyOn(Date, 'now').mockReturnValue(now);
 
-    render(<TimeRangeSelector selected="today" onChange={onChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole('button', { name: /1y/i }));
@@ -117,7 +127,7 @@ describe('TimeRangeSelector', () => {
 
   it('shows custom date inputs with labels when "custom" selected (FR-015)', () => {
     // Arrange & Act
-    render(<TimeRangeSelector selected="custom" onChange={defaultOnChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={defaultOnChange} />);
 
     // Assert
     expect(screen.getByLabelText(/start/i)).toBeTruthy();
@@ -126,7 +136,7 @@ describe('TimeRangeSelector', () => {
 
   it('hides custom inputs for preset selections', () => {
     // Arrange & Act
-    render(<TimeRangeSelector selected="today" onChange={defaultOnChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
 
     // Assert
     expect(screen.queryByLabelText(/start/i)).toBeNull();
@@ -136,7 +146,7 @@ describe('TimeRangeSelector', () => {
   it('validates custom range (start must be before end)', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -161,7 +171,7 @@ describe('TimeRangeSelector', () => {
   it('auto-selects tier for custom ranges: <=1d gets step=60', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -181,7 +191,7 @@ describe('TimeRangeSelector', () => {
   it('auto-selects tier for custom ranges: <=7d gets step=3600', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -200,7 +210,7 @@ describe('TimeRangeSelector', () => {
   it('auto-selects tier for custom ranges: <=30d gets step=86400', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -219,7 +229,7 @@ describe('TimeRangeSelector', () => {
   it('auto-selects tier for custom ranges: >30d gets step=2592000 (calendar month)', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -238,7 +248,7 @@ describe('TimeRangeSelector', () => {
   it('emits onChange when "Custom" button is clicked', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="today" onChange={onChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole('button', { name: /custom/i }));
@@ -252,7 +262,7 @@ describe('TimeRangeSelector', () => {
   it('emits onChange when end date is changed in custom mode', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
 
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
@@ -269,7 +279,7 @@ describe('TimeRangeSelector', () => {
 
   it('keyboard Tab navigates between preset buttons (FR-015)', () => {
     // Arrange
-    render(<TimeRangeSelector selected="today" onChange={defaultOnChange} />);
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
 
     // Act & Assert — all buttons should be focusable
     const buttons = screen.getAllByRole('button');
@@ -281,7 +291,7 @@ describe('TimeRangeSelector', () => {
   it('ignores invalid date input', () => {
     // Arrange
     const onChange = vi.fn();
-    render(<TimeRangeSelector selected="custom" onChange={onChange} />);
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
 
     // Act — fire nonsense value
@@ -291,4 +301,193 @@ describe('TimeRangeSelector', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('shows day navigation UI with prev/next buttons when "today" selected', () => {
+    // Arrange & Act
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
+
+    // Assert
+    expect(screen.getByLabelText('Previous day')).toBeTruthy();
+    expect(screen.getByLabelText('Next day')).toBeTruthy();
+    expect(screen.getByLabelText('Select date')).toBeTruthy();
+  });
+
+  it('does not show day navigation for non-today presets', () => {
+    // Arrange & Act
+    render(<TimeRangeSelector selected="7d" value={sevenDayValue} onChange={defaultOnChange} />);
+
+    // Assert
+    expect(screen.queryByLabelText('Previous day')).toBeNull();
+    expect(screen.queryByLabelText('Next day')).toBeNull();
+  });
+
+  it('displays the current date label when in today mode', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+
+    // Act
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
+
+    // Assert — should show formatted date
+    const dateDisplay = document.querySelector('.day-date-display');
+    expect(dateDisplay).toBeTruthy();
+    expect(dateDisplay!.textContent).toBeTruthy();
+
+    vi.restoreAllMocks();
+  });
+
+  it('disables "Next day" button when viewing today', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+
+    // Act
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={defaultOnChange} />);
+
+    // Assert
+    const nextBtn = screen.getByLabelText('Next day') as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(true);
+
+    vi.restoreAllMocks();
+  });
+
+  it('enables "Next day" button when viewing a past day', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const yesterdayStart = TODAY_START_SEC - 86400;
+    const yesterdayValue: TimeRangeValue = { start: yesterdayStart, end: yesterdayStart + 86400, step: 60 };
+
+    // Act
+    render(<TimeRangeSelector selected="today" value={yesterdayValue} onChange={defaultOnChange} />);
+
+    // Assert
+    const nextBtn = screen.getByLabelText('Next day') as HTMLButtonElement;
+    expect(nextBtn.disabled).toBe(false);
+
+    vi.restoreAllMocks();
+  });
+
+  it('clicking "Previous day" emits onChange with prior day range', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+
+    // Act
+    fireEvent.click(screen.getByLabelText('Previous day'));
+
+    // Assert
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [range, val] = onChange.mock.calls[0];
+    expect(range).toBe('today');
+    expect(val.start).toBe(TODAY_START_SEC - 86400);
+    expect(val.end).toBe(TODAY_START_SEC); // full day for past day
+    expect(val.step).toBe(60);
+
+    vi.restoreAllMocks();
+  });
+
+  it('clicking "Next day" from a past day advances one day', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    const twoDaysAgoStart = TODAY_START_SEC - 2 * 86400;
+    const twoDaysAgoValue: TimeRangeValue = { start: twoDaysAgoStart, end: twoDaysAgoStart + 86400, step: 60 };
+    render(<TimeRangeSelector selected="today" value={twoDaysAgoValue} onChange={onChange} />);
+
+    // Act
+    fireEvent.click(screen.getByLabelText('Next day'));
+
+    // Assert
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [range, val] = onChange.mock.calls[0];
+    expect(range).toBe('today');
+    expect(val.start).toBe(twoDaysAgoStart + 86400);
+
+    vi.restoreAllMocks();
+  });
+
+  it('calendar picker emits onChange for valid past date', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+
+    // Act
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2026-03-20' } });
+
+    // Assert
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [range, val] = onChange.mock.calls[0];
+    expect(range).toBe('today');
+    const expectedStart = Math.floor(new Date(2026, 2, 20).getTime() / 1000);
+    expect(val.start).toBe(expectedStart);
+    expect(val.end).toBe(expectedStart + 86400); // full day
+    expect(val.step).toBe(60);
+
+    vi.restoreAllMocks();
+  });
+
+  it('calendar picker ignores future dates', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+
+    // Act
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2026-03-30' } });
+
+    // Assert — should not emit
+    expect(onChange).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it('calendar picker ignores invalid date input', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+
+    // Act
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: 'garbage' } });
+
+    // Assert
+    expect(onChange).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it('selecting today via calendar picker uses end=now instead of end=start+86400', () => {
+    // Arrange
+    vi.spyOn(Date, 'now').mockReturnValue(FIXED_NOW);
+    const onChange = vi.fn();
+    const yesterdayStart = TODAY_START_SEC - 86400;
+    const yesterdayValue: TimeRangeValue = { start: yesterdayStart, end: yesterdayStart + 86400, step: 60 };
+    render(<TimeRangeSelector selected="today" value={yesterdayValue} onChange={onChange} />);
+
+    // Act — pick today's date
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2026-03-25' } });
+
+    // Assert — end should be now, not start+86400
+    const [, val] = onChange.mock.calls[0];
+    expect(val.start).toBe(TODAY_START_SEC);
+    expect(val.end).toBe(NOW_SEC);
+
+    vi.restoreAllMocks();
+  });
+
+});
+
+describe('formatDateLabel', () => {
+  it('formats epoch seconds as a readable date', () => {
+    // 2026-03-25 00:00:00 local
+    const ts = Math.floor(new Date(2026, 2, 25).getTime() / 1000);
+    const label = formatDateLabel(ts);
+    expect(label).toMatch(/Mar/);
+    expect(label).toMatch(/25/);
+    expect(label).toMatch(/2026/);
+  });
 });

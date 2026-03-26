@@ -7,6 +7,7 @@ import type { Device, CurrentReadingsResponse } from '../types';
 import { createPollingInterval, clearPollingInterval } from '../utils/polling';
 import { formatRelativeTime } from '../utils/formatting';
 import { withRetry } from '../utils/retry';
+import { groupDevicesByAlias, getDisplayName } from '../utils/devices';
 
 export interface DeviceGroup {
   name: string;
@@ -15,16 +16,7 @@ export interface DeviceGroup {
   metrics: DeviceCardMetrics;
 }
 
-/** Extract the base alias (e.g. "EP Cube v2") from a device's alias or id. */
-function getGroupName(device: Device): string {
-  if (device.alias) {
-    return device.alias.replace(/\s*(Battery|Solar)$/i, '').trim();
-  }
-  // Fallback: format raw device id into readable name (epcube3483 → EP Cube 3483)
-  const base = device.device.replace(/_(battery|solar)$/, '');
-  const match = base.match(/^epcube(\d+)$/i);
-  return match ? `EP Cube ${match[1]}` : base;
-}
+
 
 /** Find the metric value for a given device name from a current readings response. */
 function getMetricForDevice(response: CurrentReadingsResponse, deviceName: string): number {
@@ -62,16 +54,11 @@ export function CurrentReadings() {
       );
 
       // Group devices by base alias
-      const groupMap = new Map<string, Device[]>();
-      for (const device of deviceList.devices) {
-        const groupName = getGroupName(device);
-        const existing = groupMap.get(groupName) ?? [];
-        existing.push(device);
-        groupMap.set(groupName, existing);
-      }
+      const groupMap = groupDevicesByAlias(deviceList.devices);
 
       const deviceGroups: DeviceGroup[] = Array.from(groupMap.entries()).map(
-        ([name, devices]) => {
+        ([_key, devices]) => {
+          const name = getDisplayName(devices);
           const batteryDevice = devices.find((d) => d.class === 'storage_battery');
           const solarDevice = devices.find((d) => d.class === 'home_solar');
           const online = devices.some((d) => d.online);

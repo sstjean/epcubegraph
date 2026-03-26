@@ -23,7 +23,7 @@ export function HistoryView() {
   return (
     <section>
       <h2>Historical Data</h2>
-      <TimeRangeSelector selected={selectedRange} onChange={handleChange} />
+      <TimeRangeSelector selected={selectedRange} value={timeRangeValue} onChange={handleChange} />
       <HistoricalGraph timeRange={timeRangeValue} />
     </section>
   );

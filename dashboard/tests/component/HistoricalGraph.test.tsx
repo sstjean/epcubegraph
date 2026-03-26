@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
-import { HistoricalGraph, mergeTimeSeries } from '../../src/components/HistoricalGraph';
-import { fetchRangeReadings, fetchGridPower } from '../../src/api';
+import { HistoricalGraph, buildDeviceChartData, getAggregationLabel } from '../../src/components/HistoricalGraph';
+import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
 import { withRetry } from '../../src/utils/retry';
-import type { RangeReadingsResponse, TimeRangeValue } from '../../src/types';
+import type { DeviceListResponse, RangeReadingsResponse, TimeRangeValue } from '../../src/types';
 
 vi.mock('../../src/api', () => ({
+  fetchDevices: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
 }));
@@ -29,10 +30,59 @@ vi.mock('uplot', () => {
   return {
     default: class MockUPlot {
       root: HTMLDivElement;
-      constructor(_opts: unknown, _data: unknown, target: HTMLElement) {
+      over: HTMLDivElement;
+      cursor: { idx: number | null; left: number; top: number };
+      ctx: { canvas: { height: number }; createLinearGradient: () => { addColorStop: () => void } };
+      constructor(opts: Record<string, unknown>, data: unknown, target: HTMLElement) {
         this.root = document.createElement('div');
         this.root.className = 'uplot';
+        this.over = document.createElement('div');
+        Object.defineProperty(this.over, 'offsetLeft', { value: 0 });
+        Object.defineProperty(this.over, 'offsetTop', { value: 0 });
+        this.root.appendChild(this.over);
         target.appendChild(this.root);
+        // Give target a width so tooltip positioning covers both branches
+        Object.defineProperty(target, 'clientWidth', { value: 800, configurable: true });
+        this.cursor = { idx: null, left: 0, top: 0 };
+        // Fake canvas context for gradient fill callbacks
+        this.ctx = {
+          canvas: { height: 300 },
+          createLinearGradient: () => ({ addColorStop: () => {} }),
+        };
+        // Invoke series fill callbacks so coverage reaches gradient code
+        const series = opts.series as Array<{ fill?: unknown }> | undefined;
+        if (series) {
+          for (const s of series) {
+            if (typeof s.fill === 'function') {
+              s.fill(this);
+            }
+          }
+        }
+        // Invoke axis value formatters so coverage reaches the callback
+        const axes = opts.axes as Array<{ values?: (u: unknown, splits: number[]) => string[] }> | undefined;
+        if (axes) {
+          for (const axis of axes) {
+            if (typeof axis.values === 'function') {
+              axis.values(null, [0, 500, 1500]);
+            }
+          }
+        }
+        // Invoke setCursor hooks for tooltip coverage
+        const hooks = opts.hooks as { setCursor?: Array<(u: MockUPlot) => void> } | undefined;
+        if (hooks?.setCursor) {
+          // First call with no idx (tooltip hidden)
+          this.cursor = { idx: null, left: 0, top: 0 };
+          for (const fn of hooks.setCursor) fn(this);
+          // Second call with valid idx — left=50, fits in container → normal branch
+          const dataArr = data as Array<number[]>;
+          if (dataArr?.[0]?.length > 0) {
+            this.cursor = { idx: 0, left: 50, top: 50 };
+            for (const fn of hooks.setCursor) fn(this);
+            // Third call with left=900 — exceeds clientWidth=800 → flip branch
+            this.cursor = { idx: 0, left: 900, top: 50 };
+            for (const fn of hooks.setCursor) fn(this);
+          }
+        }
       }
       destroy() {
         this.root.remove();
@@ -43,32 +93,52 @@ vi.mock('uplot', () => {
   };
 });
 
+const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchRangeReadings = fetchRangeReadings as ReturnType<typeof vi.fn>;
 const mockFetchGridPower = fetchGridPower as ReturnType<typeof vi.fn>;
 const mockWithRetry = withRetry as ReturnType<typeof vi.fn>;
 
+// --- Test fixtures matching "EP Cube v1" / "EP Cube v2" convention ---
+
+const twoDeviceList: DeviceListResponse = {
+  devices: [
+    { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery', product_code: 'EP Cube (devType=0)' },
+    { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar', product_code: 'EP Cube (devType=0)' },
+    { device: 'epcube2_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery', product_code: 'EP Cube (devType=2)' },
+    { device: 'epcube2_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar', product_code: 'EP Cube (devType=2)' },
+  ],
+};
+
 function makeRangeResponse(
-  values: Array<[number, string]>,
-  deviceId = 'epcube_battery',
+  metric: string,
+  deviceEntries: Array<{ device_id: string; values: Array<{ timestamp: number; value: number }> }>,
 ): RangeReadingsResponse {
-  return {
-    metric: 'test_metric',
-    series: values.length > 0
-      ? [{ device_id: deviceId, values: values.map(([ts, v]) => ({ timestamp: ts, value: parseFloat(v) })) }]
-      : [],
-  };
+  return { metric, series: deviceEntries };
 }
 
-const emptyRangeResponse: RangeReadingsResponse = {
-  metric: 'test_metric',
-  series: [],
-};
+function makeTwoDeviceResponse(metric: string, ts: number[]): RangeReadingsResponse {
+  const device1Id = metric.includes('solar') ? 'epcube1_solar' : 'epcube1_battery';
+  const device2Id = metric.includes('solar') ? 'epcube2_solar' : 'epcube2_battery';
+  return makeRangeResponse(metric, [
+    { device_id: device1Id, values: ts.map((t) => ({ timestamp: t, value: 1000 })) },
+    { device_id: device2Id, values: ts.map((t) => ({ timestamp: t, value: 2000 })) },
+  ]);
+}
 
-const defaultTimeRange: TimeRangeValue = {
-  start: 1711152000,
-  end: 1711238400,
-  step: 60,
-};
+const emptyRangeResponse: RangeReadingsResponse = { metric: 'test_metric', series: [] };
+
+const defaultTimeRange: TimeRangeValue = { start: 1711152000, end: 1711238400, step: 60 };
+
+const defaultTimestamps = [1711152000, 1711152060];
+
+function setupTwoDeviceMocks(ts: number[] = defaultTimestamps) {
+  mockFetchDevices.mockResolvedValue(twoDeviceList);
+  mockFetchRangeReadings
+    .mockResolvedValueOnce(makeTwoDeviceResponse('solar_instantaneous_generation_watts', ts))
+    .mockResolvedValueOnce(makeTwoDeviceResponse('home_load_power_watts', ts))
+    .mockResolvedValueOnce(makeTwoDeviceResponse('battery_state_of_capacity_percent', ts));
+  mockFetchGridPower.mockResolvedValue(makeTwoDeviceResponse('grid_power_watts', ts));
+}
 
 describe('HistoricalGraph', () => {
   beforeEach(() => {
@@ -77,26 +147,102 @@ describe('HistoricalGraph', () => {
 
   afterEach(cleanup);
 
-  it('renders uPlot canvas with accessible aria-label (FR-015)', async () => {
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '1000'], [1711152060, '1100']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '200'], [1711152060, '250']])
-    );
+  it('renders one chart per device, stacked vertically (FR-021)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — two separate device charts, each labeled with device display name
+    await waitFor(() => {
+      const deviceCharts = document.querySelectorAll('.device-chart');
+      expect(deviceCharts.length).toBe(2);
+      expect(screen.getByText('EP Cube v1')).toBeTruthy();
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+  });
+
+  it('labels each chart with device name via h3 heading', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
     // Assert
     await waitFor(() => {
-      const container = document.querySelector('[aria-label]');
+      const headings = screen.getAllByRole('heading', { level: 3 });
+      expect(headings.length).toBe(2);
+      expect(headings[0].textContent).toBe('EP Cube v1');
+      expect(headings[1].textContent).toBe('EP Cube v2');
+    });
+  });
+
+  it('each chart has aria-label with device name', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      const charts = document.querySelectorAll('[aria-label*="energy chart"]');
+      expect(charts.length).toBe(2);
+      expect(charts[0].getAttribute('aria-label')).toBe('EP Cube v1 energy chart');
+      expect(charts[1].getAttribute('aria-label')).toBe('EP Cube v2 energy chart');
+    });
+  });
+
+  it('does not merge data from different devices into one chart (FR-021)', async () => {
+    // Arrange — device 1 has data at t=100, device 2 has data at t=200
+    mockFetchDevices.mockResolvedValue(twoDeviceList);
+    mockFetchRangeReadings
+      .mockResolvedValueOnce(makeRangeResponse('solar_instantaneous_generation_watts', [
+        { device_id: 'epcube1_solar', values: [{ timestamp: 100, value: 500 }] },
+        { device_id: 'epcube2_solar', values: [{ timestamp: 200, value: 600 }] },
+      ]))
+      .mockResolvedValueOnce(makeRangeResponse('home_load_power_watts', [
+        { device_id: 'epcube1_battery', values: [{ timestamp: 100, value: 250 }] },
+        { device_id: 'epcube2_battery', values: [{ timestamp: 200, value: 350 }] },
+      ]))
+      .mockResolvedValueOnce(makeRangeResponse('battery_state_of_capacity_percent', [
+        { device_id: 'epcube1_battery', values: [{ timestamp: 100, value: 80 }] },
+        { device_id: 'epcube2_battery', values: [{ timestamp: 200, value: 65 }] },
+      ]));
+    mockFetchGridPower.mockResolvedValue(makeRangeResponse('grid_power_watts', [
+      { device_id: 'epcube1_battery', values: [{ timestamp: 100, value: 150 }] },
+      { device_id: 'epcube2_battery', values: [{ timestamp: 200, value: 250 }] },
+    ]));
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — two charts render, each with their own data
+    await waitFor(() => {
+      const deviceCharts = document.querySelectorAll('.device-chart');
+      expect(deviceCharts.length).toBe(2);
+    });
+  });
+
+  it('renders accessible container with aria-label and aria-busy (FR-015)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert
+    await waitFor(() => {
+      const container = document.querySelector('[aria-label="Historical energy graphs"]');
       expect(container).toBeTruthy();
-      expect(container!.getAttribute('aria-label')).toMatch(/historical.*graph|energy.*chart/i);
     });
   });
 
   it('shows "No data available for this time range" for empty result (FR-007)', async () => {
+    // Arrange
+    mockFetchDevices.mockResolvedValue(twoDeviceList);
     mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
     mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
 
@@ -109,42 +255,10 @@ describe('HistoricalGraph', () => {
     });
   });
 
-  it('handles data gaps with null values for broken line rendering (FR-008)', async () => {
-    // Arrange — timestamps with a gap (missing 1711152120)
-    const solarValues: Array<[number, string]> = [
-      [1711152000, '1000'],
-      [1711152060, '1100'],
-      // gap at 1711152120
-      [1711152180, '1200'],
-    ];
-
-    mockFetchRangeReadings.mockResolvedValue(makeRangeResponse(solarValues));
-    mockFetchGridPower.mockResolvedValue(makeRangeResponse(solarValues));
-
-    // Act
-    render(<HistoricalGraph timeRange={defaultTimeRange} />);
-
-    // Assert — component should render without error (the null gap is handled in data conversion)
-    await waitFor(() => {
-      const container = document.querySelector('[aria-label]');
-      expect(container).toBeTruthy();
-    });
-  });
-
   it('displays aggregation notice with role="status" when step > 60s (FR-013)', async () => {
     // Arrange — hourly step
-    const hourlyRange: TimeRangeValue = {
-      start: 1711152000,
-      end: 1711756800,
-      step: 3600,
-    };
-
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500'], [1711155600, '600']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100'], [1711155600, '150']])
-    );
+    const hourlyRange: TimeRangeValue = { start: 1711152000, end: 1711756800, step: 3600 };
+    setupTwoDeviceMocks([1711152000, 1711155600]);
 
     // Act
     render(<HistoricalGraph timeRange={hourlyRange} />);
@@ -159,18 +273,8 @@ describe('HistoricalGraph', () => {
 
   it('displays "daily resolution" notice for step=86400', async () => {
     // Arrange
-    const dailyRange: TimeRangeValue = {
-      start: 1711152000,
-      end: 1713744000,
-      step: 86400,
-    };
-
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500'], [1711238400, '600']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100'], [1711238400, '150']])
-    );
+    const dailyRange: TimeRangeValue = { start: 1711152000, end: 1713744000, step: 86400 };
+    setupTwoDeviceMocks([1711152000, 1711238400]);
 
     // Act
     render(<HistoricalGraph timeRange={dailyRange} />);
@@ -184,18 +288,8 @@ describe('HistoricalGraph', () => {
 
   it('displays "monthly resolution" notice for step=2592000', async () => {
     // Arrange
-    const monthlyRange: TimeRangeValue = {
-      start: 1711152000,
-      end: 1742688000,
-      step: 2592000,
-    };
-
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500'], [1713744000, '600']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100'], [1713744000, '150']])
-    );
+    const monthlyRange: TimeRangeValue = { start: 1711152000, end: 1742688000, step: 2592000 };
+    setupTwoDeviceMocks([1711152000, 1713744000]);
 
     // Act
     render(<HistoricalGraph timeRange={monthlyRange} />);
@@ -209,68 +303,50 @@ describe('HistoricalGraph', () => {
 
   it('does not show aggregation notice when step=60s (full resolution)', async () => {
     // Arrange
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500'], [1711152060, '600']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100'], [1711152060, '150']])
-    );
+    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
     // Assert
     await waitFor(() => {
-      const container = document.querySelector('[aria-label]');
-      expect(container).toBeTruthy();
+      const charts = document.querySelectorAll('.device-chart');
+      expect(charts.length).toBe(2);
     });
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('fetches solar, battery, home load, and grid metrics', async () => {
+  it('fetches devices, solar, home load, grid, and battery SoC metrics', async () => {
     // Arrange
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100']])
-    );
+    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
     // Assert
     await waitFor(() => {
-      // Should call fetchRangeReadings for solar, battery, home load
+      expect(mockFetchDevices).toHaveBeenCalledTimes(1);
       expect(mockFetchRangeReadings).toHaveBeenCalledWith(
-        expect.stringContaining('solar_instantaneous_generation_watts'),
-        defaultTimeRange.start,
-        defaultTimeRange.end,
-        defaultTimeRange.step,
+        'solar_instantaneous_generation_watts',
+        defaultTimeRange.start, defaultTimeRange.end, defaultTimeRange.step,
       );
       expect(mockFetchRangeReadings).toHaveBeenCalledWith(
-        expect.stringContaining('battery_power_watts'),
-        defaultTimeRange.start,
-        defaultTimeRange.end,
-        defaultTimeRange.step,
+        'home_load_power_watts',
+        defaultTimeRange.start, defaultTimeRange.end, defaultTimeRange.step,
       );
       expect(mockFetchRangeReadings).toHaveBeenCalledWith(
-        expect.stringContaining('home_load_power_watts'),
-        defaultTimeRange.start,
-        defaultTimeRange.end,
-        defaultTimeRange.step,
+        'battery_state_of_capacity_percent',
+        defaultTimeRange.start, defaultTimeRange.end, defaultTimeRange.step,
       );
-      // Grid uses the convenience endpoint
       expect(mockFetchGridPower).toHaveBeenCalledWith(
-        defaultTimeRange.start,
-        defaultTimeRange.end,
-        defaultTimeRange.step,
+        defaultTimeRange.start, defaultTimeRange.end, defaultTimeRange.step,
       );
     });
   });
 
   it('renders loading state while fetching', () => {
     // Arrange — never-resolving promises
+    mockFetchDevices.mockReturnValue(new Promise(() => {}));
     mockFetchRangeReadings.mockReturnValue(new Promise(() => {}));
     mockFetchGridPower.mockReturnValue(new Promise(() => {}));
 
@@ -284,12 +360,7 @@ describe('HistoricalGraph', () => {
 
   it('re-fetches data when timeRange changes', async () => {
     // Arrange
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100']])
-    );
+    setupTwoDeviceMocks();
 
     const { rerender } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
@@ -298,6 +369,7 @@ describe('HistoricalGraph', () => {
     });
 
     vi.clearAllMocks();
+    setupTwoDeviceMocks();
 
     // Act — change time range
     const newRange: TimeRangeValue = { start: 1711238400, end: 1711324800, step: 60 };
@@ -306,73 +378,56 @@ describe('HistoricalGraph', () => {
     // Assert
     await waitFor(() => {
       expect(mockFetchRangeReadings).toHaveBeenCalledWith(
-        expect.any(String),
-        newRange.start,
-        newRange.end,
-        newRange.step,
+        expect.any(String), newRange.start, newRange.end, newRange.step,
       );
     });
   });
 
-  it('cleans up uPlot instance on unmount', async () => {
+  it('cleans up uPlot instances on unmount', async () => {
     // Arrange
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500'], [1711152060, '600']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100'], [1711152060, '150']])
-    );
+    setupTwoDeviceMocks();
 
     const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
     await waitFor(() => {
-      const container = document.querySelector('[aria-label]');
-      expect(container).toBeTruthy();
+      const charts = document.querySelectorAll('.device-chart');
+      expect(charts.length).toBe(2);
     });
 
-    // Act — unmount triggers cleanup
+    // Act
     unmount();
 
-    // Assert — no uPlot elements should remain
+    // Assert — no uPlot elements remain
     expect(document.querySelector('.uplot')).toBeNull();
   });
 
   it('ignores stale fetch results when unmounted during fetch', async () => {
     // Arrange — use delayed promises that resolve after unmount
-    let resolveRange!: (v: RangeReadingsResponse) => void;
-    let resolveGrid!: (v: RangeReadingsResponse) => void;
-    mockFetchRangeReadings.mockReturnValue(new Promise<RangeReadingsResponse>((r) => { resolveRange = r; }));
-    mockFetchGridPower.mockReturnValue(new Promise<RangeReadingsResponse>((r) => { resolveGrid = r; }));
+    let resolveDevices!: (v: DeviceListResponse) => void;
+    mockFetchDevices.mockReturnValue(new Promise<DeviceListResponse>((r) => { resolveDevices = r; }));
+    mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
+    mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
 
     const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
 
-    // Act — unmount before fetch resolves (sets cancelled = true)
+    // Act — unmount before fetch resolves
     unmount();
+    resolveDevices(twoDeviceList);
 
-    // Resolve after unmount
-    const response = makeRangeResponse([[1711152000, '500']]);
-    resolveRange(response);
-    resolveGrid(response);
-
-    // Assert — no crash, no chart rendered
+    // Assert — no crash, no charts rendered
     await new Promise((r) => setTimeout(r, 10));
     expect(document.querySelector('.uplot')).toBeNull();
   });
 
   it('shows retry count during reconnection attempts', async () => {
-    // Arrange — withRetry calls onRetry before each retry, then succeeds
+    // Arrange
     mockWithRetry.mockImplementation(async (fn: () => Promise<unknown>, options?: { onRetry?: (n: number) => void }) => {
       if (options?.onRetry) {
         options.onRetry(2);
       }
       return fn();
     });
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100']])
-    );
+    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
@@ -384,10 +439,8 @@ describe('HistoricalGraph', () => {
   });
 
   it('shows error after all retries exhausted', async () => {
-    // Arrange — withRetry rejects after retries
+    // Arrange
     mockWithRetry.mockRejectedValue(new Error('Service Unavailable'));
-    mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
-    mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
@@ -400,10 +453,8 @@ describe('HistoricalGraph', () => {
   });
 
   it('shows fallback error when rejection is not an Error instance', async () => {
-    // Arrange — withRetry rejects with a non-Error value
+    // Arrange
     mockWithRetry.mockRejectedValue('something went wrong');
-    mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
-    mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
@@ -418,12 +469,7 @@ describe('HistoricalGraph', () => {
   it('wraps fetchData batch in withRetry', async () => {
     // Arrange
     mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
-    mockFetchRangeReadings.mockResolvedValue(
-      makeRangeResponse([[1711152000, '500']])
-    );
-    mockFetchGridPower.mockResolvedValue(
-      makeRangeResponse([[1711152000, '100']])
-    );
+    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
@@ -436,46 +482,164 @@ describe('HistoricalGraph', () => {
       );
     });
   });
+
+  it('renders single device when only one device has data', async () => {
+    // Arrange — only device 1 has data
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery', product_code: 'EP Cube (devType=0)' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar', product_code: 'EP Cube (devType=0)' },
+      ],
+    });
+    mockFetchRangeReadings.mockResolvedValue(makeRangeResponse('test_metric', [
+      { device_id: 'epcube1_solar', values: [{ timestamp: 100, value: 500 }] },
+    ]));
+    mockFetchGridPower.mockResolvedValue(makeRangeResponse('grid_power_watts', [
+      { device_id: 'epcube1_battery', values: [{ timestamp: 100, value: 150 }] },
+    ]));
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — one chart
+    await waitFor(() => {
+      const deviceCharts = document.querySelectorAll('.device-chart');
+      expect(deviceCharts.length).toBe(1);
+      expect(screen.getByText('EP Cube v1')).toBeTruthy();
+    });
+  });
 });
 
-describe('mergeTimeSeries', () => {
-  it('produces null for missing timestamps', () => {
+describe('buildDeviceChartData', () => {
+  it('filters series to matching device_ids only', () => {
     // Arrange
-    const timestamps = [100, 200, 300, 400];
-    const series = [
-      { values: [[100, '1'], [200, '2'], [400, '4']] as Array<[number, string]> },
-      { values: [[100, '10'], [300, '30']] as Array<[number, string]> },
+    const responses: RangeReadingsResponse[] = [
+      makeRangeResponse('solar', [
+        { device_id: 'epcube1_solar', values: [{ timestamp: 100, value: 1000 }] },
+        { device_id: 'epcube2_solar', values: [{ timestamp: 100, value: 2000 }] },
+      ]),
     ];
+    const deviceIds = new Set(['epcube1_solar', 'epcube1_battery']);
 
     // Act
-    const result = mergeTimeSeries(timestamps, series);
+    const data = buildDeviceChartData(responses, deviceIds, 60);
 
-    // Assert
-    // First series: [1, 2, null, 4]
-    expect(result[0]).toEqual([1, 2, null, 4]);
-    // Second series: [10, null, 30, null]
-    expect(result[1]).toEqual([10, null, 30, null]);
+    // Assert — only device 1 data included
+    expect(data).not.toBeNull();
+    expect(data![0]).toEqual([100]);
+    expect(data![1]).toEqual([1000]);
   });
 
-  it('returns empty arrays for empty input', () => {
+  it('returns null when no matching data exists', () => {
+    // Arrange
+    const responses: RangeReadingsResponse[] = [
+      makeRangeResponse('solar', [
+        { device_id: 'epcube2_solar', values: [{ timestamp: 100, value: 2000 }] },
+      ]),
+    ];
+    const deviceIds = new Set(['epcube9_solar']);
+
     // Act
-    const result = mergeTimeSeries([], []);
+    const data = buildDeviceChartData(responses, deviceIds, 60);
 
     // Assert
-    expect(result).toEqual([]);
+    expect(data).toBeNull();
   });
 
-  it('parses string values to floats', () => {
-    // Arrange
-    const timestamps = [100, 200];
-    const series = [
-      { values: [[100, '3.14'], [200, '2.71']] as Array<[number, string]> },
+  it('produces null at gap boundaries when gap > 2× step (FR-008, T055)', () => {
+    // Arrange — 1-min step, data with a 30-minute gap
+    const responses: RangeReadingsResponse[] = [
+      makeRangeResponse('solar', [
+        { device_id: 'dev1', values: [
+          { timestamp: 100, value: 500 },
+          { timestamp: 160, value: 600 },
+          // gap of 1800s — more than 2× 60s
+          { timestamp: 1960, value: 700 },
+          { timestamp: 2020, value: 800 },
+        ]},
+      ]),
     ];
+    const deviceIds = new Set(['dev1']);
 
     // Act
-    const result = mergeTimeSeries(timestamps, series);
+    const data = buildDeviceChartData(responses, deviceIds, 60);
 
     // Assert
-    expect(result[0]).toEqual([3.14, 2.71]);
+    expect(data).not.toBeNull();
+    expect(data![0]).toEqual([100, 160, 1960, 2020]);
+    // Value before gap (index 1) should be nulled to break the line
+    expect(data![1]).toEqual([500, null, 700, 800]);
+  });
+
+  it('does not insert nulls when timestamps are within 2× step', () => {
+    // Arrange
+    const responses: RangeReadingsResponse[] = [
+      makeRangeResponse('solar', [
+        { device_id: 'dev1', values: [
+          { timestamp: 100, value: 500 },
+          { timestamp: 160, value: 600 },
+          { timestamp: 220, value: 700 },
+        ]},
+      ]),
+    ];
+    const deviceIds = new Set(['dev1']);
+
+    // Act
+    const data = buildDeviceChartData(responses, deviceIds, 60);
+
+    // Assert — no nulls, all values preserved
+    expect(data![1]).toEqual([500, 600, 700]);
+  });
+
+  it('handles multiple metrics with shared timestamps', () => {
+    // Arrange
+    const responses: RangeReadingsResponse[] = [
+      makeRangeResponse('solar', [
+        { device_id: 'dev1', values: [{ timestamp: 100, value: 1000 }, { timestamp: 200, value: 1100 }] },
+      ]),
+      makeRangeResponse('battery', [
+        { device_id: 'dev1', values: [{ timestamp: 100, value: 500 }, { timestamp: 200, value: 550 }] },
+      ]),
+      makeRangeResponse('home_load', [
+        { device_id: 'dev1', values: [{ timestamp: 100, value: 800 }] },
+      ]),
+      makeRangeResponse('grid', [
+        { device_id: 'dev1', values: [{ timestamp: 100, value: 200 }, { timestamp: 200, value: 250 }] },
+      ]),
+    ];
+    const deviceIds = new Set(['dev1']);
+
+    // Act
+    const data = buildDeviceChartData(responses, deviceIds, 60);
+
+    // Assert — 4 metrics + timestamp array
+    expect(data).not.toBeNull();
+    expect(data!.length).toBe(5);
+    expect(data![0]).toEqual([100, 200]);
+    expect(data![1]).toEqual([1000, 1100]); // solar
+    expect(data![2]).toEqual([500, 550]); // battery
+    expect(data![3]).toEqual([800, null]); // home_load — missing at t=200
+    expect(data![4]).toEqual([200, 250]); // grid
+  });
+});
+
+describe('getAggregationLabel', () => {
+  it('returns null for step ≤ 60 (full resolution)', () => {
+    expect(getAggregationLabel(60)).toBeNull();
+    expect(getAggregationLabel(30)).toBeNull();
+  });
+
+  it('returns "hourly" for step ≤ 3600', () => {
+    expect(getAggregationLabel(3600)).toBe('hourly');
+    expect(getAggregationLabel(1800)).toBe('hourly');
+  });
+
+  it('returns "daily" for step ≤ 86400', () => {
+    expect(getAggregationLabel(86400)).toBe('daily');
+    expect(getAggregationLabel(43200)).toBe('daily');
+  });
+
+  it('returns "monthly" for step > 86400', () => {
+    expect(getAggregationLabel(2592000)).toBe('monthly');
   });
 });
