@@ -14,6 +14,10 @@ const PRESETS: { key: TimeRange; label: string }[] = [
   { key: 'custom', label: 'Custom' },
 ];
 
+function getNowMs(): number {
+  return Date.now();
+}
+
 /** Calculate tiered step based on duration in seconds. */
 function calculateStep(durationSec: number): number {
   if (durationSec <= 86400) return 60;         // ≤1d → 1-minute resolution
@@ -23,7 +27,7 @@ function calculateStep(durationSec: number): number {
 }
 
 function computePresetValue(preset: TimeRange): TimeRangeValue {
-  const nowMs = Date.now();
+  const nowMs = getNowMs();
   const nowSec = Math.floor(nowMs / 1000);
 
   switch (preset) {
@@ -63,13 +67,13 @@ export function formatDateLabel(epochSec: number): string {
 function computeDayValue(dateStr: string): TimeRangeValue {
   const dayStart = new Date(dateStr + 'T00:00:00');
   const startSec = Math.floor(dayStart.getTime() / 1000);
-  const todayStart = new Date();
+  const todayStart = new Date(getNowMs());
   todayStart.setHours(0, 0, 0, 0);
   const todayStartSec = Math.floor(todayStart.getTime() / 1000);
 
   // If the selected day is today, end = now; otherwise end = start + 86400
   const isToday = startSec === todayStartSec;
-  const endSec = isToday ? Math.floor(Date.now() / 1000) : startSec + 86400;
+  const endSec = isToday ? Math.floor(getNowMs() / 1000) : startSec + 86400;
   return { start: startSec, end: endSec, step: 60 };
 }
 
@@ -90,14 +94,14 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
     const parsed = new Date(dateStr + 'T00:00:00');
     if (isNaN(parsed.getTime())) return;
     // Don't allow future dates
-    const todayStart = new Date();
+    const todayStart = new Date(getNowMs());
     todayStart.setHours(0, 0, 0, 0);
     if (parsed > todayStart) return;
     onChange('today', computeDayValue(dateStr));
   };
 
   const isViewingToday = selected === 'today' && (() => {
-    const todayStart = new Date();
+    const todayStart = new Date(getNowMs());
     todayStart.setHours(0, 0, 0, 0);
     return value.start === Math.floor(todayStart.getTime() / 1000);
   })();
@@ -162,7 +166,7 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
               class="day-picker-input"
               aria-label="Select date"
               value={toDateString(value.start)}
-              max={toDateString(Math.floor(Date.now() / 1000))}
+              max={toDateString(Math.floor(getNowMs() / 1000))}
               onChange={(e) => handleDayPickerChange((e.target as HTMLInputElement).value)}
             />
           </label>
