@@ -99,87 +99,74 @@ else
 fi
 
 # ==============================================================================
-# 2. VictoriaMetrics Container App
+# 2. PostgreSQL Container App
 # ==============================================================================
-header "VictoriaMetrics Container App"
+header "PostgreSQL Container App"
 
-VM_NAME="${ENV_NAME}-vm"
-VM_JSON=$(az containerapp show --name "$VM_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+PG_NAME="${ENV_NAME}-postgres"
+PG_JSON=$(az containerapp show --name "$PG_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
 
-if [[ -z "$VM_JSON" ]]; then
-  fail "VictoriaMetrics Container App '$VM_NAME' not found"
+if [[ -z "$PG_JSON" ]]; then
+  fail "PostgreSQL Container App '$PG_NAME' not found"
 else
-  pass "Container App '$VM_NAME' exists"
+  pass "Container App '$PG_NAME' exists"
 
-  # Check running status
-  VM_STATUS=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
-  if [[ "$VM_STATUS" == "Succeeded" ]]; then
+  PG_STATUS=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
+  if [[ "$PG_STATUS" == "Succeeded" ]]; then
     pass "Provisioning state: Succeeded"
   else
-    fail "Provisioning state: $VM_STATUS (expected Succeeded)"
+    fail "Provisioning state: $PG_STATUS (expected Succeeded)"
   fi
 
-  # Check ingress is internal (zero-trust: VM not internet-facing)
-  VM_INGRESS_EXT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
-  if [[ "$VM_INGRESS_EXT" == "False" ]]; then
+  PG_INGRESS_EXT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
+  if [[ "$PG_INGRESS_EXT" == "False" ]]; then
     pass "Ingress: internal only (zero-trust)"
   else
-    fail "Ingress: external=$VM_INGRESS_EXT (expected False — VM should not be internet-facing)"
+    fail "Ingress: external=$PG_INGRESS_EXT (expected False — database should not be internet-facing)"
   fi
 
-  # Check target port is 8428 (VictoriaMetrics direct, no vmauth)
-  VM_PORT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$VM_PORT" == "8428" ]]; then
-    pass "Ingress target port: 8428 (VictoriaMetrics)"
+  PG_PORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
+  if [[ "$PG_PORT" == "5432" ]]; then
+    pass "Ingress target port: 5432 (PostgreSQL)"
   else
-    fail "Ingress target port: $VM_PORT (expected 8428)"
+    fail "Ingress target port: $PG_PORT (expected 5432)"
   fi
 
-  # Internal apps still get an FQDN (used for inter-app communication)
-  VM_FQDN=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
-  if [[ -n "$VM_FQDN" ]]; then
-    pass "Internal FQDN assigned: $VM_FQDN"
+  PG_FQDN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
+  if [[ -n "$PG_FQDN" ]]; then
+    pass "Internal FQDN assigned: $PG_FQDN"
   else
     fail "No internal FQDN assigned"
   fi
 
-  # Check revision mode is Single
-  VM_REV_MODE=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration'].get('activeRevisionsMode',''))")
-  if [[ "$VM_REV_MODE" == "Single" ]]; then
+  PG_REV_MODE=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration'].get('activeRevisionsMode',''))")
+  if [[ "$PG_REV_MODE" == "Single" ]]; then
     pass "Revision mode: Single"
   else
-    fail "Revision mode: $VM_REV_MODE (expected Single)"
+    fail "Revision mode: $PG_REV_MODE (expected Single)"
   fi
 
-  # Check containers: expect victoria-metrics only (vmauth removed)
-  CONTAINER_NAMES=$(echo "$VM_JSON" | python3 -c "
+  CONTAINER_NAMES=$(echo "$PG_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 containers = d['properties']['template']['containers']
 print(' '.join(c['name'] for c in containers))
 ")
-  if echo "$CONTAINER_NAMES" | grep -q "victoria-metrics"; then
-    pass "Container 'victoria-metrics' present"
+  if echo "$CONTAINER_NAMES" | grep -q "postgres"; then
+    pass "Container 'postgres' present"
   else
-    fail "Container 'victoria-metrics' missing (found: $CONTAINER_NAMES)"
-  fi
-  if echo "$CONTAINER_NAMES" | grep -q "vmauth"; then
-    fail "Container 'vmauth' still present (should be removed)"
-  else
-    pass "vmauth removed (zero-trust simplification)"
+    fail "Container 'postgres' missing (found: $CONTAINER_NAMES)"
   fi
 
-  # Check min/max replicas = 1
-  VM_MIN=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['minReplicas'])")
-  VM_MAX=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['maxReplicas'])")
-  if [[ "$VM_MIN" == "1" && "$VM_MAX" == "1" ]]; then
+  PG_MIN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['minReplicas'])")
+  PG_MAX=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['maxReplicas'])")
+  if [[ "$PG_MIN" == "1" && "$PG_MAX" == "1" ]]; then
     pass "Replicas: min=1, max=1"
   else
-    fail "Replicas: min=$VM_MIN, max=$VM_MAX (expected 1/1)"
+    fail "Replicas: min=$PG_MIN, max=$PG_MAX (expected 1/1)"
   fi
 
-  # VM is internal-only — no external smoke test needed (zero-trust)
-  pass "VM not internet-accessible — no external smoke test"
+  pass "PostgreSQL is internal-only — no external smoke test"
 fi
 
 # ==============================================================================
@@ -240,7 +227,7 @@ d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
 print(' '.join(e['name'] for e in envs))
 ")
-  for expected_env in AzureAd__Instance AzureAd__TenantId AzureAd__ClientId AzureAd__Audience VictoriaMetrics__Url; do
+  for expected_env in AzureAd__Instance AzureAd__TenantId AzureAd__ClientId AzureAd__Audience ConnectionStrings__DefaultConnection; do
     if echo "$API_ENVS" | grep -q "$expected_env"; then
       pass "Env var '$expected_env' configured"
     else
@@ -248,18 +235,18 @@ print(' '.join(e['name'] for e in envs))
     fi
   done
 
-  # Check VictoriaMetrics URL points to internal VM container
-  VM_URL=$(echo "$API_JSON" | python3 -c "
+  # Check API connection string is sourced from the expected secret
+  CONNECTION_STRING_SECRET=$(echo "$API_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
-vm = next((e for e in envs if e['name'] == 'VictoriaMetrics__Url'), None)
-print(vm['value'] if vm else '')
+conn = next((e for e in envs if e['name'] == 'ConnectionStrings__DefaultConnection'), None)
+print(conn.get('secretRef','') if conn else '')
 ")
-  if echo "$VM_URL" | grep -q "${ENV_NAME}-vm"; then
-    pass "VictoriaMetrics URL points to internal VM app"
+  if [[ "$CONNECTION_STRING_SECRET" == "api-connection-string" ]]; then
+    pass "API connection string secret configured"
   else
-    fail "VictoriaMetrics URL: $VM_URL (expected to contain '${ENV_NAME}-vm')"
+    fail "API connection string secret ref: $CONNECTION_STRING_SECRET (expected api-connection-string)"
   fi
 
   # Smoke test: health endpoint (unauthenticated)
@@ -274,13 +261,13 @@ print(vm['value'] if vm else '')
     fi
 
     # Authenticated endpoints should reject without token
-    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/query?query=up" 2>/dev/null) || true
+    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/devices" 2>/dev/null) || true
     if [[ "$API_NOAUTH" == "401" ]]; then
-      pass "Query endpoint rejects unauthenticated requests (401)"
+      pass "Protected endpoint rejects unauthenticated requests (401)"
     elif [[ "$API_NOAUTH" == "000" || -z "$API_NOAUTH" ]]; then
       skip "Could not reach API (timeout)"
     else
-      fail "Query endpoint returned HTTP $API_NOAUTH without token (expected 401)"
+      fail "Protected endpoint returned HTTP $API_NOAUTH without token (expected 401)"
     fi
 
     # Prometheus metrics endpoint (unauthenticated)
@@ -353,7 +340,7 @@ d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
 print(' '.join(e['name'] for e in envs))
 ")
-  for expected_env in EPCUBE_PORT EPCUBE_INTERVAL AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_AUDIENCE; do
+  for expected_env in EPCUBE_PORT EPCUBE_INTERVAL POSTGRES_DSN AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_AUDIENCE; do
     if echo "$EXP_ENVS" | grep -q "$expected_env"; then
       pass "Env var '$expected_env' configured"
     else
@@ -526,9 +513,9 @@ else
   fi
 
   # Check file share exists (use ARM API which uses Azure AD auth natively)
-  SHARE_JSON=$(az storage share-rm show --storage-account "$SA_NAME" --resource-group "$RG_NAME" --name "victoria-metrics-data" -o json 2>/dev/null || echo "")
+  SHARE_JSON=$(az storage share-rm show --storage-account "$SA_NAME" --resource-group "$RG_NAME" --name "postgres-data" -o json 2>/dev/null || echo "")
   if [[ -n "$SHARE_JSON" && "$SHARE_JSON" != "" ]]; then
-    pass "File share 'victoria-metrics-data' exists"
+    pass "File share 'postgres-data' exists"
 
     SHARE_QUOTA=$(echo "$SHARE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('shareQuota',''))")
     if [[ "$SHARE_QUOTA" == "50" ]]; then
@@ -537,7 +524,7 @@ else
       fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
     fi
   else
-    fail "File share 'victoria-metrics-data' not found"
+    fail "File share 'postgres-data' not found"
   fi
 fi
 

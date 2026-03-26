@@ -10,7 +10,7 @@ resource "azurerm_log_analytics_workspace" "main" {
   retention_in_days   = 30
 }
 
-# ── Storage Account for VictoriaMetrics data ──
+# ── Storage Account for PostgreSQL data ──
 
 resource "azurerm_storage_account" "main" {
   name                     = replace("${var.environment_name}sa", "-", "")
@@ -37,8 +37,8 @@ resource "azurerm_storage_account" "main" {
   }
 }
 
-resource "azurerm_storage_share" "vm_data" {
-  name               = "victoria-metrics-data"
+resource "azurerm_storage_share" "postgres_data" {
+  name               = "postgres-data"
   storage_account_id = azurerm_storage_account.main.id
   quota              = 50 # GB
 }

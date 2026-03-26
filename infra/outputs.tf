@@ -5,9 +5,9 @@ output "resource_group_name" {
   value       = azurerm_resource_group.main.name
 }
 
-output "vm_fqdn" {
-  description = "Internal FQDN of the VictoriaMetrics container app"
-  value       = azurerm_container_app.vm.ingress[0].fqdn
+output "postgres_fqdn" {
+  description = "Internal FQDN of the PostgreSQL container app"
+  value       = azurerm_container_app.postgres.ingress[0].fqdn
 }
 
 output "api_fqdn" {

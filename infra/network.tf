@@ -83,7 +83,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault" {
   virtual_network_id    = azurerm_virtual_network.main.id
 }
 
-# ── Storage Private Endpoint (Azure File Share for VictoriaMetrics) ──
+# ── Storage Private Endpoint (Azure File Share for PostgreSQL) ──
 
 resource "azurerm_private_endpoint" "storage_file" {
   name                = "${var.environment_name}-sa-file-pe"

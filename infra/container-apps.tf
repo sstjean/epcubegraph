@@ -18,21 +18,21 @@ resource "azurerm_container_app_environment" "main" {
   }
 }
 
-# ── Mount Azure File Share for VictoriaMetrics persistent storage ──
+# ── Mount Azure File Share for PostgreSQL persistent storage ──
 
-resource "azurerm_container_app_environment_storage" "vm" {
-  name                         = "vmstorage"
+resource "azurerm_container_app_environment_storage" "postgres" {
+  name                         = "postgresstorage"
   container_app_environment_id = azurerm_container_app_environment.main.id
   account_name                 = azurerm_storage_account.main.name
-  share_name                   = azurerm_storage_share.vm_data.name
+  share_name                   = azurerm_storage_share.postgres_data.name
   access_key                   = azurerm_storage_account.main.primary_access_key
   access_mode                  = "ReadWrite"
 }
 
-# ── VictoriaMetrics Container App (internal-only) ──
+# ── PostgreSQL Container App (internal-only) ──
 
-resource "azurerm_container_app" "vm" {
-  name                         = "${var.environment_name}-vm"
+resource "azurerm_container_app" "postgres" {
+  name                         = "${var.environment_name}-postgres"
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
@@ -43,11 +43,16 @@ resource "azurerm_container_app" "vm" {
     identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
+  secret {
+    name                = "postgres-password"
+    key_vault_secret_id = azurerm_key_vault_secret.postgres_password.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
   # Internal-only ingress — accessible only to other apps in the environment.
-  # No external traffic; vmauth removed (no internet-facing reads/writes).
   ingress {
     external_enabled = false
-    target_port      = 8428
+    target_port      = 5432
     transport        = "http"
 
     traffic_weight {
@@ -60,55 +65,37 @@ resource "azurerm_container_app" "vm" {
     min_replicas = 1
     max_replicas = 1
 
-    # Init container writes promscrape config to shared EmptyDir volume.
-    init_container {
-      name   = "config-init"
-      image  = "busybox:1.36"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      command = ["/bin/sh", "-c", "echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
-
-      volume_mounts {
-        name = "promscrape-config"
-        path = "/etc/promscrape"
-      }
-    }
-
     container {
-      name   = "victoria-metrics"
-      image  = var.victoria_metrics_image
+      name   = "postgres"
+      image  = var.postgres_image
       cpu    = 0.5
       memory = "1Gi"
 
-      args = [
-        "-retentionPeriod=5y",
-        "-dedup.minScrapeInterval=1m",
-        "-storageDataPath=/victoria-metrics-data",
-        "-httpListenAddr=:8428",
-        "-promscrape.config=/etc/promscrape/config.yml",
-      ]
+      env {
+        name  = "POSTGRES_USER"
+        value = "epcube"
+      }
 
-      volume_mounts {
-        name = "vm-data"
-        path = "/victoria-metrics-data"
+      env {
+        name  = "POSTGRES_DB"
+        value = "epcubegraph"
+      }
+
+      env {
+        name        = "POSTGRES_PASSWORD"
+        secret_name = "postgres-password"
       }
 
       volume_mounts {
-        name = "promscrape-config"
-        path = "/etc/promscrape"
+        name = "postgres-data"
+        path = "/var/lib/postgresql/data"
       }
     }
 
     volume {
-      name         = "vm-data"
-      storage_name = azurerm_container_app_environment_storage.vm.name
+      name         = "postgres-data"
+      storage_name = azurerm_container_app_environment_storage.postgres.name
       storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "promscrape-config"
-      storage_type = "EmptyDir"
     }
   }
 }
@@ -132,6 +119,12 @@ resource "azurerm_container_app" "api" {
   registry {
     server   = azurerm_container_registry.main.login_server
     identity = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "api-connection-string"
+    key_vault_secret_id = azurerm_key_vault_secret.api_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
   }
 
   ingress {
@@ -176,10 +169,8 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
-        name = "VictoriaMetrics__Url"
-        # Container Apps inter-app communication uses internal ingress on port 80.
-        # VictoriaMetrics runs internal-only (targetPort 8428), reachable via app name.
-        value = "http://${azurerm_container_app.vm.name}"
+        name        = "ConnectionStrings__DefaultConnection"
+        secret_name = "api-connection-string"
       }
 
       env {
@@ -209,6 +200,12 @@ resource "azurerm_container_app" "exporter" {
   registry {
     server   = azurerm_container_registry.main.login_server
     identity = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "exporter-postgres-dsn"
+    key_vault_secret_id = azurerm_key_vault_secret.exporter_postgres_dsn.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
   }
 
   secret {
@@ -270,6 +267,11 @@ resource "azurerm_container_app" "exporter" {
       env {
         name  = "EPCUBE_INTERVAL"
         value = "60"
+      }
+
+      env {
+        name        = "POSTGRES_DSN"
+        secret_name = "exporter-postgres-dsn"
       }
 
       env {

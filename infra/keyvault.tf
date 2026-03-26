@@ -57,3 +57,28 @@ resource "azurerm_key_vault_secret" "exporter_oauth_secret" {
   value        = azuread_application_password.exporter_oauth.value
   key_vault_id = azurerm_key_vault.main.id
 }
+
+# ── PostgreSQL runtime secrets ──
+
+resource "random_password" "postgres_password" {
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "postgres_password" {
+  name         = "postgres-password"
+  value        = random_password.postgres_password.result
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "api_connection_string" {
+  name         = "api-connection-string"
+  value        = "Host=${var.environment_name}-postgres;Port=5432;Database=epcubegraph;Username=epcube;Password=${random_password.postgres_password.result}"
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "exporter_postgres_dsn" {
+  name         = "exporter-postgres-dsn"
+  value        = "postgresql://epcube:${random_password.postgres_password.result}@${var.environment_name}-postgres:5432/epcubegraph"
+  key_vault_id = azurerm_key_vault.main.id
+}

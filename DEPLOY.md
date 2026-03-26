@@ -14,19 +14,19 @@ Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure a
 │                       Azure Container Apps Environment               │
 │                                                                      │
 │  ┌───────────────────────────┐  ┌─────────────────────────────────┐  │
-│  │ VictoriaMetrics App       │  │ API App                         │  │
-│  │  VictoriaMetrics (:8428)  │  │  ASP.NET Core (:8080)           │  │
-│  │  (internal-only)          │──│  Entra ID auth                  │  │
-│  │    scrapes ──┐            │  │  PromQL queries ────────────────│──│─► Clients
+│  │ PostgreSQL App            │  │ API App                         │  │
+│  │  PostgreSQL (:5432)       │  │  ASP.NET Core (:8080)           │  │
+│  │  (internal-only)          │◄─│  Entra ID auth                  │  │
+│  │                           │  │  JSON REST queries ─────────────│──│─► Clients
 │  └──────────────│────────────┘  └─────────────────────────────────┘  │
 │                 │                                                    │
 │  ┌──────────────▼────────────┐                                       │
 │  │ epcube-exporter App       │    Key Vault                          │
-│  │  :9250/metrics (internal) │    (OAuth secret, credentials)        │
+│  │  :9250/metrics + PG write │    (OAuth secret, credentials, DB)    │
 │  │  polls cloud API ────────────► monitoring-us.epcube.com           │
 │  └───────────────────────────┘                                       │
 │                                                                      │
-│  ACR (container images)  Storage (VM data)  Log Analytics            │
+│  ACR (container images)  Storage (PG data)  Log Analytics            │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -93,7 +93,7 @@ On completion, you'll see:
 ═══════════════════════════════════════════════════════════
 
   Endpoints:
-    VictoriaMetrics:  https://<env>-vm.<region>.azurecontainerapps.io
+    PostgreSQL:       <env>-postgres (internal only)
     API:              https://<env>-api.<region>.azurecontainerapps.io
 
   Entra ID:
@@ -122,12 +122,12 @@ A `{"status":"healthy"}` response confirms the stack is running. Telemetry data 
 |----------|---------|
 | Resource Group | Container for all resources |
 | Container Apps Environment | Hosting platform with Log Analytics |
-| VictoriaMetrics | Time-series DB (internal-only), scrapes epcube-exporter |
-| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics (internal) |
+| PostgreSQL Container App | Time-series DB (internal-only) |
+| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics, writes to PostgreSQL |
 | API Container App | ASP.NET Core service with Entra ID auth |
 | Azure Container Registry | Private Docker image registry |
 | Key Vault | Stores EP Cube credentials and OAuth client secret |
-| Storage Account + File Share | Persistent VictoriaMetrics data (50 GB) |
+| Storage Account + File Share | Persistent PostgreSQL data (50 GB) |
 | Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
 | User-Assigned Managed Identity | ACR pull + Key Vault read access |
 
@@ -270,5 +270,5 @@ Go to **Settings → Environments** and create:
 | epcube-exporter shows no metrics | Check Container App logs for login errors; verify `epcube_username` and `epcube_password` in `terraform.tfvars` |
 | API returns 401 | Token expired or wrong audience — re-acquire via `az account get-access-token` |
 | API returns 403 | Token missing `user_impersonation` scope — check Entra app registration |
-| VictoriaMetrics returns empty results | Wait 2+ minutes for data to flow; check VictoriaMetrics container logs for scrape errors |
+| API health is unhealthy or empty results persist | Check PostgreSQL and exporter container logs, then verify the API connection string and exporter `POSTGRES_DSN` wiring |
   

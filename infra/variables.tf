@@ -16,10 +16,10 @@ variable "location" {
   default     = "eastus"
 }
 
-variable "victoria_metrics_image" {
-  description = "VictoriaMetrics container image"
+variable "postgres_image" {
+  description = "PostgreSQL container image"
   type        = string
-  default     = "victoriametrics/victoria-metrics:v1.106.1"
+  default     = "postgres:17-alpine"
 }
 
 variable "api_image" {

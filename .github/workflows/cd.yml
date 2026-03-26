@@ -90,7 +90,7 @@ jobs:
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
-      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+      postgres_fqdn: ${{ steps.tf-output.outputs.postgres_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
       swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
@@ -296,7 +296,7 @@ jobs:
         run: |
           echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
-          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
           echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
           echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
@@ -411,9 +411,9 @@ jobs:
             echo "API not deployed (no FQDN) — skipping smoke test"
           fi
 
-      - name: Smoke test — VictoriaMetrics (internal-only check)
+      - name: Smoke test — PostgreSQL (internal-only check)
         run: |
-          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "✓ PostgreSQL is internal-only (zero-trust) — no external smoke test needed"
           echo "  API health endpoint validates internal connectivity"
 
       - name: Smoke test — epcube-exporter health
@@ -489,7 +489,7 @@ jobs:
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
-      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+      postgres_fqdn: ${{ steps.tf-output.outputs.postgres_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
       swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
@@ -698,7 +698,7 @@ jobs:
         run: |
           echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
-          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
           echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
           echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
@@ -811,9 +811,9 @@ jobs:
             echo "API not deployed (no FQDN) — skipping smoke test"
           fi
 
-      - name: Smoke test — VictoriaMetrics (internal-only check)
+      - name: Smoke test — PostgreSQL (internal-only check)
         run: |
-          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "✓ PostgreSQL is internal-only (zero-trust) — no external smoke test needed"
           echo "  API health endpoint validates internal connectivity"
 
       - name: Smoke test — epcube-exporter health
