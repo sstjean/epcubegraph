@@ -193,7 +193,7 @@ The CD pipeline stores Terraform state in an Azure Storage Account.
 
 ```bash
 # Create resource group and storage for Terraform state
-az group create --name tfstate-rg --location eastus
+az group create --name tfstate-rg --location centralus
 az storage account create \
   --name tfstateepcubegraph \
   --resource-group tfstate-rg \
@@ -207,6 +207,8 @@ az storage container create \
 #### 2. Create OIDC App Registration for GitHub Actions
 
 GitHub Actions authenticates to Azure using OIDC (no stored credentials).
+All CD jobs use GitHub Environments (`staging` / `production`), so federated
+credentials use `environment:` subjects — no branch-ref credentials are needed.
 
 ```bash
 # Create the app registration
@@ -215,19 +217,18 @@ az ad app create --display-name "epcubegraph-github-actions"
 # Note the appId from the output, then create a service principal
 az ad sp create --id <appId>
 
-# Add federated credential for GitHub Actions
+# Add federated credentials for GitHub Environments
 az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions",
+  "name": "github-actions-staging",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/main",
+  "subject": "repo:sstjean/epcubegraph:environment:staging",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# Also add a wildcard credential for feature branches
 az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions-branches",
+  "name": "github-actions-production",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/*",
+  "subject": "repo:sstjean/epcubegraph:environment:production",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 

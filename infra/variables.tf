@@ -16,12 +16,6 @@ variable "location" {
   default     = "centralus"
 }
 
-variable "postgres_image" {
-  description = "Legacy PostgreSQL container image (unused after managed PostgreSQL migration)"
-  type        = string
-  default     = "postgres:17-alpine"
-}
-
 variable "api_image" {
   description = "API container image (set by deploy.sh after build; leave empty to skip API deployment)"
   type        = string
