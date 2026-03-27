@@ -52,3 +52,4 @@ docker-compose.override.yml
 *.log
 *.pyc
 .vite/
+preferences-review.md
