@@ -30,6 +30,12 @@ resource "azurerm_postgresql_flexible_server" "main" {
     password_auth_enabled = true
   }
 
+  # Azure auto-assigns an availability zone at creation. Ignore it to prevent
+  # drift on subsequent applies (zone can't be changed without HA exchange).
+  lifecycle {
+    ignore_changes = [zone]
+  }
+
   depends_on = [azurerm_private_dns_zone_virtual_network_link.postgres]
 }
 
