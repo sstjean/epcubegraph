@@ -47,3 +47,157 @@ variable "allowed_ips" {
   type        = list(string)
   default     = []
 }
+
+# ── PostgreSQL ──
+
+variable "postgres_version" {
+  description = "PostgreSQL major version"
+  type        = string
+  default     = "17"
+}
+
+variable "postgres_admin_login" {
+  description = "PostgreSQL administrator login name"
+  type        = string
+  default     = "epcubeadmin"
+}
+
+variable "postgres_sku" {
+  description = "PostgreSQL Flexible Server SKU (e.g., B_Standard_B1ms, GP_Standard_D2s_v3)"
+  type        = string
+  default     = "B_Standard_B1ms"
+}
+
+variable "postgres_storage_mb" {
+  description = "PostgreSQL storage size in MB"
+  type        = number
+  default     = 32768
+}
+
+variable "postgres_backup_retention_days" {
+  description = "PostgreSQL backup retention in days (7-35)"
+  type        = number
+  default     = 7
+}
+
+variable "postgres_database_name" {
+  description = "Name of the application database"
+  type        = string
+  default     = "epcubegraph"
+}
+
+# ── Container Apps — API ──
+
+variable "api_port" {
+  description = "Port the API container listens on"
+  type        = number
+  default     = 8080
+}
+
+variable "api_cpu" {
+  description = "API container CPU cores"
+  type        = number
+  default     = 0.25
+}
+
+variable "api_memory" {
+  description = "API container memory (e.g., 0.5Gi, 1Gi)"
+  type        = string
+  default     = "0.5Gi"
+}
+
+variable "api_min_replicas" {
+  description = "API minimum replica count"
+  type        = number
+  default     = 1
+}
+
+variable "api_max_replicas" {
+  description = "API maximum replica count"
+  type        = number
+  default     = 3
+}
+
+# ── Container Apps — Exporter ──
+
+variable "exporter_port" {
+  description = "Port the epcube-exporter listens on"
+  type        = number
+  default     = 9250
+}
+
+variable "exporter_poll_interval" {
+  description = "Exporter poll interval in seconds"
+  type        = number
+  default     = 60
+}
+
+variable "exporter_cpu" {
+  description = "Exporter container CPU cores"
+  type        = number
+  default     = 0.25
+}
+
+variable "exporter_memory" {
+  description = "Exporter container memory (e.g., 0.5Gi, 1Gi)"
+  type        = string
+  default     = "0.5Gi"
+}
+
+variable "exporter_min_replicas" {
+  description = "Exporter minimum replica count"
+  type        = number
+  default     = 1
+}
+
+variable "exporter_max_replicas" {
+  description = "Exporter maximum replica count"
+  type        = number
+  default     = 1
+}
+
+# ── Networking ──
+
+variable "vnet_address_space" {
+  description = "Virtual network address space"
+  type        = list(string)
+  default     = ["10.0.0.0/16"]
+}
+
+variable "subnet_infrastructure_prefix" {
+  description = "Container Apps infrastructure subnet (/23 minimum)"
+  type        = list(string)
+  default     = ["10.0.0.0/23"]
+}
+
+variable "subnet_endpoints_prefix" {
+  description = "Private endpoints subnet prefix"
+  type        = list(string)
+  default     = ["10.0.2.0/24"]
+}
+
+variable "subnet_postgres_prefix" {
+  description = "PostgreSQL delegated subnet prefix"
+  type        = list(string)
+  default     = ["10.0.3.0/24"]
+}
+
+# ── Supporting Services ──
+
+variable "acr_sku" {
+  description = "Azure Container Registry SKU (Basic, Standard, Premium)"
+  type        = string
+  default     = "Basic"
+}
+
+variable "keyvault_soft_delete_days" {
+  description = "Key Vault soft-delete retention in days (7-90)"
+  type        = number
+  default     = 7
+}
+
+variable "log_retention_days" {
+  description = "Log Analytics workspace retention in days"
+  type        = number
+  default     = 30
+}

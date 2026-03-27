@@ -9,7 +9,7 @@ resource "azurerm_key_vault" "main" {
   tenant_id                     = data.azurerm_client_config.current.tenant_id
   sku_name                      = "standard"
   rbac_authorization_enabled    = false
-  soft_delete_retention_days    = 7
+  soft_delete_retention_days    = var.keyvault_soft_delete_days
   purge_protection_enabled      = false
   public_network_access_enabled = true
 
@@ -73,12 +73,12 @@ resource "azurerm_key_vault_secret" "postgres_password" {
 
 resource "azurerm_key_vault_secret" "api_connection_string" {
   name         = "api-connection-string"
-  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=epcubegraph;Username=epcubeadmin;Password=${random_password.postgres_password.result};SSL Mode=Require;Trust Server Certificate=true"
+  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=${var.postgres_database_name};Username=${var.postgres_admin_login};Password=${random_password.postgres_password.result};SSL Mode=Require;Trust Server Certificate=true"
   key_vault_id = azurerm_key_vault.main.id
 }
 
 resource "azurerm_key_vault_secret" "exporter_postgres_dsn" {
   name         = "exporter-postgres-dsn"
-  value        = "postgresql://epcubeadmin:${random_password.postgres_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/epcubegraph?sslmode=require"
+  value        = "postgresql://${var.postgres_admin_login}:${random_password.postgres_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${var.postgres_database_name}?sslmode=require"
   key_vault_id = azurerm_key_vault.main.id
 }

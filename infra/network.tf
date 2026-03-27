@@ -13,7 +13,7 @@ resource "azurerm_virtual_network" "main" {
   name                = "${var.environment_name}-vnet"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  address_space       = ["10.0.0.0/16"]
+  address_space       = var.vnet_address_space
 }
 
 # ── Subnets ──
@@ -23,7 +23,7 @@ resource "azurerm_subnet" "infrastructure" {
   name                            = "infrastructure"
   resource_group_name             = azurerm_resource_group.main.name
   virtual_network_name            = azurerm_virtual_network.main.name
-  address_prefixes                = ["10.0.0.0/23"]
+  address_prefixes                = var.subnet_infrastructure_prefix
   default_outbound_access_enabled = false
 
   delegation {
@@ -40,7 +40,7 @@ resource "azurerm_subnet" "endpoints" {
   name                            = "endpoints"
   resource_group_name             = azurerm_resource_group.main.name
   virtual_network_name            = azurerm_virtual_network.main.name
-  address_prefixes                = ["10.0.2.0/24"]
+  address_prefixes                = var.subnet_endpoints_prefix
   default_outbound_access_enabled = false
 }
 
@@ -48,7 +48,7 @@ resource "azurerm_subnet" "postgres" {
   name                 = "postgres"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.3.0/24"]
+  address_prefixes     = var.subnet_postgres_prefix
 
   delegation {
     name = "postgres-flexible-server"

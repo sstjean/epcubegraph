@@ -47,7 +47,7 @@ resource "azurerm_container_app" "api" {
 
   ingress {
     external_enabled = true
-    target_port      = 8080
+    target_port      = var.api_port
     transport        = "http"
 
     traffic_weight {
@@ -57,14 +57,14 @@ resource "azurerm_container_app" "api" {
   }
 
   template {
-    min_replicas = 1
-    max_replicas = 3
+    min_replicas = var.api_min_replicas
+    max_replicas = var.api_max_replicas
 
     container {
       name   = "api"
       image  = var.api_image
-      cpu    = 0.25
-      memory = "0.5Gi"
+      cpu    = var.api_cpu
+      memory = var.api_memory
 
       env {
         name  = "AzureAd__Instance"
@@ -148,7 +148,7 @@ resource "azurerm_container_app" "exporter" {
   # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
     external_enabled = true
-    target_port      = 9250
+    target_port      = var.exporter_port
     transport        = "http"
 
     traffic_weight {
@@ -158,14 +158,14 @@ resource "azurerm_container_app" "exporter" {
   }
 
   template {
-    min_replicas = 1
-    max_replicas = 1
+    min_replicas = var.exporter_min_replicas
+    max_replicas = var.exporter_max_replicas
 
     container {
       name   = "epcube-exporter"
       image  = var.epcube_image
-      cpu    = 0.25
-      memory = "0.5Gi"
+      cpu    = var.exporter_cpu
+      memory = var.exporter_memory
 
       env {
         name        = "EPCUBE_USERNAME"
@@ -179,12 +179,12 @@ resource "azurerm_container_app" "exporter" {
 
       env {
         name  = "EPCUBE_PORT"
-        value = "9250"
+        value = tostring(var.exporter_port)
       }
 
       env {
         name  = "EPCUBE_INTERVAL"
-        value = "60"
+        value = tostring(var.exporter_poll_interval)
       }
 
       env {
