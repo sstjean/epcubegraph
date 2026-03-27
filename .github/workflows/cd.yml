@@ -390,21 +390,55 @@ jobs:
       - name: Run deployment validation
         run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-staging.outputs.resource_group }}
 
+      - name: Wait for API revision readiness
+        run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
+          API_FQDN="${{ needs.deploy-staging.outputs.api_fqdn }}"
+          if [ -z "$API_FQDN" ] || [ "$API_FQDN" = "" ]; then
+            echo "API not deployed (no FQDN) — skipping revision wait"
+            exit 0
+          fi
+
+          for i in $(seq 1 20); do
+            REVISION_STATUS=$(az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
+            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
+              echo "✓ API revision ready: $REVISION_STATUS"
+              exit 0
+            fi
+            echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
+            sleep 15
+          done
+
+          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
+          exit 1
+
       - name: Smoke test — API health endpoint
         run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
           API_FQDN="${{ needs.deploy-staging.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ API health endpoint responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::API health endpoint did not respond after 5 attempts"
+              echo "::error::API health endpoint did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
@@ -418,19 +452,28 @@ jobs:
 
       - name: Smoke test — epcube-exporter health
         run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-exporter"
           EXPORTER_FQDN="${{ needs.deploy-staging.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
+              REVISION_STATUS=$(az containerapp revision list \
+                --name "$APP_NAME" \
+                --resource-group "$RG" \
+                --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ epcube-exporter health responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: exporter revision $REVISION_STATUS, HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::epcube-exporter did not respond after 3 attempts"
+              echo "::error::epcube-exporter did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
@@ -790,21 +833,55 @@ jobs:
       - name: Run deployment validation
         run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-prod.outputs.resource_group }}
 
+      - name: Wait for API revision readiness
+        run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
+          API_FQDN="${{ needs.deploy-prod.outputs.api_fqdn }}"
+          if [ -z "$API_FQDN" ] || [ "$API_FQDN" = "" ]; then
+            echo "API not deployed (no FQDN) — skipping revision wait"
+            exit 0
+          fi
+
+          for i in $(seq 1 20); do
+            REVISION_STATUS=$(az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
+            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
+              echo "✓ API revision ready: $REVISION_STATUS"
+              exit 0
+            fi
+            echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
+            sleep 15
+          done
+
+          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
+          exit 1
+
       - name: Smoke test — API health endpoint
         run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
           API_FQDN="${{ needs.deploy-prod.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ API health endpoint responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::API health endpoint did not respond after 5 attempts"
+              echo "::error::API health endpoint did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
@@ -818,19 +895,28 @@ jobs:
 
       - name: Smoke test — epcube-exporter health
         run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-exporter"
           EXPORTER_FQDN="${{ needs.deploy-prod.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
+              REVISION_STATUS=$(az containerapp revision list \
+                --name "$APP_NAME" \
+                --resource-group "$RG" \
+                --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ epcube-exporter health responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: exporter revision $REVISION_STATUS, HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::epcube-exporter did not respond after 5 attempts"
+              echo "::error::epcube-exporter did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else

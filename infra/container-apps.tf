@@ -53,7 +53,8 @@ resource "azurerm_container_app" "postgres" {
   ingress {
     external_enabled = false
     target_port      = 5432
-    transport        = "http"
+    exposed_port     = 5432
+    transport        = "tcp"
 
     traffic_weight {
       percentage      = 100

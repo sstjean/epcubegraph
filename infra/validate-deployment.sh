@@ -132,6 +132,20 @@ else
     fail "Ingress target port: $PG_PORT (expected 5432)"
   fi
 
+  PG_EXPOSED_PORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('exposedPort',''))")
+  if [[ "$PG_EXPOSED_PORT" == "5432" ]]; then
+    pass "Ingress exposed port: 5432 (PostgreSQL TCP)"
+  else
+    fail "Ingress exposed port: $PG_EXPOSED_PORT (expected 5432)"
+  fi
+
+  PG_TRANSPORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('transport',''))")
+  if [[ "${PG_TRANSPORT,,}" == "tcp" ]]; then
+    pass "Ingress transport: TCP"
+  else
+    fail "Ingress transport: $PG_TRANSPORT (expected Tcp/TCP)"
+  fi
+
   PG_FQDN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
   if [[ -n "$PG_FQDN" ]]; then
     pass "Internal FQDN assigned: $PG_FQDN"
