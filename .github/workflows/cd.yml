@@ -1172,6 +1172,7 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.destroy == 'true'
+    environment: ${{ github.event.inputs.environment }}
 
     steps:
       - uses: actions/checkout@v6
