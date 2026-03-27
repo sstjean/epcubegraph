@@ -99,88 +99,66 @@ else
 fi
 
 # ==============================================================================
-# 2. PostgreSQL Container App
+# 2. Managed PostgreSQL Server
 # ==============================================================================
-header "PostgreSQL Container App"
+header "Managed PostgreSQL Server"
 
 PG_NAME="${ENV_NAME}-postgres"
-PG_JSON=$(az containerapp show --name "$PG_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+PG_JSON=$(az postgres flexible-server show --name "$PG_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
 
 if [[ -z "$PG_JSON" ]]; then
-  fail "PostgreSQL Container App '$PG_NAME' not found"
+  fail "Managed PostgreSQL server '$PG_NAME' not found"
 else
-  pass "Container App '$PG_NAME' exists"
+  pass "Managed PostgreSQL server '$PG_NAME' exists"
 
-  PG_STATUS=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
-  if [[ "$PG_STATUS" == "Succeeded" ]]; then
-    pass "Provisioning state: Succeeded"
+  PG_STATE=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',''))")
+  if [[ "$PG_STATE" == "Ready" ]]; then
+    pass "Server state: Ready"
   else
-    fail "Provisioning state: $PG_STATUS (expected Succeeded)"
+    fail "Server state: $PG_STATE (expected Ready)"
   fi
 
-  PG_INGRESS_EXT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
-  if [[ "$PG_INGRESS_EXT" == "False" ]]; then
-    pass "Ingress: internal only (zero-trust)"
+  PG_VERSION=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))")
+  if [[ "$PG_VERSION" == "17" ]]; then
+    pass "Server version: 17"
   else
-    fail "Ingress: external=$PG_INGRESS_EXT (expected False — database should not be internet-facing)"
+    fail "Server version: $PG_VERSION (expected 17)"
   fi
 
-  PG_PORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$PG_PORT" == "5432" ]]; then
-    pass "Ingress target port: 5432 (PostgreSQL)"
+  PG_SKU=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); sku=d.get('sku',{}); print(sku.get('name','') or d.get('skuName',''))")
+  if [[ "$PG_SKU" == "Standard_B1ms" || "$PG_SKU" == "B_Standard_B1ms" ]]; then
+    pass "SKU: $PG_SKU"
   else
-    fail "Ingress target port: $PG_PORT (expected 5432)"
+    fail "SKU: $PG_SKU (expected Standard_B1ms/B_Standard_B1ms)"
   fi
 
-  PG_EXPOSED_PORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('exposedPort',''))")
-  if [[ "$PG_EXPOSED_PORT" == "5432" ]]; then
-    pass "Ingress exposed port: 5432 (PostgreSQL TCP)"
+  PG_PUBLIC=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('publicNetworkAccess',''))")
+  if [[ "${PG_PUBLIC,,}" == "disabled" ]]; then
+    pass "Public network access disabled"
   else
-    fail "Ingress exposed port: $PG_EXPOSED_PORT (expected 5432)"
+    fail "Public network access: $PG_PUBLIC (expected Disabled)"
   fi
 
-  PG_TRANSPORT=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('transport',''))")
-  if [[ "${PG_TRANSPORT,,}" == "tcp" ]]; then
-    pass "Ingress transport: TCP"
+  PG_SUBNET=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('delegatedSubnetResourceId',''))")
+  if [[ "$PG_SUBNET" == *"/subnets/postgres" ]]; then
+    pass "Delegated subnet configured"
   else
-    fail "Ingress transport: $PG_TRANSPORT (expected Tcp/TCP)"
+    fail "Delegated subnet missing or unexpected: $PG_SUBNET"
   fi
 
-  PG_FQDN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
+  PG_DNS=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('privateDnsZoneArmResourceId',''))")
+  if [[ "$PG_DNS" == *".postgres.database.azure.com"* ]]; then
+    pass "Private DNS zone configured"
+  else
+    fail "Private DNS zone missing or unexpected: $PG_DNS"
+  fi
+
+  PG_FQDN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('fullyQualifiedDomainName',''))")
   if [[ -n "$PG_FQDN" ]]; then
-    pass "Internal FQDN assigned: $PG_FQDN"
+    pass "Private FQDN assigned: $PG_FQDN"
   else
-    fail "No internal FQDN assigned"
+    fail "No PostgreSQL FQDN assigned"
   fi
-
-  PG_REV_MODE=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration'].get('activeRevisionsMode',''))")
-  if [[ "$PG_REV_MODE" == "Single" ]]; then
-    pass "Revision mode: Single"
-  else
-    fail "Revision mode: $PG_REV_MODE (expected Single)"
-  fi
-
-  CONTAINER_NAMES=$(echo "$PG_JSON" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-containers = d['properties']['template']['containers']
-print(' '.join(c['name'] for c in containers))
-")
-  if echo "$CONTAINER_NAMES" | grep -q "postgres"; then
-    pass "Container 'postgres' present"
-  else
-    fail "Container 'postgres' missing (found: $CONTAINER_NAMES)"
-  fi
-
-  PG_MIN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['minReplicas'])")
-  PG_MAX=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['maxReplicas'])")
-  if [[ "$PG_MIN" == "1" && "$PG_MAX" == "1" ]]; then
-    pass "Replicas: min=1, max=1"
-  else
-    fail "Replicas: min=$PG_MIN, max=$PG_MAX (expected 1/1)"
-  fi
-
-  pass "PostgreSQL is internal-only — no external smoke test"
 fi
 
 # ==============================================================================
@@ -507,38 +485,29 @@ print(' '.join(s['name'] for s in secrets))
 fi
 
 # ==============================================================================
-# 7. Storage Account & File Share
+# 7. Managed PostgreSQL Database
 # ==============================================================================
-header "Storage Account"
+header "Managed PostgreSQL Database"
 
-SA_NAME=$(echo "${ENV_NAME}sa" | tr -d '-')
-SA_JSON=$(az storage account show --name "$SA_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+PG_DB_JSON=$(az postgres flexible-server db show --resource-group "$RG_NAME" --server-name "$PG_NAME" --database-name "epcubegraph" -o json 2>/dev/null || echo "")
 
-if [[ -z "$SA_JSON" ]]; then
-  fail "Storage Account '$SA_NAME' not found"
+if [[ -z "$PG_DB_JSON" ]]; then
+  fail "Managed PostgreSQL database 'epcubegraph' not found"
 else
-  pass "Storage Account '$SA_NAME' exists"
+  pass "Managed PostgreSQL database 'epcubegraph' exists"
 
-  SA_REPL=$(echo "$SA_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sku',{}).get('name',''))")
-  if [[ "$SA_REPL" == "Standard_LRS" ]]; then
-    pass "Replication: Standard_LRS"
+  PG_DB_CHARSET=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('charset',''))")
+  if [[ "$PG_DB_CHARSET" == "UTF8" ]]; then
+    pass "Database charset: UTF8"
   else
-    fail "Replication: $SA_REPL (expected Standard_LRS)"
+    fail "Database charset: $PG_DB_CHARSET (expected UTF8)"
   fi
 
-  # Check file share exists (use ARM API which uses Azure AD auth natively)
-  SHARE_JSON=$(az storage share-rm show --storage-account "$SA_NAME" --resource-group "$RG_NAME" --name "postgres-data" -o json 2>/dev/null || echo "")
-  if [[ -n "$SHARE_JSON" && "$SHARE_JSON" != "" ]]; then
-    pass "File share 'postgres-data' exists"
-
-    SHARE_QUOTA=$(echo "$SHARE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('shareQuota',''))")
-    if [[ "$SHARE_QUOTA" == "50" ]]; then
-      pass "File share quota: 50 GB"
-    else
-      fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
-    fi
+  PG_DB_COLLATION=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('collation',''))")
+  if [[ "$PG_DB_COLLATION" == "en_US.utf8" ]]; then
+    pass "Database collation: en_US.utf8"
   else
-    fail "File share 'postgres-data' not found"
+    fail "Database collation: $PG_DB_COLLATION (expected en_US.utf8)"
   fi
 fi
 

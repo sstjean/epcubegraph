@@ -73,12 +73,12 @@ resource "azurerm_key_vault_secret" "postgres_password" {
 
 resource "azurerm_key_vault_secret" "api_connection_string" {
   name         = "api-connection-string"
-  value        = "Host=${var.environment_name}-postgres;Port=5432;Database=epcubegraph;Username=epcube;Password=${random_password.postgres_password.result}"
+  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=epcubegraph;Username=epcubeadmin;Password=${random_password.postgres_password.result};SSL Mode=Require;Trust Server Certificate=true"
   key_vault_id = azurerm_key_vault.main.id
 }
 
 resource "azurerm_key_vault_secret" "exporter_postgres_dsn" {
   name         = "exporter-postgres-dsn"
-  value        = "postgresql://epcube:${random_password.postgres_password.result}@${var.environment_name}-postgres:5432/epcubegraph"
+  value        = "postgresql://epcubeadmin:${random_password.postgres_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/epcubegraph?sslmode=require"
   key_vault_id = azurerm_key_vault.main.id
 }

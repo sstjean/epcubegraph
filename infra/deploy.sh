@@ -311,7 +311,7 @@ cmd_output_summary() {
   api_fqdn=$(tf_output -raw api_fqdn 2>/dev/null || echo "not deployed")
 
   echo -e "  ${BOLD}Endpoints:${NC}"
-  echo -e "    PostgreSQL:       ${postgres_fqdn} (internal only)"
+  echo -e "    PostgreSQL:       ${postgres_fqdn} (private managed server)"
   echo -e "    API:              https://${api_fqdn}"
   echo ""
   echo -e "  ${BOLD}Entra ID:${NC}"

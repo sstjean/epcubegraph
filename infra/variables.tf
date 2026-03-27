@@ -13,11 +13,11 @@ variable "environment_name" {
 variable "location" {
   description = "Azure region for all resources"
   type        = string
-  default     = "eastus"
+  default     = "centralus"
 }
 
 variable "postgres_image" {
-  description = "PostgreSQL container image"
+  description = "Legacy PostgreSQL container image (unused after managed PostgreSQL migration)"
   type        = string
   default     = "postgres:17-alpine"
 }

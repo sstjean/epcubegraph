@@ -14,19 +14,18 @@ Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure a
 │                       Azure Container Apps Environment               │
 │                                                                      │
 │  ┌───────────────────────────┐  ┌─────────────────────────────────┐  │
-│  │ PostgreSQL App            │  │ API App                         │  │
-│  │  PostgreSQL (:5432)       │  │  ASP.NET Core (:8080)           │  │
-│  │  (internal-only)          │◄─│  Entra ID auth                  │  │
-│  │                           │  │  JSON REST queries ─────────────│──│─► Clients
-│  └──────────────│────────────┘  └─────────────────────────────────┘  │
-│                 │                                                    │
+│  │ Managed PostgreSQL        │  │ API App                         │  │
+│  │  Flexible Server          │  │  ASP.NET Core (:8080)           │  │
+│  │  (private access)         │◄─│  Entra ID auth                  │  │
+│  └──────────────│────────────┘  │  JSON REST queries ─────────────│──│─► Clients
+│                 │               └─────────────────────────────────┘  │
 │  ┌──────────────▼────────────┐                                       │
 │  │ epcube-exporter App       │    Key Vault                          │
 │  │  :9250/metrics + PG write │    (OAuth secret, credentials, DB)    │
 │  │  polls cloud API ────────────► monitoring-us.epcube.com           │
 │  └───────────────────────────┘                                       │
 │                                                                      │
-│  ACR (container images)  Storage (PG data)  Log Analytics            │
+│  ACR (container images)  Log Analytics                                │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +61,7 @@ Edit `terraform.tfvars`:
 
 ```hcl
 environment_name = "epcubegraph"              # Prefix for all Azure resources
-location         = "eastus"                    # Azure region
+location         = "centralus"                 # Azure region
 
 # EP Cube cloud account
 epcube_username  = "your-email@example.com"
@@ -93,7 +92,7 @@ On completion, you'll see:
 ═══════════════════════════════════════════════════════════
 
   Endpoints:
-    PostgreSQL:       <env>-postgres (internal only)
+    PostgreSQL:       <managed-private-fqdn>
     API:              https://<env>-api.<region>.azurecontainerapps.io
 
   Entra ID:
@@ -122,12 +121,11 @@ A `{"status":"healthy"}` response confirms the stack is running. Telemetry data 
 |----------|---------|
 | Resource Group | Container for all resources |
 | Container Apps Environment | Hosting platform with Log Analytics |
-| PostgreSQL Container App | Time-series DB (internal-only) |
+| Azure Database for PostgreSQL Flexible Server | Time-series DB (private access) |
 | epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics, writes to PostgreSQL |
 | API Container App | ASP.NET Core service with Entra ID auth |
 | Azure Container Registry | Private Docker image registry |
 | Key Vault | Stores EP Cube credentials and OAuth client secret |
-| Storage Account + File Share | Persistent PostgreSQL data (50 GB) |
 | Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
 | User-Assigned Managed Identity | ACR pull + Key Vault read access |
 

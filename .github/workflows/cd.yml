@@ -43,7 +43,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TF_VAR_location: 'eastus'
+  # East US and East US 2 are currently restricted for PostgreSQL Flexible Server
+  # on this subscription, so branch and production deployments use Central US.
+  TF_VAR_location: 'centralus'
   ARM_USE_OIDC: 'true'
   TFSTATE_STORAGE_ACCOUNT: 'tfstateepcubegraph'
   TFSTATE_RESOURCE_GROUP: 'tfstate-rg'

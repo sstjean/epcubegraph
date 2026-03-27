@@ -6,8 +6,8 @@ output "resource_group_name" {
 }
 
 output "postgres_fqdn" {
-  description = "Internal FQDN of the PostgreSQL container app"
-  value       = azurerm_container_app.postgres.ingress[0].fqdn
+  description = "Private FQDN of the managed PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.main.fqdn
 }
 
 output "api_fqdn" {

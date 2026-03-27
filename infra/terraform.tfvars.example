@@ -2,7 +2,7 @@
 # Copy to terraform.tfvars and fill in your values.
 
 environment_name = "epcubegraph" # Prefix for all Azure resources
-location         = "eastus"      # Azure region
+location         = "centralus"   # Azure region
 
 # EP Cube cloud account (monitoring-us.epcube.com)
 epcube_username = "your-email@example.com"
