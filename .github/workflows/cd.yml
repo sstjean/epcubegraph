@@ -1111,6 +1111,30 @@ jobs:
 
       - name: Terraform Destroy
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        id: branch-destroy
+        continue-on-error: true
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: terraform destroy -auto-approve -input=false
+
+      # Re-authenticate — OIDC token may have expired during long destroy
+      - name: Azure Re-Login for Retry (OIDC)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy — Retry
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
         working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -1121,11 +1145,9 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: |
-          if ! terraform destroy -auto-approve -input=false; then
-            echo "⚠ First destroy failed — refreshing state and retrying..."
-            terraform refresh -input=false || true
-            terraform destroy -auto-approve -input=false
-          fi
+          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
+          terraform refresh -input=false || true
+          terraform destroy -auto-approve -input=false
           echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
 
       - name: Delete state blob
@@ -1294,6 +1316,30 @@ jobs:
 
       - name: Terraform Destroy
         working-directory: infra
+        id: destroy
+        continue-on-error: true
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: terraform destroy -auto-approve -input=false
+
+      # Re-authenticate — OIDC token may have expired during long destroy
+      - name: Azure Re-Login for Retry (OIDC)
+        if: steps.destroy.outcome == 'failure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy — Retry
+        if: steps.destroy.outcome == 'failure'
+        working-directory: infra
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -1303,11 +1349,9 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: |
-          if ! terraform destroy -auto-approve -input=false; then
-            echo "⚠ First destroy attempt failed — refreshing state and retrying..."
-            terraform refresh -input=false
-            terraform destroy -auto-approve -input=false
-          fi
+          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
+          terraform refresh -input=false
+          terraform destroy -auto-approve -input=false
 
       - name: Delete state blob
         run: |
