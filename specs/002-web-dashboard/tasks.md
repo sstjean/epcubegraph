@@ -9,7 +9,7 @@
 
 **GitHub Issues**: #33 (US1 P1), #34 (US2 P2)
 
-**Regenerated**: 2025-06-22 — full regeneration. Removes Grafana (FR-009 descoped, #35 closed), adds FR-020 (Application Insights), fixes calendar month step (no longer constrained by VictoriaMetrics), renames HealthResponse field to `datastore`.
+**Regenerated**: 2025-06-22 — full regeneration. Removes Grafana (FR-009 descoped, #35 closed), adds FR-020 (Application Insights), fixes calendar month step to support true calendar boundaries, renames HealthResponse field to `datastore`.
 
 ## Format: `[ID] [P?] [Story?] Description`
 

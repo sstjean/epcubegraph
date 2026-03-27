@@ -1,256 +1,63 @@
 # API Contract: EP Cube Graph API v1
 
-**Version**: 1.0.0 | **Branch**: `001-data-ingestor` | **Date**: 2026-03-07
-
-> **⚠️ Migration Note**: This API contract currently uses Prometheus-compatible query syntax and response formats inherited from the VictoriaMetrics storage backend, which is being removed. Since we own all clients (web dashboard, iPhone, iPad), the response format, query syntax, and field names will change during the Azure SQL Database migration. This contract documents the *current* implementation; a v2 contract will be authored during migration.
-
----
+**Version**: 1.0.0 | **Branch**: `001-data-ingestor` | **Date**: 2026-03-27
 
 ## Base URL
 
-```
+```text
 https://{host}/api/v1
 ```
 
----
-
 ## Authentication
 
-All endpoints require a valid **Microsoft Entra ID JWT** bearer token (FR-010).
+All telemetry endpoints require a valid Microsoft Entra ID JWT bearer token.
 
-```
+```text
 Authorization: Bearer <entra-id-jwt>
 ```
 
-**Validation** (performed on every request):
+### Validation
+
 - Algorithm: RS256
 - Issuer: `https://login.microsoftonline.com/{tenant_id}/v2.0`
 - Audience: `api://{app_client_id}`
 - Scope: `user_impersonation`
-- Expiry: Token must not be expired (`exp` claim)
-- Not-before: Token must be active (`nbf` claim)
+- Expiry and activation claims must be valid
 
-**Error responses**:
-| Status | Condition |
-|--------|-----------|
-| `401 Unauthorized` | Missing, expired, invalid signature, wrong audience/issuer |
-| `403 Forbidden` | Valid token but insufficient scope |
-
----
-
-## Endpoints
-
-### GET /api/v1/devices
-
-List all known devices with their metadata.
-
-**Description**: Returns device identity information from `epcube_device_info` metrics stored in the data store. Each device entry includes the labels exposed by epcube-exporter.
-
-**Response**: `200 OK`
-
-```json
-{
-  "devices": [
-    {
-      "device": "epcube_battery",
-      "class": "storage_battery",
-      "manufacturer": "Canadian Solar",
-      "product_code": "EP Cube 2.0",
-      "uid": "ABC123",
-      "online": true
-    },
-    {
-      "device": "epcube_solar",
-      "class": "home_solar",
-      "manufacturer": "Canadian Solar",
-      "product_code": "EP Cube 2.0",
-      "uid": "ABC123",
-      "online": true
-    }
-  ]
-}
-```
-
-**Implementation**: Queries `epcube_device_info` and `epcube_scrape_success` from the data store.
-
----
-
-### GET /api/v1/query
-
-Execute an instant query against the data store (FR-008).
-
-**Query parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | yes | Query expression *(currently PromQL — will change with Azure SQL migration)* |
-| `time` | string | no | Evaluation timestamp (RFC3339 or Unix epoch). Defaults to now. |
-
-**Response**: `200 OK`
-
-```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "vector",
-    "result": [
-      {
-        "metric": {
-          "__name__": "epcube_battery_state_of_capacity_percent",
-          "device": "epcube_battery",
-          "class": "storage_battery"
-        },
-        "value": [1709827200, "85"]
-      }
-    ]
-  }
-}
-```
-
-**Error responses**:
+### Auth Errors
 
 | Status | Condition |
 |--------|-----------|
-| `400 Bad Request` | Invalid query syntax or missing `query` parameter |
-| `422 Unprocessable Entity` | Query execution error |
+| `401 Unauthorized` | Missing token, expired token, invalid signature, wrong audience, wrong issuer |
+| `403 Forbidden` | Valid token without the required scope |
 
----
-
-### GET /api/v1/query_range
-
-Execute a range query for time-series data (FR-008, FR-009).
-
-**Query parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `query` | string | yes | PromQL expression *(will change with Azure SQL migration)* |
-| `start` | string | yes | Start timestamp (RFC3339 or Unix epoch) |
-| `end` | string | yes | End timestamp (RFC3339 or Unix epoch) |
-| `step` | string | yes | Query resolution step (e.g., `1m`, `5m`, `1h`) |
-
-**Example request**:
-
-```
-GET /api/v1/query_range?query=epcube_battery_state_of_capacity_percent{device="epcube_battery"}&start=2026-03-06T00:00:00Z&end=2026-03-07T00:00:00Z&step=5m
-```
-
-**Response**: `200 OK`
+## Common Error Response
 
 ```json
 {
-  "status": "success",
-  "data": {
-    "resultType": "matrix",
-    "result": [
-      {
-        "metric": {
-          "__name__": "epcube_battery_state_of_capacity_percent",
-          "device": "epcube_battery",
-          "class": "storage_battery"
-        },
-        "values": [
-          [1709683200, "72"],
-          [1709683500, "73"],
-          [1709683800, "74"]
-        ]
-      }
-    ]
-  }
+  "status": "error",
+  "errorType": "bad_data",
+  "error": "Invalid value for 'metric'"
 }
 ```
 
-**Empty result**: When no data exists for the given range, the response returns `"result": []` (not an error).
+## Endpoint Summary
 
-```json
-{
-  "status": "success",
-  "data": {
-    "resultType": "matrix",
-    "result": []
-  }
-}
-```
+| Endpoint | Auth | Purpose |
+|----------|------|---------|
+| `GET /health` | No | Datastore health check |
+| `GET /readings/current` | Yes | Latest reading per device for one metric |
+| `GET /readings/range` | Yes | Bucketed time-series per device for one metric |
+| `GET /readings/grid` | Yes | Grid readings convenience endpoint |
+| `GET /devices` | Yes | Device inventory |
+| `GET /devices/{device}/metrics` | Yes | Metrics available for one device |
+| `GET /grid` | Yes | Alias for grid time-series response |
 
-**Error responses**:
+## `GET /api/v1/health`
 
-| Status | Condition |
-|--------|-----------|
-| `400 Bad Request` | Missing required parameters or invalid query |
-| `422 Unprocessable Entity` | `start` > `end`, or step too small |
+Checks PostgreSQL reachability.
 
----
-
-### GET /api/v1/series
-
-Find metric series matching a set of label matchers.
-
-**Query parameters**:
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `match[]` | string | yes | Series selector (repeatable). E.g., `epcube_battery_state_of_capacity_percent{device="epcube_battery"}` |
-| `start` | string | no | Start timestamp |
-| `end` | string | no | End timestamp |
-
-**Response**: `200 OK`
-
-```json
-{
-  "status": "success",
-  "data": [
-    {
-      "__name__": "epcube_battery_state_of_capacity_percent",
-      "device": "epcube_battery",
-      "class": "storage_battery"
-    }
-  ]
-}
-```
-
----
-
-### GET /api/v1/labels
-
-List all label names.
-
-**Response**: `200 OK`
-
-```json
-{
-  "status": "success",
-  "data": ["__name__", "class", "device", "manufacturer", "product_code", "uid"]
-}
-```
-
----
-
-### GET /api/v1/label/{name}/values
-
-List values for a specific label.
-
-**Path parameters**:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `name` | string | Label name (e.g., `device`) |
-
-**Response**: `200 OK`
-
-```json
-{
-  "status": "success",
-  "data": ["epcube_battery", "epcube_solar"]
-}
-```
-
----
-
-### GET /api/v1/health
-
-Health check endpoint (unauthenticated). Currently returns a static response (no runtime dependency check). The 503 path is reserved for a future data store connectivity check.
-
-**Response**: `200 OK`
+### Success Response
 
 ```json
 {
@@ -259,7 +66,7 @@ Health check endpoint (unauthenticated). Currently returns a static response (no
 }
 ```
 
-**Response**: `503 Service Unavailable` *(reserved — not currently triggered)*
+### Failure Response
 
 ```json
 {
@@ -268,190 +75,163 @@ Health check endpoint (unauthenticated). Currently returns a static response (no
 }
 ```
 
----
+## `GET /api/v1/readings/current`
 
-## Convenience Endpoints
+Returns the latest reading per device for a metric.
 
-These are higher-level endpoints that wrap data store queries for common use cases. They simplify client integration.
+### Query Parameters
 
-### GET /api/v1/devices/{device}/metrics
+| Parameter | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `metric` | string | Yes | Safe metric name such as `grid_power_watts` |
 
-List available metrics for a specific device.
-
-**Path parameters**:
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `device` | string | Device identifier (e.g., `epcube_battery`) |
-
-**Response**: `200 OK`
+### Example Response
 
 ```json
 {
-  "device": "epcube_battery",
-  "metrics": [
-    "epcube_battery_state_of_capacity_percent",
-    "epcube_battery_net_kwh",
-    "epcube_home_load_power_watts",
-    "epcube_self_sufficiency_rate",
-    "epcube_grid_import_kwh",
-    "epcube_grid_export_kwh"
+  "metric": "grid_power_watts",
+  "readings": [
+    {
+      "device_id": "epcube3483_battery",
+      "timestamp": 1711497600,
+      "value": 450.0
+    }
   ]
 }
 ```
 
-**Error responses**:
+## `GET /api/v1/readings/range`
 
-| Status | Condition |
-|--------|-----------|
-| `404 Not Found` | No metrics found for the specified device |
+Returns bucketed readings for one metric grouped by device.
 
----
+### Query Parameters
 
-### GET /api/v1/grid
+| Parameter | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `metric` | string | Yes | Safe metric name |
+| `start` | string | Yes | Unix epoch seconds |
+| `end` | string | Yes | Unix epoch seconds |
+| `step` | string | Yes | Integer seconds |
 
-Get the grid energy balance (FR-003a).
+### Example Request
 
-**Query parameters**:
+```text
+GET /api/v1/readings/range?metric=battery_power_watts&start=1711494000&end=1711497600&step=60
+```
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `start` | string | no | Start timestamp (defaults to 24h ago) |
-| `end` | string | no | End timestamp (defaults to now) |
-| `step` | string | no | Resolution step (defaults to `1m`) |
-
-**Response**: `200 OK`
+### Example Response
 
 ```json
 {
-  "status": "success",
-  "data": {
-    "resultType": "matrix",
-    "result": [
-      {
-        "metric": {},
-        "values": [
-          [1709683200, "3.5"],
-          [1709683500, "4.2"],
-          [1709683800, "5.1"]
-        ]
-      }
-    ]
-  }
+  "metric": "battery_power_watts",
+  "series": [
+    {
+      "device_id": "epcube3483_battery",
+      "values": [
+        {
+          "timestamp": 1711494000,
+          "value": -1250.0
+        },
+        {
+          "timestamp": 1711494060,
+          "value": -1310.0
+        }
+      ]
+    }
+  ]
 }
 ```
 
-**Sign convention**: Positive = net import from grid (kWh), Negative = net export to grid (kWh).
+Empty result sets return HTTP 200 with an empty `series` array.
 
-**Implementation**: Computes `epcube_grid_import_kwh - epcube_grid_export_kwh` via the data store. Grid import and export totals are directly available from the EP Cube cloud API.
+## `GET /api/v1/readings/grid`
 
----
+Returns grid power time series using the same response shape as `/readings/range`.
 
-## Common Response Envelope
+### Query Parameters
 
-All query-passthrough endpoints (`/query`, `/query_range`, `/series`, `/labels`, `/label/{name}/values`) currently return a Prometheus-compatible response format. This will be replaced with a simpler JSON format during the Azure SQL migration since we own all clients:
+| Parameter | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `start` | string | No | Unix epoch seconds; defaults to 24 hours ago |
+| `end` | string | No | Unix epoch seconds; defaults to now |
+| `step` | string | No | Integer seconds; defaults to `60` |
+
+### Example Response
 
 ```json
 {
-  "status": "success" | "error",
-  "data": { ... },
-  "errorType": "...",
-  "error": "..."
+  "metric": "grid_power_watts",
+  "series": [
+    {
+      "device_id": "epcube3483_battery",
+      "values": [
+        {
+          "timestamp": 1711497600,
+          "value": 450.0
+        }
+      ]
+    }
+  ]
 }
 ```
 
-When `status` is `"error"`, the `errorType` and `error` fields describe the failure.
+## `GET /api/v1/devices`
 
----
+Returns all known devices and online state.
 
-## C# Response Models
-
-```csharp
-using System.Text.Json.Serialization;
-
-public record DeviceInfo(
-    [property: JsonPropertyName("device")] string Device,
-    [property: JsonPropertyName("class")] string DeviceClass,  // "storage_battery" or "home_solar"
-    [property: JsonPropertyName("manufacturer")] string? Manufacturer = null,
-    [property: JsonPropertyName("product_code")] string? ProductCode = null,
-    [property: JsonPropertyName("uid")] string? Uid = null,
-    [property: JsonPropertyName("online")] bool Online = false);
-
-public record DeviceListResponse(
-    [property: JsonPropertyName("devices")] IReadOnlyList<DeviceInfo> Devices);
-
-public record HealthResponse(
-    [property: JsonPropertyName("status")] string Status,           // "healthy" or "unhealthy"
-    [property: JsonPropertyName("datastore")] string Datastore); // "reachable" or "unreachable"
-
-public record DeviceMetricsResponse(
-    [property: JsonPropertyName("device")] string Device,
-    [property: JsonPropertyName("metrics")] IReadOnlyList<string> Metrics);
-
-public record ErrorResponse(
-    [property: JsonPropertyName("status")] string Status,       // always "error"
-    [property: JsonPropertyName("errorType")] string ErrorType,  // "bad_data", "execution", etc.
-    [property: JsonPropertyName("error")] string Error);         // human-readable message
-```
-
-`ErrorResponse` is used for all error responses (400, 422) across query-passthrough and convenience endpoints.
-
-Query-passthrough endpoints currently return raw data store JSON. Since we own all clients, the response format will be simplified during the Azure SQL migration.
-
----
-
-## Self-Monitoring Endpoint
-
-### GET /metrics
-
-Self-monitoring metrics endpoint (FR-021). **Unauthenticated** — served outside the `/api/v1` auth group.
-
-**Response**: `200 OK` (content-type: `text/plain; version=0.0.4; charset=utf-8`)
-
-```
-# HELP http_requests_received_total Provides the count of HTTP requests that have been processed.
-# TYPE http_requests_received_total counter
-http_requests_received_total{code="200",method="GET",controller="",action=""} 42
-# HELP http_request_duration_seconds The duration of HTTP requests processed by an ASP.NET Core application.
-# TYPE http_request_duration_seconds histogram
-http_request_duration_seconds_bucket{code="200",method="GET",controller="",action="",le="0.001"} 38
-...
-# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
-# TYPE process_cpu_seconds_total counter
-process_cpu_seconds_total 1.23
-```
-
-**Note**: This endpoint exposes only HTTP performance counters and process metrics — no telemetry data. Served by `prometheus-net.AspNetCore` via `app.MapMetrics()`. *The `/metrics` endpoint format is consumed by infrastructure tooling, not our clients, so its Prometheus format is fine.*
-
----
-
-## Input Validation (FR-019)
-
-All endpoints validate incoming query/path parameters for presence and type before forwarding to the data store. Invalid input returns `400 Bad Request` with the `ErrorResponse` envelope:
+### Example Response
 
 ```json
 {
-  "status": "error",
-  "errorType": "bad_data",
-  "error": "'query' is required"
+  "devices": [
+    {
+      "device": "epcube3483_battery",
+      "class": "storage_battery",
+      "manufacturer": "Canadian Solar",
+      "product_code": "EP Cube 2.0",
+      "uid": "ABC123",
+      "online": true,
+      "alias": "EP Cube 2.0"
+    }
+  ]
 }
 ```
 
-**Validation rules**:
+## `GET /api/v1/devices/{device}/metrics`
 
-| Parameter type | Validation | Error example |
-|---|---|---|
-| Required string (`query`) | Non-null, non-whitespace | `'query' is required` |
-| Timestamp (`start`, `end`, `time`) | RFC3339 or Unix epoch (when provided) | `'start' must be a valid RFC3339 timestamp or Unix epoch` |
-| Duration (`step`) | Matches `^\d+[smhd]$` (when provided) | `'step' must be a valid duration (e.g., 1m, 5m, 1h, 1d)` |
-| Safe name (`device`, `name`) | Matches `^[a-zA-Z_][a-zA-Z0-9_]*$` | `'device' contains invalid characters` |
+Returns the metric names currently available for one device.
 
----
+### Path Parameters
 
-## Rate Limiting
+| Parameter | Type | Notes |
+|-----------|------|-------|
+| `device` | string | Safe device identifier |
 
-No rate limiting for v1 (single-user system). May be added in future versions if needed.
+### Example Response
 
-## Versioning
+```json
+{
+  "device": "epcube3483_battery",
+  "metrics": [
+    "battery_power_watts",
+    "battery_state_of_capacity_percent",
+    "battery_stored_kwh",
+    "grid_power_watts",
+    "home_load_power_watts"
+  ]
+}
+```
 
-API versioned via URL path prefix (`/api/v1`). Breaking changes require a new version (`/api/v2`).
+If no metrics exist for the device, the endpoint returns `404 Not Found`.
+
+## `GET /api/v1/grid`
+
+Convenience alias for the grid time-series response. It accepts the same optional `start`, `end`, and `step` parameters as `/readings/grid` and returns the same JSON shape.
+
+## Validation Rules
+
+- `metric` and `device` must match the API safe-name rules.
+- `start` and `end` must be Unix epoch seconds when provided.
+- `step` must be an integer number of seconds when provided.
+- Invalid inputs return `400 Bad Request`.
+- Execution failures return `422 Unprocessable Entity`.

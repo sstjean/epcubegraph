@@ -164,7 +164,7 @@ silent regressions.
   versioned API contract. Direct database access from clients
   is prohibited.
 - **Local Data Ingestion Containerization**: All local data
-  ingestion services (e.g., epcube-exporter, vmagent) MUST
+  ingestion services (e.g., epcube-exporter) MUST
   be packaged and deployed as Docker containers. Container
   images MUST be reproducible from a Dockerfile in the
   repository. Bare-metal or manual installation of ingestion

@@ -132,22 +132,23 @@ function toUPlotData(
 
 ---
 
-## Topic 4: API Contract Stability — Data Store Migration
+## Topic 4: API Contract Stability
 
 ### Decision
 
-**Dashboard currently consumes the existing API endpoints.** The data store is being migrated from VictoriaMetrics to Azure SQL Database. Since we own all clients (web dashboard, iPhone, iPad), the API contract will be redesigned — no Prometheus format compatibility is required.
+**Dashboard currently consumes the active PostgreSQL-backed API endpoints.** Since we own all clients (web dashboard, iPhone, iPad), the API contract uses clean JSON models tailored to those clients rather than storage-native response shapes.
 
 ### Current State
 
 The dashboard depends on these API endpoints (per `specs/001-data-ingestor/contracts/api-v1.md`):
-- `GET /api/v1/query` → `InstantQueryResponse`
-- `GET /api/v1/query_range` → `RangeQueryResponse`
+- `GET /api/v1/readings/current` → `CurrentReadingsResponse`
+- `GET /api/v1/readings/range` → `RangeReadingsResponse`
+- `GET /api/v1/readings/grid` → `RangeReadingsResponse`
 - `GET /api/v1/devices` → `DeviceListResponse`
-- `GET /api/v1/grid` → `RangeQueryResponse` (convenience endpoint)
+- `GET /api/v1/grid` → `RangeReadingsResponse` (convenience endpoint)
 - `GET /api/v1/health` → `HealthResponse`
 
-All responses currently use a Prometheus-style envelope (`status`, `data.resultType`, `data.result`). This will change during the Azure SQL migration.
+Responses use the active JSON contract (`metric`, `readings`, `series`, and typed device payloads). Any future contract change must be treated as a first-party coordination update across docs, code, and issues.
 
 ### Impact Assessment
 
