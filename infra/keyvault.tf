@@ -73,7 +73,7 @@ resource "azurerm_key_vault_secret" "postgres_password" {
 
 resource "azurerm_key_vault_secret" "api_connection_string" {
   name         = "api-connection-string"
-  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=${var.postgres_database_name};Username=${var.postgres_admin_login};Password=${random_password.postgres_password.result};SSL Mode=Require;Trust Server Certificate=true"
+  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=${var.postgres_database_name};Username=${var.postgres_admin_login};Password=${random_password.postgres_password.result};SSL Mode=VerifyFull"
   key_vault_id = azurerm_key_vault.main.id
 }
 
