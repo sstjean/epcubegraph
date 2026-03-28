@@ -70,8 +70,8 @@ describe('GaugeDial', () => {
     );
 
     const meter = screen.getByRole('meter');
-    // aria-valuenow is the absolute value clamped to display
-    expect(meter.getAttribute('aria-valuenow')).toBe('15000');
+    // aria-valuenow is clamped to max
+    expect(meter.getAttribute('aria-valuenow')).toBe('12000');
     // But visually the arc shouldn't overflow — we check it renders without error
     expect(meter).toBeTruthy();
   });
@@ -83,7 +83,7 @@ describe('GaugeDial', () => {
 
     const paths = container.querySelectorAll('path');
     expect(paths.length).toBe(1); // bg arc only — negative value is below min=0
-    expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('1500');
+    expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('0');
   });
 
   it('handles max=0 gracefully (no division by zero)', () => {

@@ -33,6 +33,7 @@ const DEV_TYPE_LABELS: Record<string, string> = {
  * Falls back to getGroupName when product_code is unavailable or unrecognized.
  */
 export function getDisplayName(devices: Device[]): string {
+  if (devices.length === 0) return 'Unknown Device';
   for (const device of devices) {
     if (device.product_code) {
       const match = device.product_code.match(/devType=(\d+)/);

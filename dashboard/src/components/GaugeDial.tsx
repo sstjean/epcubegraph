@@ -75,7 +75,7 @@ export function GaugeDial({
     const ratio = range > 0 ? Math.min(Math.max((value - min) / range, 0), 1) : 0;
     const valueAngle = START_ANGLE + ARC_SPAN * ratio;
     fgArc = ratio > 0 ? describeArc(cx, cy, r, START_ANGLE, valueAngle) : '';
-    valueNow = Math.abs(value);
+    valueNow = Math.max(min, Math.min(max, value));
   }
 
   const bgArc = describeArc(cx, cy, r, START_ANGLE, END_ANGLE);

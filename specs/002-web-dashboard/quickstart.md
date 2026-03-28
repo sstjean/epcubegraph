@@ -160,7 +160,7 @@ The GitHub Actions workflow builds and deploys the dashboard automatically on pu
 ```yaml
 - uses: Azure/static-web-apps-deploy@v1
   with:
-    azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN }}
+    azure_static_web_apps_api_token: ${{ secrets.SWA_API_KEY }}
     app_location: 'dashboard'
     output_location: 'dist'
 ```

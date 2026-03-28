@@ -1,4 +1,4 @@
-export const DEFAULT_INTERVAL_MS = 5_000;
+export const DEFAULT_INTERVAL_MS = 30_000;
 
 export function createPollingInterval(
   callback: () => void,

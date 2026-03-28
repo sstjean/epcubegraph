@@ -38,7 +38,7 @@ public static class GridEndpoints
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Results.Json(
-                new ErrorResponse("error", "execution", ex.Message),
+                new ErrorResponse("error", "execution", "An unexpected error occurred while processing the request"),
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
     }

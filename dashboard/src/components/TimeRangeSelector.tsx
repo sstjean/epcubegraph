@@ -1,3 +1,4 @@
+import { useState } from 'preact/hooks';
 import type { TimeRange, TimeRangeValue } from '../types';
 
 interface TimeRangeSelectorProps {
@@ -23,7 +24,7 @@ function calculateStep(durationSec: number): number {
   if (durationSec <= 86400) return 60;         // ≤1d → 1-minute resolution
   if (durationSec <= 7 * 86400) return 3600;   // ≤7d → hourly
   if (durationSec <= 30 * 86400) return 86400;  // ≤30d → daily
-  return 2592000;                                // >30d → calendar month (~30d)
+  return 2592000;                                // >30d → by calendar month (support in #66)
 }
 
 function computePresetValue(preset: TimeRange): TimeRangeValue {
@@ -78,8 +79,20 @@ function computeDayValue(dateStr: string): TimeRangeValue {
 }
 
 export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelectorProps) {
+  const [customStart, setCustomStart] = useState(() =>
+    selected === 'custom' ? toDateString(value.start) : ''
+  );
+  const [customEnd, setCustomEnd] = useState(() =>
+    selected === 'custom' ? toDateString(value.end) : ''
+  );
+
   const handlePresetClick = (preset: TimeRange) => {
-    onChange(preset, computePresetValue(preset));
+    const presetValue = computePresetValue(preset);
+    if (preset === 'custom') {
+      setCustomStart(toDateString(presetValue.start));
+      setCustomEnd(toDateString(presetValue.end));
+    }
+    onChange(preset, presetValue);
   };
 
   const handleDayNav = (direction: -1 | 1) => {
@@ -110,25 +123,16 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
     const date = new Date(dateStr + 'T00:00:00');
     if (isNaN(date.getTime())) return;
 
-    const otherInput = field === 'start'
-      ? document.querySelector<HTMLInputElement>('input[aria-label="End date"]')
-      : document.querySelector<HTMLInputElement>('input[aria-label="Start date"]');
-    const otherStr = otherInput?.value;
+    const newStart = field === 'start' ? dateStr : customStart;
+    const newEnd = field === 'end' ? dateStr : customEnd;
 
-    if (!otherStr) return;
-    const otherDate = new Date(otherStr + 'T00:00:00');
+    if (field === 'start') setCustomStart(dateStr);
+    else setCustomEnd(dateStr);
 
-    let startSec: number;
-    let endSec: number;
-    if (field === 'start') {
-      startSec = Math.floor(date.getTime() / 1000);
-      endSec = Math.floor(otherDate.getTime() / 1000);
-    } else {
-      startSec = Math.floor(otherDate.getTime() / 1000);
-      endSec = Math.floor(date.getTime() / 1000);
-    }
+    const startSec = Math.floor(new Date(newStart + 'T00:00:00').getTime() / 1000);
+    const endSec = Math.floor(new Date(newEnd + 'T00:00:00').getTime() / 1000);
 
-    // Validate start < end (also catches NaN from invalid otherDate)
+    // Validate start < end
     if (!(startSec < endSec)) return;
 
     const duration = endSec - startSec;
@@ -187,6 +191,7 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
             <input
               type="date"
               aria-label="Start date"
+              value={customStart}
               onChange={(e) => handleCustomChange('start', (e.target as HTMLInputElement).value)}
             />
           </label>
@@ -195,6 +200,7 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
             <input
               type="date"
               aria-label="End date"
+              value={customEnd}
               onChange={(e) => handleCustomChange('end', (e.target as HTMLInputElement).value)}
             />
           </label>

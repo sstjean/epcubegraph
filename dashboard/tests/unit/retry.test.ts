@@ -184,7 +184,7 @@ describe('retry', () => {
 
     // Act & Assert
     expect(isRetryableError(new TypeError('Failed to fetch'))).toBe(true);
-    expect(isRetryableError(new Error('network timeout'))).toBe(true);
+    expect(isRetryableError(new TypeError('network timeout'))).toBe(true);
   });
 
   it('isRetryableError returns true for 5xx ApiError', async () => {

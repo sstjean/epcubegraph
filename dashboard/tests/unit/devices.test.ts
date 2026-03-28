@@ -56,6 +56,10 @@ describe('groupDevicesByAlias', () => {
 });
 
 describe('getDisplayName', () => {
+  it('returns fallback for empty array', () => {
+    expect(getDisplayName([])).toBe('Unknown Device');
+  });
+
   it('derives "EP Cube v1" from product_code devType=0', () => {
     const devices = [
       makeDevice({ device: 'epcube3483_battery', product_code: 'EP Cube (devType=0)', alias: 'Steve St Jean' }),

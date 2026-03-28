@@ -15,7 +15,7 @@ vi.mock('../../src/api', () => ({
 vi.mock('../../src/utils/polling', () => ({
   createPollingInterval: vi.fn(),
   clearPollingInterval: vi.fn(),
-  DEFAULT_INTERVAL_MS: 5_000,
+  DEFAULT_INTERVAL_MS: 30_000,
 }));
 
 vi.mock('../../src/utils/retry', () => ({

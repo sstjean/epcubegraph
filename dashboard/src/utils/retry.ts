@@ -12,7 +12,7 @@ export function isRetryableError(error: unknown): boolean {
   if (error instanceof ApiError) {
     return error.status >= 500;
   }
-  return true;
+  return error instanceof TypeError;
 }
 
 const MAX_BACKOFF_MS = 30_000;

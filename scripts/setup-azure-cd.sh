@@ -245,18 +245,7 @@ else
   success "Storage account '$TFSTATE_STORAGE' created"
 fi
 
-# SFI compliance: ensure storage account is locked down. The CD pipeline
-# temporarily enables public network access (with defaultAction=Deny) when it
-# needs to reach the data plane, then restores Disabled in cleanup.
-info "Configuring storage network rules (SFI-compliant: Deny + Disabled)..."
-run az storage account update \
-  --name "$TFSTATE_STORAGE" \
-  --resource-group "$TFSTATE_RG" \
-  --public-network-access Disabled \
-  --output none 2>/dev/null || true
-success "Storage account network configuration applied"
-
-# Blob container
+# Blob container (must happen before disabling public network access)
 CONTAINER_EXISTS=$(az storage container exists \
   --name "$TFSTATE_CONTAINER" \
   --account-name "$TFSTATE_STORAGE" \
@@ -274,6 +263,18 @@ else
     --output none
   success "Blob container '$TFSTATE_CONTAINER' created"
 fi
+
+# SFI compliance: lock down storage account after data-plane operations.
+# The CD pipeline temporarily enables public network access (with
+# defaultAction=Deny) when it needs to reach the data plane, then restores
+# Disabled in cleanup.
+info "Configuring storage network rules (SFI-compliant: Deny + Disabled)..."
+run az storage account update \
+  --name "$TFSTATE_STORAGE" \
+  --resource-group "$TFSTATE_RG" \
+  --public-network-access Disabled \
+  --output none 2>/dev/null || true
+success "Storage account network configuration applied"
 
 # ── Step 3: Create App Registration + Service Principal ────────────────────────
 

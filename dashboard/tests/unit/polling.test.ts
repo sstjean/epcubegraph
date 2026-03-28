@@ -9,15 +9,15 @@ describe('polling', () => {
     vi.useRealTimers();
   });
 
-  it('DEFAULT_INTERVAL_MS equals 5000', async () => {
+  it('DEFAULT_INTERVAL_MS equals 30000', async () => {
     // Arrange
     const { DEFAULT_INTERVAL_MS } = await import('../../src/utils/polling');
 
     // Act & Assert
-    expect(DEFAULT_INTERVAL_MS).toBe(5_000);
+    expect(DEFAULT_INTERVAL_MS).toBe(30_000);
   });
 
-  it('createPollingInterval starts timer at 5000ms default (FR-012)', async () => {
+  it('createPollingInterval starts timer at 30000ms default (FR-012)', async () => {
     // Arrange
     const { createPollingInterval, DEFAULT_INTERVAL_MS } = await import('../../src/utils/polling');
     const callback = vi.fn();
