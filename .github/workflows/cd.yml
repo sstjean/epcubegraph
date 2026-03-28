@@ -1,15 +1,12 @@
 name: CD
 
 on:
-  # Direct push trigger for branch deployments (workflow_run only works from default branch)
-  push:
-    branches-ignore: ['main']
-    paths-ignore:
-      - 'specs/**'
-      - '.specify/**'
-      - '**/*.md'
-
-  # Deploy after CI passes — staging for branches, production for main
+  # Deploy after CI passes — staging for branches, production for main.
+  # No push trigger: workflow_run fires once after CI, preventing duplicate
+  # CD runs. Path filtering (specs, docs, .gitignore) lives in CI's
+  # paths-ignore — if CI doesn't run, workflow_run never fires.
+  # Use workflow_dispatch to test cd.yml changes on branches.
+  # (Fixes #47)
   workflow_run:
     workflows: ["CI"]
     types: [completed]
@@ -39,7 +36,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event_name == 'push' && github.ref_name || (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
@@ -59,7 +56,6 @@ jobs:
   check-ci:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'push' && github.ref_name != 'main') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
     outputs:

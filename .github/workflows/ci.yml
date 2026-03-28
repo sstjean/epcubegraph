@@ -7,6 +7,7 @@ on:
       - 'specs/**'
       - '.specify/**'
       - '**/*.md'
+      - '.gitignore'
   workflow_dispatch:
 
 env:
