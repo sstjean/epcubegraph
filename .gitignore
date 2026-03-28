@@ -53,3 +53,4 @@ docker-compose.override.yml
 *.pyc
 .vite/
 preferences-review.md
+PHILLIP-RULES.md
