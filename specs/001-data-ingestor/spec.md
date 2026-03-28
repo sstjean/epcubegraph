@@ -17,7 +17,7 @@
 - Q: How long is data retained? → A: Indefinitely.
 - Q: How are client requests authenticated? → A: Microsoft Entra ID bearer tokens with `user_impersonation` scope enforcement.
 - Q: What API shape do clients consume? → A: A clean JSON REST contract under `/api/v1` for health, devices, current readings, range readings, and grid readings.
-- Q: How is grid power handled? → A: `grid_power_watts` is stored directly and exposed through both `/api/v1/readings/grid` and `/api/v1/grid`.
+- Q: How is grid power handled? → A: `grid_power_watts` is stored directly and exposed through `/api/v1/grid`.
 - Q: What observability is required? → A: Structured JSON logs for the API, an unauthenticated operational `/metrics` endpoint for the API, and exporter `/health` plus authenticated debug status pages.
 
 ## User Scenarios & Testing
@@ -114,7 +114,7 @@ Azure deployment provisions a Container Apps environment for the API and exporte
 - **FR-021**: The exporter MUST expose `/health` returning HTTP 200 when healthy and HTTP 503 when unhealthy.
 - **FR-022**: The exporter MUST expose authenticated debug status pages at `/` and `/status` in Azure, with development-only auth bypass available for local work.
 - **FR-023**: The exporter Container App MUST be deployed with external ingress for its debug page and health endpoint.
-- **FR-024**: The API MUST provide `/health`, `/readings/current`, `/readings/range`, `/readings/grid`, `/devices`, `/devices/{device}/metrics`, and `/grid`.
+- **FR-024**: The API MUST provide `/health`, `/readings/current`, `/readings/range`, `/devices`, `/devices/{device}/metrics`, and `/grid`.
 
 ### Key Entities
 

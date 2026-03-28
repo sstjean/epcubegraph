@@ -143,9 +143,8 @@ function toUPlotData(
 The dashboard depends on these API endpoints (per `specs/001-data-ingestor/contracts/api-v1.md`):
 - `GET /api/v1/readings/current` → `CurrentReadingsResponse`
 - `GET /api/v1/readings/range` → `RangeReadingsResponse`
-- `GET /api/v1/readings/grid` → `RangeReadingsResponse`
 - `GET /api/v1/devices` → `DeviceListResponse`
-- `GET /api/v1/grid` → `RangeReadingsResponse` (convenience endpoint)
+- `GET /api/v1/grid` → `RangeReadingsResponse`
 - `GET /api/v1/health` → `HealthResponse`
 
 Responses use the active JSON contract (`metric`, `readings`, `series`, and typed device payloads). Any future contract change must be treated as a first-party coordination update across docs, code, and issues.

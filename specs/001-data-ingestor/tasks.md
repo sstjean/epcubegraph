@@ -31,7 +31,6 @@ This active task record reflects the current PostgreSQL-based implementation.
 - [x] Implement `/api/v1/health`
 - [x] Implement `/api/v1/readings/current`
 - [x] Implement `/api/v1/readings/range`
-- [x] Implement `/api/v1/readings/grid`
 - [x] Implement `/api/v1/devices`
 - [x] Implement `/api/v1/devices/{device}/metrics`
 - [x] Implement `/api/v1/grid`

@@ -48,10 +48,9 @@ Authorization: Bearer <entra-id-jwt>
 | `GET /health` | No | Datastore health check |
 | `GET /readings/current` | Yes | Latest reading per device for one metric |
 | `GET /readings/range` | Yes | Bucketed time-series per device for one metric |
-| `GET /readings/grid` | Yes | Grid readings convenience endpoint |
 | `GET /devices` | Yes | Device inventory |
 | `GET /devices/{device}/metrics` | Yes | Metrics available for one device |
-| `GET /grid` | Yes | Alias for grid time-series response |
+| `GET /grid` | Yes | Grid power time-series |
 
 ## `GET /api/v1/health`
 
@@ -144,37 +143,6 @@ GET /api/v1/readings/range?metric=battery_power_watts&start=1711494000&end=17114
 
 Empty result sets return HTTP 200 with an empty `series` array.
 
-## `GET /api/v1/readings/grid`
-
-Returns grid power time series using the same response shape as `/readings/range`.
-
-### Query Parameters
-
-| Parameter | Type | Required | Notes |
-|-----------|------|----------|-------|
-| `start` | string | No | Unix epoch seconds; defaults to 24 hours ago |
-| `end` | string | No | Unix epoch seconds; defaults to now |
-| `step` | string | No | Integer seconds; defaults to `60` |
-
-### Example Response
-
-```json
-{
-  "metric": "grid_power_watts",
-  "series": [
-    {
-      "device_id": "epcube3483_battery",
-      "values": [
-        {
-          "timestamp": 1711497600,
-          "value": 450.0
-        }
-      ]
-    }
-  ]
-}
-```
-
 ## `GET /api/v1/devices`
 
 Returns all known devices and online state.
@@ -226,7 +194,34 @@ If no metrics exist for the device, the endpoint returns `404 Not Found`.
 
 ## `GET /api/v1/grid`
 
-Convenience alias for the grid time-series response. It accepts the same optional `start`, `end`, and `step` parameters as `/readings/grid` and returns the same JSON shape.
+Returns grid power time series. All parameters are optional with smart defaults.
+
+### Query Parameters
+
+| Parameter | Type | Required | Notes |
+|-----------|------|----------|-------|
+| `start` | string | No | Unix epoch seconds; defaults to 24 hours ago |
+| `end` | string | No | Unix epoch seconds; defaults to now |
+| `step` | string | No | Integer seconds; defaults to `60` |
+
+### Example Response
+
+```json
+{
+  "metric": "grid_power_watts",
+  "series": [
+    {
+      "device_id": "epcube3483_battery",
+      "values": [
+        {
+          "timestamp": 1711497600,
+          "value": 450.0
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Validation Rules
 

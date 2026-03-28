@@ -11,7 +11,6 @@ The current API validates request inputs for these endpoints:
 |----------|------------------------|
 | `GET /readings/current` | `metric` |
 | `GET /readings/range` | `metric`, `start`, `end`, `step` |
-| `GET /readings/grid` | `start`, `end`, `step` |
 | `GET /devices/{device}/metrics` | `device` |
 | `GET /grid` | `start`, `end`, `step` |
 | `GET /devices` | none |

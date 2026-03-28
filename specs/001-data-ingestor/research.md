@@ -41,7 +41,6 @@ Expose a JSON REST contract under `/api/v1` rather than a storage-native query s
 - `GET /api/v1/health`
 - `GET /api/v1/readings/current`
 - `GET /api/v1/readings/range`
-- `GET /api/v1/readings/grid`
 - `GET /api/v1/devices`
 - `GET /api/v1/devices/{device}/metrics`
 - `GET /api/v1/grid`
