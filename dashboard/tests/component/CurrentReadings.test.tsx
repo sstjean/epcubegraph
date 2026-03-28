@@ -13,13 +13,13 @@ vi.mock('../../src/api', () => ({
 }));
 
 vi.mock('../../src/utils/polling', () => ({
-  createPollingInterval: vi.fn().mockReturnValue(1),
+  createPollingInterval: vi.fn(),
   clearPollingInterval: vi.fn(),
   DEFAULT_INTERVAL_MS: 5_000,
 }));
 
 vi.mock('../../src/utils/retry', () => ({
-  withRetry: vi.fn((fn: () => Promise<unknown>) => fn()),
+  withRetry: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -28,7 +28,7 @@ vi.mock('../../src/utils/retry', () => ({
       this.status = status;
     }
   },
-  isRetryableError: vi.fn().mockReturnValue(true),
+  isRetryableError: vi.fn(),
 }));
 
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
@@ -41,6 +41,11 @@ const emptyMetricResponse = {
   readings: [],
 };
 
+function setupCommonMocks() {
+  mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
+  mockCreatePolling.mockReturnValue(1);
+}
+
 describe('CurrentReadings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -50,6 +55,7 @@ describe('CurrentReadings', () => {
 
   it('renders as <section> with heading (FR-015)', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -66,6 +72,7 @@ describe('CurrentReadings', () => {
 
   it('renders loading state with aria-busy="true" initially', () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockReturnValue(new Promise(() => {})); // never resolves
     mockFetchCurrentReadings.mockReturnValue(new Promise(() => {}));
 
@@ -79,6 +86,7 @@ describe('CurrentReadings', () => {
 
   it('fetches devices and all metric queries on mount', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -95,6 +103,7 @@ describe('CurrentReadings', () => {
 
   it('groups battery+solar devices into one card per alias', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube5488_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
@@ -116,6 +125,7 @@ describe('CurrentReadings', () => {
 
   it('matches metric values to correct device in group', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube5488_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
@@ -156,6 +166,7 @@ describe('CurrentReadings', () => {
 
   it('shows error state when API fails', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockRejectedValue(new Error('Network error'));
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -170,6 +181,7 @@ describe('CurrentReadings', () => {
 
   it('triggers polling refresh via createPollingInterval', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -184,6 +196,7 @@ describe('CurrentReadings', () => {
 
   it('handles non-Error thrown objects', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockRejectedValue('string error');
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -198,6 +211,7 @@ describe('CurrentReadings', () => {
 
   it('shows "No devices found" when API returns empty list', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -212,6 +226,7 @@ describe('CurrentReadings', () => {
 
   it('defaults metrics to zero when group has no battery device', async () => {
     // Arrange — solar-only device with no battery counterpart
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube9999_solar', class: 'home_solar', online: true, alias: 'Solar Only Solar' },
@@ -232,6 +247,7 @@ describe('CurrentReadings', () => {
 
   it('defaults solar watts to zero when group has no solar device', async () => {
     // Arrange — battery-only device with no solar counterpart
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube9999_battery', class: 'storage_battery', online: true, alias: 'Battery Only Battery' },
@@ -252,6 +268,7 @@ describe('CurrentReadings', () => {
 
   it('uses device id as group name when no alias is set', async () => {
     // Arrange — device without alias, falls back to device id parsing
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube3483_battery', class: 'storage_battery', online: true },
@@ -270,6 +287,7 @@ describe('CurrentReadings', () => {
 
   it('uses raw device base when id does not match epcube pattern', async () => {
     // Arrange — device with non-standard id format
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'custom_device_battery', class: 'storage_battery', online: true },
@@ -288,6 +306,7 @@ describe('CurrentReadings', () => {
 
   it('defaults to flow view and shows EnergyFlowDiagram when devices loaded', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
@@ -310,6 +329,7 @@ describe('CurrentReadings', () => {
 
   it('switches to gauges view when Gauges button is clicked', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
@@ -339,6 +359,7 @@ describe('CurrentReadings', () => {
 
   it('switches back to flow view from gauges view', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
@@ -369,6 +390,7 @@ describe('CurrentReadings', () => {
 
   it('renders view toggle group with proper aria', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 
@@ -385,6 +407,7 @@ describe('CurrentReadings', () => {
 
   it('does not render flow diagram when no devices are loaded', async () => {
     // Arrange
+    setupCommonMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
 

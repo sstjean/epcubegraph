@@ -13,7 +13,7 @@ vi.mock('../../src/api', () => ({
 }));
 
 vi.mock('../../src/utils/retry', () => ({
-  withRetry: vi.fn((fn: () => Promise<unknown>) => fn()),
+  withRetry: vi.fn(),
   ApiError: class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -22,7 +22,7 @@ vi.mock('../../src/utils/retry', () => ({
       this.status = status;
     }
   },
-  isRetryableError: vi.fn().mockReturnValue(true),
+  isRetryableError: vi.fn(),
 }));
 
 // Mock uPlot — happy-dom doesn't support canvas
@@ -132,6 +132,7 @@ const defaultTimeRange: TimeRangeValue = { start: 1711152000, end: 1711238400, s
 const defaultTimestamps = [1711152000, 1711152060];
 
 function setupTwoDeviceMocks(ts: number[] = defaultTimestamps) {
+  mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
   mockFetchDevices.mockResolvedValue(twoDeviceList);
   mockFetchRangeReadings
     .mockResolvedValueOnce(makeTwoDeviceResponse('solar_instantaneous_generation_watts', ts))
@@ -197,6 +198,7 @@ describe('HistoricalGraph', () => {
 
   it('does not merge data from different devices into one chart (FR-021)', async () => {
     // Arrange — device 1 has data at t=100, device 2 has data at t=200
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
     mockFetchDevices.mockResolvedValue(twoDeviceList);
     mockFetchRangeReadings
       .mockResolvedValueOnce(makeRangeResponse('solar_instantaneous_generation_watts', [
@@ -242,6 +244,7 @@ describe('HistoricalGraph', () => {
 
   it('shows "No data available for this time range" for empty result (FR-007)', async () => {
     // Arrange
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
     mockFetchDevices.mockResolvedValue(twoDeviceList);
     mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
     mockFetchGridPower.mockResolvedValue(emptyRangeResponse);
@@ -346,6 +349,7 @@ describe('HistoricalGraph', () => {
 
   it('renders loading state while fetching', () => {
     // Arrange — never-resolving promises
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
     mockFetchDevices.mockReturnValue(new Promise(() => {}));
     mockFetchRangeReadings.mockReturnValue(new Promise(() => {}));
     mockFetchGridPower.mockReturnValue(new Promise(() => {}));
@@ -403,6 +407,7 @@ describe('HistoricalGraph', () => {
 
   it('ignores stale fetch results when unmounted during fetch', async () => {
     // Arrange — use delayed promises that resolve after unmount
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
     let resolveDevices!: (v: DeviceListResponse) => void;
     mockFetchDevices.mockReturnValue(new Promise<DeviceListResponse>((r) => { resolveDevices = r; }));
     mockFetchRangeReadings.mockResolvedValue(emptyRangeResponse);
@@ -421,13 +426,13 @@ describe('HistoricalGraph', () => {
 
   it('shows retry count during reconnection attempts', async () => {
     // Arrange
+    setupTwoDeviceMocks();
     mockWithRetry.mockImplementation(async (fn: () => Promise<unknown>, options?: { onRetry?: (n: number) => void }) => {
       if (options?.onRetry) {
         options.onRetry(2);
       }
       return fn();
     });
-    setupTwoDeviceMocks();
 
     // Act
     render(<HistoricalGraph timeRange={defaultTimeRange} />);
@@ -485,6 +490,7 @@ describe('HistoricalGraph', () => {
 
   it('renders single device when only one device has data', async () => {
     // Arrange — only device 1 has data
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
     mockFetchDevices.mockResolvedValue({
       devices: [
         { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery', product_code: 'EP Cube (devType=0)' },

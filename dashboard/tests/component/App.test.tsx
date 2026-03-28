@@ -14,13 +14,12 @@ vi.mock('../../src/components/HistoryView', () => ({
 import { App } from '../../src/App';
 
 describe('App', () => {
-  beforeEach(() => {
-    history.pushState({}, '', '/');
-  });
-
   afterEach(cleanup);
 
   it('renders <nav> landmark with navigation links (FR-015)', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
     // Act
     render(<App />);
 
@@ -54,6 +53,9 @@ describe('App', () => {
   });
 
   it('navigation links are keyboard-navigable (FR-015)', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
     // Act
     render(<App />);
 
@@ -65,6 +67,9 @@ describe('App', () => {
   });
 
   it('wraps content in ErrorBoundary', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
     // Act
     const { container } = render(<App />);
 

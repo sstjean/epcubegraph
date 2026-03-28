@@ -45,17 +45,23 @@ const dataResponse = {
   series: [{ device_id: 'epcube1_battery', values: [{ timestamp: 1711152000, value: 500 }, { timestamp: 1711152060, value: 600 }] }],
 };
 
+function setupDefaultMocks() {
+  mockFetchDevices.mockResolvedValue(deviceList);
+  mockFetchRangeReadings.mockResolvedValue(dataResponse);
+  mockFetchGridPower.mockResolvedValue(dataResponse);
+}
+
 describe('HistoryView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchDevices.mockResolvedValue(deviceList);
-    mockFetchRangeReadings.mockResolvedValue(dataResponse);
-    mockFetchGridPower.mockResolvedValue(dataResponse);
   });
 
   afterEach(cleanup);
 
   it('renders as <section> with h2 heading (FR-015)', () => {
+    // Arrange
+    setupDefaultMocks();
+
     // Act
     render(<HistoryView />);
 
@@ -66,6 +72,9 @@ describe('HistoryView', () => {
   });
 
   it('renders TimeRangeSelector and HistoricalGraph', async () => {
+    // Arrange
+    setupDefaultMocks();
+
     // Act
     render(<HistoryView />);
 
@@ -80,6 +89,9 @@ describe('HistoryView', () => {
   });
 
   it('defaults to "today" preset on mount', () => {
+    // Arrange
+    setupDefaultMocks();
+
     // Act
     render(<HistoryView />);
 
@@ -90,6 +102,7 @@ describe('HistoryView', () => {
 
   it('updates graph when time range changes', async () => {
     // Arrange
+    setupDefaultMocks();
     render(<HistoryView />);
 
     await waitFor(() => {
@@ -97,9 +110,7 @@ describe('HistoryView', () => {
     });
 
     vi.clearAllMocks();
-    mockFetchDevices.mockResolvedValue(deviceList);
-    mockFetchRangeReadings.mockResolvedValue(dataResponse);
-    mockFetchGridPower.mockResolvedValue(dataResponse);
+    setupDefaultMocks();
 
     // Act — click 7d preset
     fireEvent.click(screen.getByRole('button', { name: /7d/i }));
@@ -115,6 +126,7 @@ describe('HistoryView', () => {
 
   it('passes TimeRangeValue from selector to graph', async () => {
     // Arrange
+    setupDefaultMocks();
     render(<HistoryView />);
 
     await waitFor(() => {
