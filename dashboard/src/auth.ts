@@ -11,7 +11,10 @@ export async function initializeMsal(): Promise<PublicClientApplication> {
     },
   });
   await msalInstance.initialize();
-  await msalInstance.handleRedirectPromise();
+  const result = await msalInstance.handleRedirectPromise();
+  if (result?.state) {
+    history.replaceState(null, '', result.state);
+  }
   return msalInstance;
 }
 

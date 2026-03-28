@@ -175,4 +175,34 @@ describe('auth', () => {
     expect(isAuthenticated()).toBe(false);
   });
 
+  it('restores route from state after redirect login', async () => {
+    // Arrange
+    const { mockHandleRedirectPromise } = await import('@azure/msal-browser') as any;
+    mockHandleRedirectPromise.mockResolvedValue({ state: '/history?range=7d' });
+    const replaceStateSpy = vi.spyOn(history, 'replaceState');
+    const { initializeMsal } = await import('../../src/auth');
+
+    // Act
+    await initializeMsal();
+
+    // Assert
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', '/history?range=7d');
+    replaceStateSpy.mockRestore();
+  });
+
+  it('does not restore route when handleRedirectPromise returns null', async () => {
+    // Arrange
+    const { mockHandleRedirectPromise } = await import('@azure/msal-browser') as any;
+    mockHandleRedirectPromise.mockResolvedValue(null);
+    const replaceStateSpy = vi.spyOn(history, 'replaceState');
+    const { initializeMsal } = await import('../../src/auth');
+
+    // Act
+    await initializeMsal();
+
+    // Assert
+    expect(replaceStateSpy).not.toHaveBeenCalled();
+    replaceStateSpy.mockRestore();
+  });
+
 });
