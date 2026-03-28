@@ -1,13 +1,16 @@
 name: CD
 
 on:
-  # Deploy to production on merge to main
-  push:
-    branches: [main]
-
-  # Deploy staging on PRs to main
-  pull_request:
-    branches: [main]
+  # Deploy after CI passes — staging for branches, production for main.
+  # No push trigger: workflow_run fires once after CI, preventing duplicate
+  # CD runs. Path filtering (specs, docs, .gitignore) lives in CI's
+  # paths-ignore — if CI doesn't run, workflow_run never fires.
+  # Use workflow_dispatch to test cd.yml changes on branches.
+  # (Fixes #47)
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: ['**']
 
   # Manual trigger for any environment
   workflow_dispatch:
@@ -20,6 +23,11 @@ on:
         options:
           - staging
           - production
+      branch_name:
+        description: 'Branch name for staging destroy (ignored for production)'
+        required: false
+        default: ''
+        type: string
       destroy:
         description: 'Destroy resources after validation (for ephemeral test deployments)'
         required: false
@@ -28,11 +36,13 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ github.event_name == 'push' && 'production' || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
   cancel-in-progress: false
 
 env:
-  TF_VAR_location: 'eastus'
+  # East US and East US 2 are currently restricted for PostgreSQL Flexible Server
+  # on this subscription, so branch and production deployments use Central US.
+  TF_VAR_location: 'centralus'
   ARM_USE_OIDC: 'true'
   TFSTATE_STORAGE_ACCOUNT: 'tfstateepcubegraph'
   TFSTATE_RESOURCE_GROUP: 'tfstate-rg'
@@ -42,31 +52,50 @@ permissions:
   contents: read
 
 jobs:
-  # ── Staging: deploy on PRs to main or manual dispatch ──
+  # ── Staging: deploy after CI passes on non-main branches, or manual dispatch ──
   check-ci:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    outputs:
+      env_name: ${{ steps.env.outputs.env_name }}
+      state_key: ${{ steps.env.outputs.state_key }}
     steps:
-      - run: echo "Staging deployment — PR or manual dispatch"
+      - name: Compute branch-specific environment name
+        id: env
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name || 'staging' }}"
+          # Sanitize: lowercase, replace non-alphanumeric with hyphens, collapse,
+          # strip leading/trailing hyphens, prefix with 'b' if starts with digit,
+          # truncate to fit epcubegraph-{branch} ≤ 21 chars (Terraform limit)
+          SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+          [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+          ENV_NAME="epcubegraph-${SANITIZED}"
+          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "state_key=${ENV_NAME}.tfstate" >> "$GITHUB_OUTPUT"
+          echo "✓ Branch '$BRANCH' → env '${ENV_NAME}'"
 
   deploy-staging:
     needs: check-ci
     runs-on: ubuntu-latest
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.destroy == 'true') }}
     environment: staging
 
     env:
-      TF_VAR_environment_name: 'epcubegraph-staging'
+      TF_VAR_environment_name: ${{ needs.check-ci.outputs.env_name }}
 
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
-      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+      postgres_fqdn: ${{ steps.tf-output.outputs.postgres_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
+      swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -75,7 +104,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Zero-trust: detect runner IP and whitelist on tfstate storage
+      # SFI-compliant: temporarily enable public network access (defaultAction
+      # remains Deny — no open access) so the runner IP whitelist can take effect.
+      # Restored to Disabled in the cleanup step.
       - name: Detect runner IP
         id: ip
         run: |
@@ -83,6 +114,15 @@ jobs:
           echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
+
+      - name: Enable public network access on tfstate storage
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on tfstate storage
         run: |
@@ -92,11 +132,12 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
-      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
       - name: Whitelist runner IP on Key Vault
         run: |
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${TF_VAR_environment_name}-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -106,22 +147,36 @@ jobs:
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
 
-      # Wait for firewall rules to propagate (probe tfstate storage directly)
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 30); do
-            if az storage container list \
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
+          for attempt in $(seq 1 45); do
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -145,7 +200,7 @@ jobs:
             -backend-config="resource_group_name=tfstate-rg" \
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=epcubegraph-staging.tfstate" \
+            -backend-config="key=${{ needs.check-ci.outputs.state_key }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
@@ -212,7 +267,8 @@ jobs:
       - name: Build & Push API image
         id: api-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file api/Dockerfile api/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -220,7 +276,8 @@ jobs:
       - name: Build & Push exporter image
         id: exporter-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -253,10 +310,51 @@ jobs:
         run: |
           echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
-          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
+          echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
+      - name: Get SWA deployment token
+        id: swa-token
+        working-directory: infra
+        run: |
+          TOKEN=$(terraform output -raw swa_api_key)
+          echo "::add-mask::${TOKEN}"
+          echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
+          VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
+          VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy dashboard to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: dashboard/dist
+          skip_app_build: true
+          skip_api_build: true
+
+      # Zero-trust cleanup: remove runner IP and re-disable public network access (always runs)
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
@@ -266,12 +364,23 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="epcubegraph-staging-kv"
+          KV_NAME="${TF_VAR_environment_name}-kv"
           az keyvault network-rule remove \
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
+
+      - name: Restore public network access to Disabled
+        if: always()
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Disabled \
+            --output none 2>/dev/null || true
+          echo "✓ Public network access re-disabled (SFI compliance restored)"
 
   validate-staging:
     needs: deploy-staging
@@ -295,61 +404,136 @@ jobs:
       - name: Run deployment validation
         run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-staging.outputs.resource_group }}
 
+      - name: Wait for API revision readiness
+        run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
+          API_FQDN="${{ needs.deploy-staging.outputs.api_fqdn }}"
+          if [ -z "$API_FQDN" ] || [ "$API_FQDN" = "" ]; then
+            echo "API not deployed (no FQDN) — skipping revision wait"
+            exit 0
+          fi
+
+          for i in $(seq 1 20); do
+            REVISION_STATUS=$(az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
+            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
+              echo "✓ API revision ready: $REVISION_STATUS"
+              exit 0
+            fi
+            echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
+            sleep 15
+          done
+
+          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
+          exit 1
+
       - name: Smoke test — API health endpoint
         run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
           API_FQDN="${{ needs.deploy-staging.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ API health endpoint responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::API health endpoint did not respond after 5 attempts"
+              echo "::error::API health endpoint did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
             echo "API not deployed (no FQDN) — skipping smoke test"
           fi
 
-      - name: Smoke test — VictoriaMetrics (internal-only check)
+      - name: Smoke test — PostgreSQL (internal-only check)
         run: |
-          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "✓ PostgreSQL is internal-only (zero-trust) — no external smoke test needed"
           echo "  API health endpoint validates internal connectivity"
 
       - name: Smoke test — epcube-exporter health
         run: |
+          RG="${{ needs.deploy-staging.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-exporter"
           EXPORTER_FQDN="${{ needs.deploy-staging.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
+              REVISION_STATUS=$(az containerapp revision list \
+                --name "$APP_NAME" \
+                --resource-group "$RG" \
+                --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ epcube-exporter health responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: exporter revision $REVISION_STATUS, HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::epcube-exporter did not respond after 3 attempts"
+              echo "::error::epcube-exporter did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # ── Production: deploy only via manual dispatch ──
+      - name: Smoke test — Dashboard SWA
+        run: |
+          SWA_HOSTNAME="${{ needs.deploy-staging.outputs.swa_hostname }}"
+          if [ -n "$SWA_HOSTNAME" ] && [ "$SWA_HOSTNAME" != "" ]; then
+            for i in 1 2 3 4 5; do
+              BODY=$(curl -s --max-time 15 "https://${SWA_HOSTNAME}/" 2>/dev/null) || true
+              if echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+                echo "✓ Dashboard SWA is serving the SPA"
+                break
+              fi
+              echo "Attempt $i: SPA not ready — retrying in 15s..."
+              sleep 15
+            done
+            if ! echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+              echo "::error::Dashboard SWA did not serve the SPA after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "Dashboard not deployed (no SWA hostname) — skipping smoke test"
+          fi
+
+  # ── Production: deploy on push to main or manual dispatch ──
+  # Block deployment if CI failed
+  ci-failed:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - run: |
+          echo "::error::CI failed on ${{ github.event.workflow_run.head_branch }} — deployment blocked"
+          exit 1
+
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
     steps:
-      - run: echo "Production deployment — push to main or manual dispatch"
+      - run: echo "Production deployment — CI passed on main or manual dispatch"
 
   deploy-prod:
     needs: check-ci-prod
@@ -362,11 +546,25 @@ jobs:
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
       api_fqdn: ${{ steps.tf-output.outputs.api_fqdn }}
-      vm_fqdn: ${{ steps.tf-output.outputs.vm_fqdn }}
+      postgres_fqdn: ${{ steps.tf-output.outputs.postgres_fqdn }}
       exporter_fqdn: ${{ steps.tf-output.outputs.exporter_fqdn }}
+      swa_hostname: ${{ steps.tf-output.outputs.swa_hostname }}
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Determine commit SHA
+        id: commit
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="${{ github.sha }}"
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "✓ Deploying commit: $SHA"
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -375,7 +573,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Zero-trust: detect runner IP and whitelist on tfstate storage
       - name: Detect runner IP
         id: ip
         run: |
@@ -383,6 +580,15 @@ jobs:
           echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
+
+      - name: Enable public network access on tfstate storage
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on tfstate storage
         run: |
@@ -392,11 +598,12 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
-      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
       - name: Whitelist runner IP on Key Vault
         run: |
           KV_NAME="epcubegraph-kv"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -406,22 +613,36 @@ jobs:
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
 
-      # Wait for firewall rules to propagate (probe tfstate storage directly)
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 30); do
-            if az storage container list \
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
+          for attempt in $(seq 1 45); do
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -509,7 +730,7 @@ jobs:
       - name: Build & Push API image
         id: api-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${{ steps.commit.outputs.sha }}"
           docker build --tag "$IMAGE" --file api/Dockerfile api/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -517,7 +738,7 @@ jobs:
       - name: Build & Push exporter image
         id: exporter-image
         run: |
-          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ github.sha }}"
+          IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${{ steps.commit.outputs.sha }}"
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
@@ -549,10 +770,50 @@ jobs:
         run: |
           echo "resource_group=$(terraform output -raw resource_group_name)" >> "$GITHUB_OUTPUT"
           echo "api_fqdn=$(terraform output -raw api_fqdn)" >> "$GITHUB_OUTPUT"
-          echo "vm_fqdn=$(terraform output -raw vm_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "postgres_fqdn=$(terraform output -raw postgres_fqdn)" >> "$GITHUB_OUTPUT"
           echo "exporter_fqdn=$(terraform output -raw exporter_fqdn)" >> "$GITHUB_OUTPUT"
+          echo "swa_hostname=$(terraform output -raw swa_default_hostname)" >> "$GITHUB_OUTPUT"
+          echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
+          echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
+      - name: Get SWA deployment token
+        id: swa-token
+        working-directory: infra
+        run: |
+          TOKEN=$(terraform output -raw swa_api_key)
+          echo "::add-mask::${TOKEN}"
+          echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Build dashboard
+        working-directory: dashboard
+        env:
+          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
+          VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
+          VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy dashboard to SWA
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa-token.outputs.token }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: dashboard/dist
+          skip_app_build: true
+          skip_api_build: true
+
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
@@ -567,7 +828,18 @@ jobs:
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
+
+      - name: Restore public network access to Disabled
+        if: always()
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Disabled \
+            --output none 2>/dev/null || true
+          echo "✓ Public network access re-disabled (SFI compliance restored)"
 
   validate-prod:
     needs: deploy-prod
@@ -590,68 +862,406 @@ jobs:
       - name: Run deployment validation
         run: ./infra/validate-deployment.sh --rg ${{ needs.deploy-prod.outputs.resource_group }}
 
+      - name: Wait for API revision readiness
+        run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
+          API_FQDN="${{ needs.deploy-prod.outputs.api_fqdn }}"
+          if [ -z "$API_FQDN" ] || [ "$API_FQDN" = "" ]; then
+            echo "API not deployed (no FQDN) — skipping revision wait"
+            exit 0
+          fi
+
+          for i in $(seq 1 20); do
+            REVISION_STATUS=$(az containerapp revision list \
+              --name "$APP_NAME" \
+              --resource-group "$RG" \
+              --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
+            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
+              echo "✓ API revision ready: $REVISION_STATUS"
+              exit 0
+            fi
+            echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
+            sleep 15
+          done
+
+          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+          az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
+          exit 1
+
       - name: Smoke test — API health endpoint
         run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-api"
           API_FQDN="${{ needs.deploy-prod.outputs.api_fqdn }}"
           if [ -n "$API_FQDN" ] && [ "$API_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${API_FQDN}/api/v1/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ API health endpoint responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::API health endpoint did not respond after 5 attempts"
+              echo "::error::API health endpoint did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
             echo "API not deployed (no FQDN) — skipping smoke test"
           fi
 
-      - name: Smoke test — VictoriaMetrics (internal-only check)
+      - name: Smoke test — PostgreSQL (internal-only check)
         run: |
-          echo "✓ VictoriaMetrics is internal-only (zero-trust) — no external smoke test needed"
+          echo "✓ PostgreSQL is internal-only (zero-trust) — no external smoke test needed"
           echo "  API health endpoint validates internal connectivity"
 
       - name: Smoke test — epcube-exporter health
         run: |
+          RG="${{ needs.deploy-prod.outputs.resource_group }}"
+          APP_NAME="${RG%-rg}-exporter"
           EXPORTER_FQDN="${{ needs.deploy-prod.outputs.exporter_fqdn }}"
           if [ -n "$EXPORTER_FQDN" ] && [ "$EXPORTER_FQDN" != "" ]; then
-            for i in 1 2 3 4 5; do
+            for i in $(seq 1 10); do
+              REVISION_STATUS=$(az containerapp revision list \
+                --name "$APP_NAME" \
+                --resource-group "$RG" \
+                --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${EXPORTER_FQDN}/health" 2>/dev/null) || true
               if [ "$STATUS" = "200" ] || [ "$STATUS" = "503" ]; then
                 echo "✓ epcube-exporter health responded: HTTP $STATUS"
                 break
               fi
-              echo "Attempt $i: HTTP $STATUS — retrying in 15s..."
+              echo "Attempt $i/10: exporter revision $REVISION_STATUS, HTTP $STATUS — retrying in 15s..."
               sleep 15
             done
             if [ "$STATUS" != "200" ] && [ "$STATUS" != "503" ]; then
-              echo "::error::epcube-exporter did not respond after 5 attempts"
+              echo "::error::epcube-exporter did not respond after 10 attempts"
+              az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
+              az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
               exit 1
             fi
           else
             echo "epcube-exporter not deployed (no FQDN) — skipping smoke test"
           fi
 
-  # Tear down: only on manual request (no auto-destroy)
-  destroy:
-    needs: [deploy-staging, validate-staging]
-    runs-on: ubuntu-latest
-    if: >
-      always() &&
-      needs.validate-staging.result == 'success' &&
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.destroy == 'true'
+      - name: Smoke test — Dashboard SWA
+        run: |
+          SWA_HOSTNAME="${{ needs.deploy-prod.outputs.swa_hostname }}"
+          if [ -n "$SWA_HOSTNAME" ] && [ "$SWA_HOSTNAME" != "" ]; then
+            for i in 1 2 3 4 5; do
+              BODY=$(curl -s --max-time 15 "https://${SWA_HOSTNAME}/" 2>/dev/null) || true
+              if echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+                echo "✓ Dashboard SWA is serving the SPA"
+                break
+              fi
+              echo "Attempt $i: SPA not ready — retrying in 15s..."
+              sleep 15
+            done
+            if ! echo "$BODY" | grep -q '<div id="app">' 2>/dev/null; then
+              echo "::error::Dashboard SWA did not serve the SPA after 5 attempts"
+              exit 1
+            fi
+          else
+            echo "Dashboard not deployed (no SWA hostname) — skipping smoke test"
+          fi
 
-    env:
-      TF_VAR_environment_name: ${{ github.event.inputs.environment == 'production' && 'epcubegraph' || 'epcubegraph-staging' }}
+  # ── Cleanup the merged branch's environment after successful prod deploy ──
+  cleanup-branch:
+    needs: validate-prod
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run'
+    environment: staging
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Determine merged branch environment
+        id: branch-env
+        run: |
+          # Extract branch name from the merge commit message
+          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
+          echo "Merge commit message: $COMMIT_MSG"
+
+          # Pattern: "Merge pull request #N from owner/branch-name"
+          BRANCH=$(echo "$COMMIT_MSG" | sed -n 's|.*Merge pull request #[0-9]* from [^/]*/||p')
+
+          # Fallback: "Merge branch 'branch-name'"
+          if [ -z "$BRANCH" ]; then
+            BRANCH=$(echo "$COMMIT_MSG" | sed -n "s/.*Merge branch '\([^']*\)'.*/\1/p")
+          fi
+
+          if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No feature branch to clean up (commit: $COMMIT_MSG)"
+            exit 0
+          fi
+
+          echo "Merged branch: $BRANCH"
+
+          # Sanitize identically to check-ci job
+          SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+          [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+          ENV_NAME="epcubegraph-${SANITIZED}"
+          STATE_KEY="${ENV_NAME}.tfstate"
+
+          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+          echo "state_key=${STATE_KEY}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "✓ Branch '$BRANCH' → env '${ENV_NAME}' (state: ${STATE_KEY})"
+
+      - name: Azure Login (OIDC)
+        if: steps.branch-env.outputs.skip != 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check if state file exists
+        if: steps.branch-env.outputs.skip != 'true'
+        id: state-check
+        run: |
+          EXISTS=$(az storage blob exists \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.branch-env.outputs.state_key }}" \
+            --auth-mode login \
+            --query exists --output tsv 2>/dev/null) || EXISTS="false"
+          echo "exists=${EXISTS}" >> "$GITHUB_OUTPUT"
+          if [ "$EXISTS" = "true" ]; then
+            echo "✓ State file found — will destroy environment"
+          else
+            echo "No state file for ${{ steps.branch-env.outputs.env_name }} — nothing to clean up"
+          fi
+
+      - name: Detect runner IP
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        id: ip
+        run: |
+          RUNNER_IP=$(curl -sf https://api.ipify.org)
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "::add-mask::${RUNNER_IP}"
+          echo "✓ Detected runner IP"
+
+      - name: Enable public network access on tfstate storage
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
+
+      - name: Whitelist runner IP on tfstate storage
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          az storage account network-rule add \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+
+      - name: Whitelist runner IP on Key Vault
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
+          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
+            az keyvault network-rule add \
+              --name "$KV_NAME" \
+              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+              --output none 2>/dev/null || true
+            echo "✓ Runner IP added to Key Vault firewall"
+          else
+            echo "Key Vault does not exist — skipping"
+          fi
+
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
+          for attempt in $(seq 1 45); do
+            if echo "probe" | az storage blob upload \
+              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
+              --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
+              --output none 2>/dev/null; then
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
+              exit 0
+            fi
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
+            sleep 15
+          done
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
+          exit 1
+
+      - name: Setup Terraform
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=${{ steps.branch-env.outputs.state_key }}" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Azure Re-Login (OIDC)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        id: branch-destroy
+        continue-on-error: true
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: terraform destroy -auto-approve -input=false
+
+      # Re-authenticate — OIDC token may have expired during long destroy
+      - name: Azure Re-Login for Retry (OIDC)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy — Retry
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: |
+          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
+          terraform refresh -input=false || true
+          terraform destroy -auto-approve -input=false
+          echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
+
+      - name: Delete state blob
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.branch-env.outputs.state_key }}" \
+            --auth-mode login \
+            --output none 2>/dev/null || true
+          echo "✓ State file ${{ steps.branch-env.outputs.state_key }} deleted"
+
+      - name: Remove runner IP from firewalls
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account network-rule remove \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
+            --output none 2>/dev/null || true
+          echo "✓ Runner IP removed from tfstate firewall"
+          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
+          az keyvault network-rule remove \
+            --name "$KV_NAME" \
+            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
+            --output none 2>/dev/null || true
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
+
+      - name: Restore public network access to Disabled
+        if: always() && steps.ip.outputs.runner_ip
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Disabled \
+            --output none 2>/dev/null || true
+          echo "✓ Public network access re-disabled (SFI compliance restored)"
+
+  # Tear down: only on manual request — runs directly without requiring deploy
+  destroy:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.destroy == 'true'
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute environment name
+        id: env
+        run: |
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "env_name=epcubegraph" >> "$GITHUB_OUTPUT"
+            echo "state_key=epcubegraph-production.tfstate" >> "$GITHUB_OUTPUT"
+            echo "kv_name=epcubegraph-kv" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH="${{ github.event.inputs.branch_name }}"
+            if [ -z "$BRANCH" ]; then
+              echo "::error::branch_name is required for staging destroy"
+              exit 1
+            fi
+            SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
+            [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
+            ENV_NAME="epcubegraph-${SANITIZED}"
+            echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
+            echo "state_key=${ENV_NAME}.tfstate" >> "$GITHUB_OUTPUT"
+            echo "kv_name=${ENV_NAME}-kv" >> "$GITHUB_OUTPUT"
+            echo "✓ Branch '$BRANCH' → env '${ENV_NAME}'"
+          fi
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -669,6 +1279,15 @@ jobs:
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
 
+      - name: Enable public network access on tfstate storage
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
+
       - name: Whitelist runner IP on tfstate storage
         run: |
           az storage account network-rule add \
@@ -677,16 +1296,12 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
 
-      # Whitelist runner IP on Key Vault so Terraform can read existing secrets
       - name: Whitelist runner IP on Key Vault
         run: |
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
-          if [ "$ENV" = "production" ]; then
-            KV_NAME="epcubegraph-kv"
-          else
-            KV_NAME="epcubegraph-${ENV}-kv"
-          fi
+          KV_NAME="${{ steps.env.outputs.kv_name }}"
           if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
+            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
+            echo "✓ Key Vault public network access enabled"
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
@@ -696,22 +1311,36 @@ jobs:
             echo "Key Vault does not exist yet — skipping"
           fi
 
-      # Wait for firewall rules to propagate (probe tfstate storage directly)
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
-          for attempt in $(seq 1 30); do
-            if az storage container list \
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
+          for attempt in $(seq 1 45); do
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/30 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 30 attempts (7.5 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -726,12 +1355,11 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
           terraform init -input=false \
             -backend-config="resource_group_name=tfstate-rg" \
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
-            -backend-config="key=epcubegraph-${ENV}.tfstate" \
+            -backend-config="key=${{ steps.env.outputs.state_key }}" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
@@ -745,24 +1373,53 @@ jobs:
 
       - name: Terraform Destroy
         working-directory: infra
+        id: destroy
+        continue-on-error: true
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
+          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
+          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+        run: terraform destroy -auto-approve -input=false
+
+      # Re-authenticate — OIDC token may have expired during long destroy
+      - name: Azure Re-Login for Retry (OIDC)
+        if: steps.destroy.outcome == 'failure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Destroy — Retry
+        if: steps.destroy.outcome == 'failure'
+        working-directory: infra
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
         run: |
-          # First attempt may fail due to provider ordering (e.g., Entra app
-          # deleted before its redirect URIs resource). Refresh + retry resolves
-          # stale references in state.
-          if ! terraform destroy -auto-approve -input=false; then
-            echo "⚠ First destroy attempt failed — refreshing state and retrying..."
-            terraform refresh -input=false
-            terraform destroy -auto-approve -input=false
-          fi
+          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
+          terraform refresh -input=false
+          terraform destroy -auto-approve -input=false
 
-      # Zero-trust cleanup: remove runner IP from tfstate storage and Key Vault (always runs)
+      - name: Delete state blob
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.env.outputs.state_key }}" \
+            --auth-mode login \
+            --output none 2>/dev/null || true
+          echo "✓ State file ${{ steps.env.outputs.state_key }} deleted"
+
       - name: Remove runner IP from firewalls
         if: always() && steps.ip.outputs.runner_ip
         run: |
@@ -772,14 +1429,20 @@ jobs:
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none 2>/dev/null || true
           echo "✓ Runner IP removed from tfstate firewall"
-          ENV="${{ github.event.inputs.environment || 'staging' }}"
-          if [ "$ENV" = "production" ]; then
-            KV_NAME="epcubegraph-kv"
-          else
-            KV_NAME="epcubegraph-${ENV}-kv"
-          fi
+          KV_NAME="${{ steps.env.outputs.kv_name }}"
           az keyvault network-rule remove \
             --name "$KV_NAME" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
             --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from Key Vault firewall"
+          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
+          echo "✓ Key Vault firewalled and public access re-disabled"
+
+      - name: Restore public network access to Disabled
+        if: always()
+        run: |
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Disabled \
+            --output none 2>/dev/null || true
+          echo "✓ Public network access re-disabled (SFI compliance restored)"

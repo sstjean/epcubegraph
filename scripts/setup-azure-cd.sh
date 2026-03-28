@@ -27,7 +27,7 @@ APP_NAME="epcubegraph-github-actions"
 TFSTATE_RG="tfstate-rg"
 TFSTATE_STORAGE="tfstateepcubegraph"
 TFSTATE_CONTAINER="tfstate"
-LOCATION="eastus"
+LOCATION="centralus"
 
 # GitHub repo — auto-detected from git remote, or override with --repo
 GITHUB_REPO=""
@@ -238,12 +238,14 @@ else
     --location "$LOCATION" \
     --sku Standard_LRS \
     --allow-blob-public-access false \
-    --allow-shared-key-access true \
+    --allow-shared-key-access false \
+    --default-action Deny \
+    --bypass AzureServices \
     --output none
   success "Storage account '$TFSTATE_STORAGE' created"
 fi
 
-# Blob container
+# Blob container (must happen before disabling public network access)
 CONTAINER_EXISTS=$(az storage container exists \
   --name "$TFSTATE_CONTAINER" \
   --account-name "$TFSTATE_STORAGE" \
@@ -261,6 +263,18 @@ else
     --output none
   success "Blob container '$TFSTATE_CONTAINER' created"
 fi
+
+# SFI compliance: lock down storage account after data-plane operations.
+# The CD pipeline temporarily enables public network access (with
+# defaultAction=Deny) when it needs to reach the data plane, then restores
+# Disabled in cleanup.
+info "Configuring storage network rules (SFI-compliant: Deny + Disabled)..."
+run az storage account update \
+  --name "$TFSTATE_STORAGE" \
+  --resource-group "$TFSTATE_RG" \
+  --public-network-access Disabled \
+  --output none 2>/dev/null || true
+success "Storage account network configuration applied"
 
 # ── Step 3: Create App Registration + Service Principal ────────────────────────
 
@@ -300,15 +314,13 @@ header "Step 4: Federated Credentials"
 APP_OBJECT_ID=$(az ad app list --display-name "$APP_NAME" --query '[0].id' -o tsv)
 
 # Credential name=subject pairs (bash 3 compatible)
+# All CD jobs use GitHub Environments (staging/production), so only
+# environment-based credentials are needed. No branch-ref credentials required.
 CRED_NAMES=(
-  "github-actions-main"
-  "github-actions-feature-branch"
   "github-actions-staging"
   "github-actions-production"
 )
 CRED_SUBJECTS=(
-  "repo:${GITHUB_REPO}:ref:refs/heads/main"
-  "repo:${GITHUB_REPO}:ref:refs/heads/001-data-ingestor"
   "repo:${GITHUB_REPO}:environment:staging"
   "repo:${GITHUB_REPO}:environment:production"
 )

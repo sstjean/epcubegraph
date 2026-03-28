@@ -16,24 +16,29 @@ public static class GridEndpoints
         string? start,
         string? end,
         string? step,
-        GridCalculator calculator,
+        IMetricsStore store,
         CancellationToken ct)
     {
         var error = Validate.Timestamp(start, "start")
             ?? Validate.Timestamp(end, "end")
-            ?? Validate.Duration(step, "step");
+            ?? Validate.StepSeconds(step, "step");
         if (error is not null)
             return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
 
+        var now = DateTimeOffset.UtcNow;
+        var effectiveEnd = end is not null ? long.Parse(end) : now.ToUnixTimeSeconds();
+        var effectiveStart = start is not null ? long.Parse(start) : now.AddHours(-24).ToUnixTimeSeconds();
+        var effectiveStep = step is not null ? int.Parse(step) : 60;
+
         try
         {
-            var result = await calculator.CalculateAsync(start, end, step, ct);
-            return Results.Ok(result);
+            var series = await store.GetGridReadingsAsync(effectiveStart, effectiveEnd, effectiveStep, ct);
+            return Results.Ok(new RangeReadingsResponse("grid_power_watts", series));
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Results.Json(
-                new ErrorResponse("error", "execution", ex.Message),
+                new ErrorResponse("error", "execution", "An unexpected error occurred while processing the request"),
                 statusCode: StatusCodes.Status422UnprocessableEntity);
         }
     }

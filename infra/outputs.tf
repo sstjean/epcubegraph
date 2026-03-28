@@ -5,9 +5,9 @@ output "resource_group_name" {
   value       = azurerm_resource_group.main.name
 }
 
-output "vm_fqdn" {
-  description = "Internal FQDN of the VictoriaMetrics container app"
-  value       = azurerm_container_app.vm.ingress[0].fqdn
+output "postgres_fqdn" {
+  description = "Private FQDN of the managed PostgreSQL server"
+  value       = azurerm_postgresql_flexible_server.main.fqdn
 }
 
 output "api_fqdn" {
@@ -58,4 +58,20 @@ output "api_image" {
 output "exporter_image" {
   description = "Current exporter container image (empty if not deployed)"
   value       = var.epcube_image
+}
+
+output "swa_default_hostname" {
+  description = "Default hostname for the Static Web App"
+  value       = azurerm_static_web_app.dashboard.default_host_name
+}
+
+output "swa_api_key" {
+  description = "Deployment token for the Static Web App"
+  value       = azurerm_static_web_app.dashboard.api_key
+  sensitive   = true
+}
+
+output "dashboard_client_id" {
+  description = "Entra ID client ID for the dashboard SPA"
+  value       = azuread_application.dashboard.client_id
 }

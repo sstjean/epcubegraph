@@ -1,4 +1,5 @@
 using EpCubeGraph.Api.Models;
+using EpCubeGraph.Api.Services;
 
 namespace EpCubeGraph.Api.Endpoints;
 
@@ -14,8 +15,14 @@ public static class HealthEndpoints
         return group;
     }
 
-    private static IResult HandleHealth()
+    private static async Task<IResult> HandleHealth(IMetricsStore store, CancellationToken ct)
     {
-        return Results.Ok(new HealthResponse("healthy", "ok"));
+        var ok = await store.PingAsync(ct);
+        if (ok)
+            return Results.Ok(new HealthResponse("healthy", "ok"));
+
+        return Results.Json(
+            new HealthResponse("unhealthy", "unreachable"),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 }

@@ -1,163 +1,136 @@
 # Data Model: EP Cube Telemetry Data Ingestor
 
-**Branch**: `001-data-ingestor` | **Date**: 2026-03-07
-
----
+**Branch**: `001-data-ingestor` | **Date**: 2026-03-27
 
 ## Overview
 
-This feature uses VictoriaMetrics as the sole data store. VictoriaMetrics is a time-series database that stores data in a Prometheus-compatible format — there are no relational tables or document collections. The "entities" below describe the logical data model mapped to VictoriaMetrics metrics and labels.
+Feature 001 stores telemetry in PostgreSQL using two primary tables:
 
----
+- `devices`: metadata per EP Cube device
+- `readings`: time-series telemetry rows keyed by device, metric, and timestamp
 
-## Entity: Device
+The exporter creates these schema objects automatically and uses upserts so the data model stays stable across restarts.
 
-**What it represents**: An EP Cube device (1.0 or 2.0) as identified by epcube-exporter via the cloud API.
+## Physical Schema
 
-**Storage**: Not stored as a separate record. Device identity is encoded in VictoriaMetrics metric labels, populated automatically by epcube-exporter.
+### Table: `devices`
 
-| Label | Source | Example | Description |
-|-------|--------|---------|-------------|
-| `device` | epcube-exporter config | `epcube_battery` | Unique device identifier |
-| `class` | epcube-exporter config | `storage_battery` | Device class |
-| `manufacturer` | `epcube_device_info` metric | `Canadian Solar` | Device manufacturer |
-| `product_code` | `epcube_device_info` metric | `EP Cube 2.0` | Device model |
-| `uid` | `epcube_device_info` metric | `ABC123` | Unique device ID |
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `SERIAL` | Primary key |
+| `device_id` | `TEXT` | Unique external identifier |
+| `device_class` | `TEXT` | `storage_battery` or `home_solar` |
+| `alias` | `TEXT` | Human-readable grouping name |
+| `manufacturer` | `TEXT` | Device manufacturer |
+| `product_code` | `TEXT` | Product/model identifier |
+| `uid` | `TEXT` | Cloud-reported unique ID |
+| `created_at` | `TIMESTAMPTZ` | Row creation time |
+| `updated_at` | `TIMESTAMPTZ` | Row update time |
 
-**Enrichment via `epcube_device_info`**: epcube-exporter exposes a constant-value metric `epcube_device_info{device, class, manufacturer, product_code, uid} = 1` that carries device metadata as labels. The API service can query this metric to resolve device details.
+### Table: `readings`
 
-**Validation rules**:
-- `device` label MUST be non-empty and unique across all configured devices
-- `class` MUST be one of: `storage_battery`, `home_solar`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `BIGSERIAL` | Primary key |
+| `device_id` | `TEXT` | Logical device identifier |
+| `metric_name` | `TEXT` | Normalized metric name |
+| `timestamp` | `TIMESTAMPTZ` | Reading time |
+| `value` | `DOUBLE PRECISION` | Numeric reading value |
 
----
+### Constraints and Indexes
 
-## Entity: Reading (Battery Metrics)
+| Name | Definition | Purpose |
+|------|------------|---------|
+| `devices.device_id` | Unique | Prevent duplicate device identities |
+| `readings(device_id, metric_name, timestamp)` | Unique | Deduplicate telemetry writes |
+| `idx_readings_device_metric_time` | `(device_id, metric_name, timestamp DESC)` | Efficient latest-reading and range queries |
 
-**What it represents**: Telemetry data points from an EP Cube storage battery, polled from the EP Cube cloud API.
+## Logical Entities
 
-**Device class**: `storage_battery`
+### Device
 
-| Metric Name | Type | Unit | Description |
-|-------------|------|------|-------------|
-| `epcube_battery_state_of_capacity_percent` | gauge | % | State of charge (0–100) |
-| `epcube_battery_net_kwh` | gauge | kWh | Net battery energy today (positive=charge, negative=discharge), calculated by epcube-exporter from cloud API energy balance fields (`solar + grid_import - backup - grid_export`) |
+Represents one EP Cube device identity as known to the cloud API and persisted in PostgreSQL.
 
-**Labels on every metric**: `device`, `class`
+| Field | Meaning |
+|-------|---------|
+| `device_id` | Stable device identifier used by the exporter and API |
+| `device_class` | Device role such as battery or solar |
+| `alias` | Grouping label shown to downstream clients |
+| `manufacturer` | Vendor metadata |
+| `product_code` | Model identifier |
+| `uid` | Unique device UID from the cloud API |
 
-**Note**: The EP Cube cloud API does not expose instantaneous battery charge/discharge power, remaining capacity, chargeable/dischargeable capacity, cumulative charge/discharge, or working operation state. Only SoC% and daily net energy (derived from the energy balance) are available.
+### Reading
 
----
+Represents a single metric sample for a device at a specific timestamp.
 
-## Entity: Reading (Solar Metrics)
+| Field | Meaning |
+|-------|---------|
+| `device_id` | Owning device |
+| `metric_name` | Stored metric key |
+| `timestamp` | UTC-compatible time of the reading |
+| `value` | Numeric value for the sample |
 
-**What it represents**: Telemetry data points from EP Cube home solar generation.
+### Time Series
 
-**Device class**: `home_solar`
+A query-time grouping of readings for one metric and one device across a requested range.
 
-| Metric Name | Type | Unit | Description |
-|-------------|------|------|-------------|
-| `epcube_solar_instantaneous_generation_watts` | gauge | W | Current solar generation |
-| `epcube_solar_cumulative_generation_kwh` | gauge | kWh | Total solar energy generated today |
+The API returns time series in grouped JSON form rather than exposing raw table rows.
 
-**Labels on every metric**: `device`, `class`
+## Core Stored Metrics
 
----
+The current platform depends on these core metric names being available in PostgreSQL:
 
-## Entity: Reading (Home Load & Grid Metrics)
+- `solar_instantaneous_generation_watts`
+- `battery_state_of_capacity_percent`
+- `battery_power_watts`
+- `battery_stored_kwh`
+- `home_load_power_watts`
+- `grid_power_watts`
 
-**What it represents**: Home load consumption and grid energy exchange, polled from the EP Cube cloud API.
+Additional cumulative or operational metrics may also be stored, but these six are the primary contract for current downstream clients.
 
-**Device class**: `storage_battery` (same labels as battery)
+## API Response Models
 
-| Metric Name | Type | Unit | Description |
-|-------------|------|------|-------------|
-| `epcube_home_load_power_watts` | gauge | W | Instantaneous home load (backup) power |
-| `epcube_self_sufficiency_rate` | gauge | % | Self-sufficiency rate (0–100) |
-| `epcube_grid_import_kwh` | gauge | kWh | Grid energy imported today |
-| `epcube_grid_export_kwh` | gauge | kWh | Grid energy exported today |
+### `CurrentReadingsResponse`
 
-**Labels on every metric**: `device`, `class`
-
----
-
-## Entity: Reading (Grid Net — API Query)
-
-**What it represents**: Net grid energy consumption, computed at query time by the API.
-
-**Storage**: Computed by the API service at query time using PromQL.
-
-| Metric / Query | Type | Unit | Description |
-|----------------|------|------|-------------|
-| `epcube_grid_import_kwh - epcube_grid_export_kwh` | gauge | kWh | Net grid energy (positive = net import, negative = net export) |
-
-**Sign convention**: Positive = net import from grid, Negative = net export to grid.
-
-**Implementation**: The API `/grid` endpoint executes this PromQL `query_range` against VictoriaMetrics. Grid import and export are directly available from the EP Cube cloud API — no derivation from solar/battery is needed.
-
----
-
-## Entity: Scrape Health
-
-**What it represents**: Health and status metrics for observability of the ingestion pipeline.
-
-| Metric Name | Type | Unit | Description |
-|-------------|------|------|-------------|
-| `epcube_scrape_success` | gauge | boolean | 1 = last scrape succeeded, 0 = failed |
-| `epcube_last_scrape_timestamp_seconds` | gauge | unix epoch | Time of last successful scrape |
-| `epcube_device_info` | gauge | constant 1 | Device identity labels (manufacturer, product_code, uid) |
-**Labels on every metric**: `device`, `class`
-
----
-
-## Entity: Time Series
-
-**What it represents**: A logical grouping — an ordered sequence of Readings for a given device and metric over a time range.
-
-**Not a stored entity**: Time Series is a query concept. VictoriaMetrics returns time series via PromQL `query_range` with a specified `start`, `end`, and `step`.
-
-**PromQL query pattern**:
-```promql
-epcube_battery_state_of_capacity_percent{device="epcube_battery"}[24h:1m]
+```json
+{
+  "metric": "battery_power_watts",
+  "readings": [
+    {
+      "device_id": "epcube3483_battery",
+      "timestamp": 1711497600,
+      "value": -1250.0
+    }
+  ]
+}
 ```
 
-This returns a time series of 1-minute-interval SoC readings for the last 24 hours.
+### `RangeReadingsResponse`
 
----
-
-## Relationships
-
-```
-Device (labels)
-  ├── Battery Readings (storage_battery metrics)
-  ├── Solar Readings (home_solar metrics)
-  ├── Home Load & Grid Readings (storage_battery metrics)
-  ├── Scrape Health (scrape status metrics)
-  └── Grid Net (computed at query time: import - export)
-```
-
-All relationships are implicit via shared `device` label. There are no foreign keys or joins — VictoriaMetrics uses label matching.
-
----
-
-## State Transitions
-
-### Device Scrape Status
-
-```
-Unknown ──first scrape success──▶ Online (scrape_success=1)
-Online ──scrape failure──▶ Offline (scrape_success=0)
-Offline ──scrape success──▶ Online (scrape_success=1)
+```json
+{
+  "metric": "grid_power_watts",
+  "series": [
+    {
+      "device_id": "epcube3483_battery",
+      "values": [
+        {
+          "timestamp": 1711497600,
+          "value": 450.0
+        }
+      ]
+    }
+  ]
+}
 ```
 
----
+## Deduplication Rules
 
-## Deduplication
-
-VictoriaMetrics handles deduplication natively via `-dedup.minScrapeInterval=1m`. If promscrape retries a scrape or overlapping scrape windows produce duplicate data points (same metric, same timestamp, same value), VictoriaMetrics keeps only one copy.
-
----
+- The exporter uses `ON CONFLICT` writes for both `devices` and `readings`.
+- A repeated reading for the same `(device_id, metric_name, timestamp)` updates the existing row rather than creating a duplicate.
 
 ## Retention
 
-VictoriaMetrics is configured with `-retentionPeriod=5y`. Data older than 5 years is automatically purged during background compaction. No application-level retention logic is needed.
+Telemetry retention is indefinite. No automatic purge policy exists in the application layer.

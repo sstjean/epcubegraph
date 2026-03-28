@@ -36,6 +36,7 @@ Use `--check` (macOS) or `-Check` (Windows) to see what's missing without instal
 | Terraform | 1.5+ | Azure infrastructure provisioning |
 | Azure CLI (`az`) | 2.60+ | Azure authentication, ACR login |
 | Docker Desktop | 24+ | Container builds (includes Compose v2) |
+| Node.js | 22.0+ | Build the web dashboard SPA |
 | VS Code | latest | IDE |
 | GitHub CLI (`gh`) | 2.x | Issue tracking (optional) |
 

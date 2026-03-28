@@ -57,6 +57,17 @@
       }
     },
     {
+      "name": "node",
+      "displayName": "Node.js",
+      "minVersion": "22.0",
+      "purpose": "Build the web dashboard SPA",
+      "required": true,
+      "install": {
+        "brew": "node@22",
+        "winget": "OpenJS.NodeJS.LTS"
+      }
+    },
+    {
       "name": "code",
       "displayName": "VS Code",
       "minVersion": "1.80",

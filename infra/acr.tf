@@ -4,7 +4,7 @@ resource "azurerm_container_registry" "main" {
   name                = replace("${var.environment_name}cr", "-", "")
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
+  sku                 = var.acr_sku
   admin_enabled       = false
 }
 

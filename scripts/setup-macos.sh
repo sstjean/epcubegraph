@@ -228,6 +228,39 @@ else
   fi
 fi
 
+# -- Node.js -------------------------------------------------------------------
+
+header "Node.js"
+
+NODE_VERSION_REQUIRED="22"
+
+if command -v node >/dev/null 2>&1; then
+  NODE_VER=$(node --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
+  if [[ "$NODE_VER" -ge "$NODE_VERSION_REQUIRED" ]]; then
+    skip "Node.js $(node --version)"
+  else
+    warn "Node.js v$NODE_VER found, but $NODE_VERSION_REQUIRED.x required"
+    if ! $CHECK_ONLY; then
+      info "Installing Node.js $NODE_VERSION_REQUIRED..."
+      brew install node@22
+      ok "Node.js $NODE_VERSION_REQUIRED installed"
+      ((INSTALLED++))
+    else
+      ((MISSING++))
+    fi
+  fi
+else
+  if $CHECK_ONLY; then
+    error "Node.js — NOT FOUND (need $NODE_VERSION_REQUIRED+)"
+    ((MISSING++))
+  else
+    info "Installing Node.js $NODE_VERSION_REQUIRED..."
+    brew install node@22
+    ok "Node.js $NODE_VERSION_REQUIRED installed"
+    ((INSTALLED++))
+  fi
+fi
+
 # -- VS Code ------------------------------------------------------------------
 
 header "Visual Studio Code"

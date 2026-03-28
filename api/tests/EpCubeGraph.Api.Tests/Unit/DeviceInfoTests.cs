@@ -15,7 +15,8 @@ public class DeviceInfoTests
             Manufacturer: "Canadian Solar",
             ProductCode: "EP Cube 2.0",
             Uid: "ABC123",
-            Online: true);
+            Online: true,
+            Alias: "My Battery");
 
         // Act
         var json = JsonSerializer.Serialize(device);
@@ -29,6 +30,7 @@ public class DeviceInfoTests
         Assert.Equal("EP Cube 2.0", root.GetProperty("product_code").GetString());
         Assert.Equal("ABC123", root.GetProperty("uid").GetString());
         Assert.True(root.GetProperty("online").GetBoolean());
+        Assert.Equal("My Battery", root.GetProperty("alias").GetString());
     }
 
     [Fact]
@@ -65,6 +67,7 @@ public class DeviceInfoTests
         Assert.Null(device.Manufacturer);
         Assert.Null(device.ProductCode);
         Assert.Null(device.Uid);
+        Assert.Null(device.Alias);
         Assert.False(device.Online);
     }
 
@@ -108,5 +111,6 @@ public class DeviceInfoTests
         Assert.False(doc.RootElement.TryGetProperty("manufacturer", out _));
         Assert.False(doc.RootElement.TryGetProperty("product_code", out _));
         Assert.False(doc.RootElement.TryGetProperty("uid", out _));
+        Assert.False(doc.RootElement.TryGetProperty("alias", out _));
     }
 }

@@ -1,8 +1,8 @@
-# EP Cube Graph — Cloud Exporter with Local Storage (macOS testing)
+# EP Cube Graph — Cloud Exporter with PostgreSQL (macOS testing)
 #
-# Runs the EP Cube cloud exporter + VictoriaMetrics + vmagent in Docker.
+# Runs the EP Cube cloud exporter + PostgreSQL in Docker.
 # The cloud exporter polls monitoring-us.epcube.com for real-time data
-# and exposes Prometheus metrics for VictoriaMetrics to scrape.
+# and writes readings directly to PostgreSQL.
 #
 # Usage:
 #   # 1. Copy .env.example to .env and set EPCUBE_USERNAME / EPCUBE_PASSWORD
@@ -15,51 +15,38 @@
 #   cd ../api/src/EpCubeGraph.Api && EPCUBE_DISABLE_AUTH=true ASPNETCORE_ENVIRONMENT=Development dotnet run
 #
 # Web UIs:
-#   VictoriaMetrics (vmui):  http://localhost:8428/vmui
-#   vmagent targets:         http://localhost:8429/targets
-#   cloud exporter:          http://localhost:9200/metrics
+#   cloud exporter:  http://localhost:9250/metrics
+#   PostgreSQL:      localhost:5432 (user: epcube, db: epcubegraph)
 
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: epcube
+      POSTGRES_PASSWORD: epcube_local
+      POSTGRES_DB: epcubegraph
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-prod-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   epcube-exporter:
     build:
       context: ./epcube-exporter
     environment:
       - EPCUBE_USERNAME=${EPCUBE_USERNAME}
       - EPCUBE_PASSWORD=${EPCUBE_PASSWORD}
-      - EPCUBE_PORT=9200
+      - EPCUBE_PORT=9250
       - EPCUBE_INTERVAL=60
       - EPCUBE_DISABLE_AUTH=true
+      - POSTGRES_DSN=postgresql://epcube:epcube_local@postgres:5432/epcubegraph
     ports:
-      - "9200:9200"
-    restart: unless-stopped
-
-  victoriametrics:
-    image: victoriametrics/victoria-metrics:v1.106.1
-    command:
-      - "-retentionPeriod=30d"
-      - "-storageDataPath=/victoria-metrics-data"
-      - "-httpListenAddr=:8428"
-    ports:
-      - "8428:8428"
-    volumes:
-      - vm-prod-data:/victoria-metrics-data
-    restart: unless-stopped
-
-  vmagent:
-    image: victoriametrics/vmagent:v1.106.1
-    command:
-      - "-promscrape.config=/etc/vmagent/scrape.yml"
-      - "-remoteWrite.url=http://victoriametrics:8428/api/v1/write"
-      - "-httpListenAddr=:8429"
-    ports:
-      - "8429:8429"
-    volumes:
-      - ./vmagent/scrape-prod-local.yml:/etc/vmagent/scrape.yml:ro
+      - "9250:9250"
     depends_on:
-      - victoriametrics
-      - epcube-exporter
+      - postgres
     restart: unless-stopped
 
 volumes:
-  vm-prod-data:
+  pg-prod-data:
     driver: local

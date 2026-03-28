@@ -305,13 +305,13 @@ cmd_output_summary() {
   echo -e "${BOLD}═══════════════════════════════════════════════════════════${NC}"
   echo ""
 
-  local vm_fqdn api_fqdn
+  local postgres_fqdn api_fqdn
 
-  vm_fqdn=$(tf_output -raw vm_fqdn 2>/dev/null || echo "pending")
+  postgres_fqdn=$(tf_output -raw postgres_fqdn 2>/dev/null || echo "pending")
   api_fqdn=$(tf_output -raw api_fqdn 2>/dev/null || echo "not deployed")
 
   echo -e "  ${BOLD}Endpoints:${NC}"
-  echo -e "    VictoriaMetrics:  https://${vm_fqdn}"
+  echo -e "    PostgreSQL:       ${postgres_fqdn} (private managed server)"
   echo -e "    API:              https://${api_fqdn}"
   echo ""
   echo -e "  ${BOLD}Entra ID:${NC}"

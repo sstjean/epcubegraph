@@ -9,7 +9,7 @@ resource "azurerm_key_vault" "main" {
   tenant_id                     = data.azurerm_client_config.current.tenant_id
   sku_name                      = "standard"
   rbac_authorization_enabled    = false
-  soft_delete_retention_days    = 7
+  soft_delete_retention_days    = var.keyvault_soft_delete_days
   purge_protection_enabled      = false
   public_network_access_enabled = true
 
@@ -55,5 +55,30 @@ resource "azurerm_key_vault_secret" "epcube_password" {
 resource "azurerm_key_vault_secret" "exporter_oauth_secret" {
   name         = "exporter-oauth-secret"
   value        = azuread_application_password.exporter_oauth.value
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+# ── PostgreSQL runtime secrets ──
+
+resource "random_password" "postgres_password" {
+  length  = 32
+  special = false
+}
+
+resource "azurerm_key_vault_secret" "postgres_password" {
+  name         = "postgres-password"
+  value        = random_password.postgres_password.result
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "api_connection_string" {
+  name         = "api-connection-string"
+  value        = "Host=${azurerm_postgresql_flexible_server.main.fqdn};Port=5432;Database=${var.postgres_database_name};Username=${var.postgres_admin_login};Password=${random_password.postgres_password.result};SSL Mode=VerifyFull"
+  key_vault_id = azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "exporter_postgres_dsn" {
+  name         = "exporter-postgres-dsn"
+  value        = "postgresql://${var.postgres_admin_login}:${random_password.postgres_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${var.postgres_database_name}?sslmode=require"
   key_vault_id = azurerm_key_vault.main.id
 }

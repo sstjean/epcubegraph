@@ -18,101 +18,6 @@ resource "azurerm_container_app_environment" "main" {
   }
 }
 
-# ── Mount Azure File Share for VictoriaMetrics persistent storage ──
-
-resource "azurerm_container_app_environment_storage" "vm" {
-  name                         = "vmstorage"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  account_name                 = azurerm_storage_account.main.name
-  share_name                   = azurerm_storage_share.vm_data.name
-  access_key                   = azurerm_storage_account.main.primary_access_key
-  access_mode                  = "ReadWrite"
-}
-
-# ── VictoriaMetrics Container App (internal-only) ──
-
-resource "azurerm_container_app" "vm" {
-  name                         = "${var.environment_name}-vm"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
-  workload_profile_name        = "Consumption"
-
-  identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.main.id]
-  }
-
-  # Internal-only ingress — accessible only to other apps in the environment.
-  # No external traffic; vmauth removed (no internet-facing reads/writes).
-  ingress {
-    external_enabled = false
-    target_port      = 8428
-    transport        = "http"
-
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-
-  template {
-    min_replicas = 1
-    max_replicas = 1
-
-    # Init container writes promscrape config to shared EmptyDir volume.
-    init_container {
-      name   = "config-init"
-      image  = "busybox:1.36"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      command = ["/bin/sh", "-c", "echo '${local.promscrape_config_b64}' | base64 -d > /etc/promscrape/config.yml"]
-
-      volume_mounts {
-        name = "promscrape-config"
-        path = "/etc/promscrape"
-      }
-    }
-
-    container {
-      name   = "victoria-metrics"
-      image  = var.victoria_metrics_image
-      cpu    = 0.5
-      memory = "1Gi"
-
-      args = [
-        "-retentionPeriod=5y",
-        "-dedup.minScrapeInterval=1m",
-        "-storageDataPath=/victoria-metrics-data",
-        "-httpListenAddr=:8428",
-        "-promscrape.config=/etc/promscrape/config.yml",
-      ]
-
-      volume_mounts {
-        name = "vm-data"
-        path = "/victoria-metrics-data"
-      }
-
-      volume_mounts {
-        name = "promscrape-config"
-        path = "/etc/promscrape"
-      }
-    }
-
-    volume {
-      name         = "vm-data"
-      storage_name = azurerm_container_app_environment_storage.vm.name
-      storage_type = "AzureFile"
-    }
-
-    volume {
-      name         = "promscrape-config"
-      storage_type = "EmptyDir"
-    }
-  }
-}
-
 # ── API Container App ──
 
 resource "azurerm_container_app" "api" {
@@ -134,9 +39,15 @@ resource "azurerm_container_app" "api" {
     identity = azurerm_user_assigned_identity.main.id
   }
 
+  secret {
+    name                = "api-connection-string"
+    key_vault_secret_id = azurerm_key_vault_secret.api_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
   ingress {
     external_enabled = true
-    target_port      = 8080
+    target_port      = var.api_port
     transport        = "http"
 
     traffic_weight {
@@ -146,14 +57,14 @@ resource "azurerm_container_app" "api" {
   }
 
   template {
-    min_replicas = 1
-    max_replicas = 3
+    min_replicas = var.api_min_replicas
+    max_replicas = var.api_max_replicas
 
     container {
       name   = "api"
       image  = var.api_image
-      cpu    = 0.25
-      memory = "0.5Gi"
+      cpu    = var.api_cpu
+      memory = var.api_memory
 
       env {
         name  = "AzureAd__Instance"
@@ -176,10 +87,13 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
-        name = "VictoriaMetrics__Url"
-        # Container Apps inter-app communication uses internal ingress on port 80.
-        # VictoriaMetrics runs internal-only (targetPort 8428), reachable via app name.
-        value = "http://${azurerm_container_app.vm.name}"
+        name        = "ConnectionStrings__DefaultConnection"
+        secret_name = "api-connection-string"
+      }
+
+      env {
+        name  = "Cors__AllowedOrigin"
+        value = "https://${azurerm_static_web_app.dashboard.default_host_name}"
       }
     }
   }
@@ -207,6 +121,12 @@ resource "azurerm_container_app" "exporter" {
   }
 
   secret {
+    name                = "exporter-postgres-dsn"
+    key_vault_secret_id = azurerm_key_vault_secret.exporter_postgres_dsn.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
     name                = "epcube-username"
     key_vault_secret_id = azurerm_key_vault_secret.epcube_username.versionless_id
     identity            = azurerm_user_assigned_identity.main.id
@@ -228,7 +148,7 @@ resource "azurerm_container_app" "exporter" {
   # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
     external_enabled = true
-    target_port      = 9200
+    target_port      = var.exporter_port
     transport        = "http"
 
     traffic_weight {
@@ -238,14 +158,14 @@ resource "azurerm_container_app" "exporter" {
   }
 
   template {
-    min_replicas = 1
-    max_replicas = 1
+    min_replicas = var.exporter_min_replicas
+    max_replicas = var.exporter_max_replicas
 
     container {
       name   = "epcube-exporter"
       image  = var.epcube_image
-      cpu    = 0.25
-      memory = "0.5Gi"
+      cpu    = var.exporter_cpu
+      memory = var.exporter_memory
 
       env {
         name        = "EPCUBE_USERNAME"
@@ -259,12 +179,17 @@ resource "azurerm_container_app" "exporter" {
 
       env {
         name  = "EPCUBE_PORT"
-        value = "9200"
+        value = tostring(var.exporter_port)
       }
 
       env {
         name  = "EPCUBE_INTERVAL"
-        value = "60"
+        value = tostring(var.exporter_poll_interval)
+      }
+
+      env {
+        name        = "POSTGRES_DSN"
+        secret_name = "exporter-postgres-dsn"
       }
 
       env {

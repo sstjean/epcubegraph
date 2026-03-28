@@ -2,15 +2,44 @@
 # Copy to terraform.tfvars and fill in your values.
 
 environment_name = "epcubegraph" # Prefix for all Azure resources
-location         = "eastus"      # Azure region
+location         = "centralus"   # Azure region
 
 # EP Cube cloud account (monitoring-us.epcube.com)
 epcube_username = "your-email@example.com"
 epcube_password = "your-epcube-password"
 
+# ── SKUs ──
+postgres_sku = "B_Standard_B1ms" # Burstable: B_Standard_B1ms | GP: GP_Standard_D2s_v3
+acr_sku      = "Basic"           # Basic, Standard, Premium
+
+# ── Ports ──
+api_port      = 8080
+exporter_port = 9250
+
+# ── Overrides (uncomment to customize) ──
+# postgres_version               = "17"
+# postgres_storage_mb            = 32768
+# postgres_backup_retention_days = 7
+# postgres_admin_login           = "epcubeadmin"
+# postgres_database_name         = "epcubegraph"
+# api_cpu                        = 0.25
+# api_memory                     = "0.5Gi"
+# api_min_replicas               = 1
+# api_max_replicas               = 3
+# exporter_poll_interval         = 60
+# exporter_cpu                   = 0.25
+# exporter_memory                = "0.5Gi"
+# exporter_min_replicas          = 1
+# exporter_max_replicas          = 1
+# keyvault_soft_delete_days      = 7
+# log_retention_days             = 30
+# vnet_address_space             = ["10.0.0.0/16"]
+# subnet_infrastructure_prefix   = ["10.0.0.0/23"]
+# subnet_endpoints_prefix        = ["10.0.2.0/24"]
+# subnet_postgres_prefix         = ["10.0.3.0/24"]
+
 # Firewall allowlist — deploy.sh detects your IP automatically.
 # Override only if you need additional IPs (e.g., team members):
 # allowed_ips = ["203.0.113.10", "198.51.100.20"]
 
-# Optional overrides (defaults are usually fine):
-# victoria_metrics_image = "victoriametrics/victoria-metrics:v1.106.1"
+

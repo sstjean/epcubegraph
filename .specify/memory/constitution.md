@@ -1,10 +1,15 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.9.0 → 1.10.0
-  Modified sections:
-    - DevOps — added CI Test Coverage (NON-NEGOTIABLE) principle
-  Added sections: none
+  Version change: 1.17.0 → 1.18.0
+  Bump rationale: MINOR — new principle added under
+    Development Workflow.
+  Added sub-sections:
+    - Development Workflow — Local Type-Checking Parity
+      (NON-NEGOTIABLE): Mandates local type-check commands
+      matching CI for every statically typed language in the
+      project.
+  Modified sections: none
   Removed sections: none
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
@@ -12,9 +17,7 @@
     - .specify/templates/tasks-template.md        ✅ no changes needed
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
-  Dependent specs:
-    - specs/001-data-ingestor/plan.md             ✅ no changes needed
-  Follow-up TODOs: none (all completed)
+  Follow-up TODOs: none
 -->
 
 # EP Cube Graph Constitution
@@ -74,6 +77,15 @@ test surface, and obscure the intent of the codebase.
   when they would be genuinely empty (e.g., no arrangement
   needed for a static method with no dependencies), but the
   remaining sections MUST still be commented.
+- **Test Data Separation (NON-NEGOTIABLE)**: Automated tests
+  (unit, integration, CI) MUST use mock or synthetic data
+  exclusively — never live/production data. Manual user
+  testing and local development review MUST use live data
+  from real EP Cube devices (via the production cloud API).
+  Test suites MUST NOT depend on network connectivity or
+  external service availability. Live-data local stacks
+  (e.g., docker-compose.prod-local.yml) are for manual
+  verification only and MUST NOT be invoked by CI pipelines.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.
@@ -93,6 +105,29 @@ silent regressions.
   is merged. No test failures are permitted in the main branch.
 - **Documentation**: User-facing behaviour changes MUST be
   reflected in relevant docs or specs before merge.
+- **Local Type-Checking Parity (NON-NEGOTIABLE)**: For every
+  language in the project that has a static type checker
+  (e.g., TypeScript's `tsc`, C#'s compiler, Python's `mypy`),
+  the project MUST provide a local command that runs the same
+  type-checking step that CI enforces. Type errors MUST be
+  catchable locally before pushing — developers MUST NOT have
+  to wait for CI to discover type-checking failures.
+  Specifically:
+  - Every project component MUST include a script or command
+    (e.g., `npm run typecheck`, `dotnet build`, `mypy .`) that
+    performs the same static analysis as the CI build step.
+  - Test runners that skip type checking (e.g., Vitest with
+    esbuild, pytest) do NOT satisfy this requirement — the
+    actual type checker must be invokable separately.
+  - The local type-check command MUST be documented in the
+    component's package.json scripts, Makefile, or equivalent
+    task runner.
+
+  **Rationale**: Test runners often use fast transpilers
+  (esbuild, Babel) that strip types without checking them. If
+  CI runs a strict type checker but local development only runs
+  tests, type errors become invisible until push — wasting CI
+  cycles and developer time.
 
 ## Performance Standards
 
@@ -129,7 +164,7 @@ silent regressions.
   versioned API contract. Direct database access from clients
   is prohibited.
 - **Local Data Ingestion Containerization**: All local data
-  ingestion services (e.g., epcube-exporter, vmagent) MUST
+  ingestion services (e.g., epcube-exporter) MUST
   be packaged and deployed as Docker containers. Container
   images MUST be reproducible from a Dockerfile in the
   repository. Bare-metal or manual installation of ingestion
@@ -181,11 +216,44 @@ any device.
     trust client applications, and internal services MUST NOT
     trust each other without explicit, per-request credential
     verification.
+- **Microsoft Secure Futures Initiative (SFI) Compliance
+  (NON-NEGOTIABLE)**: All Azure infrastructure and architecture
+  MUST comply with Microsoft Secure Futures Initiative (SFI)
+  policies enforced on the subscription. SFI policies are
+  externally managed and cannot be overridden — infrastructure
+  configurations MUST be designed to work with these policies,
+  not against them. Specifically:
+  - Storage accounts MUST assume `publicNetworkAccess: Disabled`
+    and `allowSharedKeyAccess: false` as SFI-enforced defaults.
+    CD pipelines MUST temporarily toggle `publicNetworkAccess`
+    to `Enabled` (with `defaultAction: Deny`) for deployment
+    operations and restore `Disabled` in always-run cleanup
+    steps.
+  - Key Vaults MUST assume `publicNetworkAccess: Disabled` as
+    the SFI-enforced default. The same temporary toggle pattern
+    applies for CD pipeline access.
+  - Subnet configurations MUST set
+    `default_outbound_access_enabled = false` to match SFI
+    enforcement.
+  - Terraform resource configurations MUST align with
+    SFI-enforced settings to prevent state drift. If Terraform
+    declares a value that SFI overrides, Terraform will attempt
+    to change it on every apply, causing failures or unnecessary
+    churn.
+  - Private endpoints MUST be used for runtime
+    service-to-service communication. Public network access
+    toggles are permitted only for CI/CD operations and MUST be
+    restored to Disabled after use.
 
 **Rationale**: The system handles personal energy telemetry
 data. Zero-trust ensures that no component is implicitly
 trusted, limiting blast radius in the event of a compromise
-and protecting data across all client platforms.
+and protecting data across all client platforms. The Azure
+subscription is a Microsoft internal subscription with SFI
+policies enforced at the subscription level. These policies
+cannot be changed or exempted. Infrastructure must be designed
+to operate within these constraints from the start, rather than
+discovering conflicts at deploy time.
 
 ## DevOps
 
@@ -247,6 +315,43 @@ and protecting data across all client platforms.
   complete with zero warnings and zero errors. Persistent
   warnings that cannot be fixed MUST be suppressed with an
   inline justification comment explaining why.
+- **Remote Terraform State**: Terraform state MUST be stored
+  remotely in Azure Blob Storage with Azure AD authentication.
+  Local state files are prohibited for shared or deployed
+  environments. The backend configuration MUST be defined in
+  a version-controlled `backend.hcl.example` template. CI/CD
+  pipelines MUST use OIDC-based authentication for state
+  access.
+- **Tool Sync (NON-NEGOTIABLE)**: The canonical tool list in
+  `scripts/tools.json` MUST be kept in sync with all
+  development setup scripts (`scripts/setup-macos.sh`,
+  `scripts/setup-windows.ps1`) and documentation
+  (`DEVELOP.md`). When a tool is added to or removed from
+  the project, all setup scripts and documentation MUST be
+  updated in the same commit. CI runs
+  `scripts/validate-tool-sync.sh` to enforce this — the
+  build MUST fail if any drift is detected. Introducing a
+  tool without updating all setup artifacts is prohibited.
+- **GitHub Issue Discipline (NON-NEGOTIABLE)**:
+  - **Traceability**: Every User Story issue in GitHub MUST
+    be a sub-issue of its parent Feature issue. Clean
+    traceability from Feature → User Story MUST be
+    maintained at all times via GitHub's sub-issue
+    relationships. Issues MUST NOT exist without proper
+    parent linkage.
+  - **Synchronization**: Every Feature and User Story
+    defined in speckit documents (spec.md, plan.md) MUST
+    have a corresponding GitHub issue. GitHub issues MUST
+    be kept in sync with speckit documents — when an
+    issue is added, updated, or completed, the corresponding
+    speckit document MUST be updated accordingly. GitHub
+    issues are the source of truth; speckit documents reflect
+    that truth so GitHub Copilot can function effectively.
+  - **Task Tracking**: Tasks defined in tasks.md do not
+    require individual GitHub issues. Tasks MUST be
+    reflected as checklist items in their parent User Story
+    issue body. Task completion is tracked in both tasks.md
+    and the User Story issue checklist.
 
 **Rationale**: Infrastructure as code ensures auditability,
 reproducibility, and eliminates configuration drift. Minimizing
@@ -270,4 +375,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.9.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-18
+**Version**: 1.18.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-22

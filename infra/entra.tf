@@ -21,6 +21,12 @@ resource "azuread_application" "api" {
     }
   }
 
+  web {
+    redirect_uris = [
+      "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
+    ]
+  }
+
   owners = [data.azuread_client_config.current.object_id]
 
   lifecycle {
@@ -42,16 +48,42 @@ resource "azuread_service_principal" "api" {
 # ── Client secret for OAuth authorization code flow (exporter debug page) ──
 
 resource "azuread_application_password" "exporter_oauth" {
-  application_id    = azuread_application.api.id
-  display_name      = "exporter-oauth-secret"
-  end_date_relative = "8760h" # 1 year from creation
+  application_id = azuread_application.api.id
+  display_name   = "exporter-oauth-secret"
+  end_date       = timeadd(plantimestamp(), "8760h") # 1 year from creation
+
+  lifecycle {
+    ignore_changes = [end_date]
+  }
 }
 
-resource "azuread_application_redirect_uris" "exporter" {
-  application_id = azuread_application.api.id
-  type           = "Web"
+# ── Dashboard SPA App Registration (public client — PKCE, no secret) ──
 
-  redirect_uris = [
-    "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
-  ]
+resource "azuread_application" "dashboard" {
+  display_name = "EP Cube Graph Dashboard (${var.environment_name})"
+
+  sign_in_audience = "AzureADMyOrg"
+
+  single_page_application {
+    redirect_uris = [
+      "https://${azurerm_static_web_app.dashboard.default_host_name}/",
+      "http://localhost:5173/",
+    ]
+  }
+
+  required_resource_access {
+    resource_app_id = azuread_application.api.client_id
+
+    resource_access {
+      id   = random_uuid.user_impersonation_scope.result
+      type = "Scope"
+    }
+  }
+
+  owners = [data.azuread_client_config.current.object_id]
+}
+
+resource "azuread_service_principal" "dashboard" {
+  client_id = azuread_application.dashboard.client_id
+  owners    = [data.azuread_client_config.current.object_id]
 }

@@ -14,19 +14,18 @@ Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure a
 │                       Azure Container Apps Environment               │
 │                                                                      │
 │  ┌───────────────────────────┐  ┌─────────────────────────────────┐  │
-│  │ VictoriaMetrics App       │  │ API App                         │  │
-│  │  VictoriaMetrics (:8428)  │  │  ASP.NET Core (:8080)           │  │
-│  │  (internal-only)          │──│  Entra ID auth                  │  │
-│  │    scrapes ──┐            │  │  PromQL queries ────────────────│──│─► Clients
-│  └──────────────│────────────┘  └─────────────────────────────────┘  │
-│                 │                                                    │
+│  │ Managed PostgreSQL        │  │ API App                         │  │
+│  │  Flexible Server          │  │  ASP.NET Core (:8080)           │  │
+│  │  (private access)         │◄─│  Entra ID auth                  │  │
+│  └──────────────│────────────┘  │  JSON REST queries ─────────────│──│─► Clients
+│                 │               └─────────────────────────────────┘  │
 │  ┌──────────────▼────────────┐                                       │
 │  │ epcube-exporter App       │    Key Vault                          │
-│  │  :9200/metrics (internal) │    (OAuth secret, credentials)        │
+│  │  :9250/metrics + PG write │    (OAuth secret, credentials, DB)    │
 │  │  polls cloud API ────────────► monitoring-us.epcube.com           │
 │  └───────────────────────────┘                                       │
 │                                                                      │
-│  ACR (container images)  Storage (VM data)  Log Analytics            │
+│  ACR (container images)  Log Analytics                                │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +61,7 @@ Edit `terraform.tfvars`:
 
 ```hcl
 environment_name = "epcubegraph"              # Prefix for all Azure resources
-location         = "eastus"                    # Azure region
+location         = "centralus"                 # Azure region
 
 # EP Cube cloud account
 epcube_username  = "your-email@example.com"
@@ -93,7 +92,7 @@ On completion, you'll see:
 ═══════════════════════════════════════════════════════════
 
   Endpoints:
-    VictoriaMetrics:  https://<env>-vm.<region>.azurecontainerapps.io
+    PostgreSQL:       <managed-private-fqdn>
     API:              https://<env>-api.<region>.azurecontainerapps.io
 
   Entra ID:
@@ -122,12 +121,11 @@ A `{"status":"healthy"}` response confirms the stack is running. Telemetry data 
 |----------|---------|
 | Resource Group | Container for all resources |
 | Container Apps Environment | Hosting platform with Log Analytics |
-| VictoriaMetrics | Time-series DB (internal-only), scrapes epcube-exporter |
-| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics (internal) |
+| Azure Database for PostgreSQL Flexible Server | Time-series DB (private access) |
+| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics, writes to PostgreSQL |
 | API Container App | ASP.NET Core service with Entra ID auth |
 | Azure Container Registry | Private Docker image registry |
 | Key Vault | Stores EP Cube credentials and OAuth client secret |
-| Storage Account + File Share | Persistent VictoriaMetrics data (50 GB) |
 | Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
 | User-Assigned Managed Identity | ACR pull + Key Vault read access |
 
@@ -195,7 +193,7 @@ The CD pipeline stores Terraform state in an Azure Storage Account.
 
 ```bash
 # Create resource group and storage for Terraform state
-az group create --name tfstate-rg --location eastus
+az group create --name tfstate-rg --location centralus
 az storage account create \
   --name tfstateepcubegraph \
   --resource-group tfstate-rg \
@@ -209,6 +207,8 @@ az storage container create \
 #### 2. Create OIDC App Registration for GitHub Actions
 
 GitHub Actions authenticates to Azure using OIDC (no stored credentials).
+All CD jobs use GitHub Environments (`staging` / `production`), so federated
+credentials use `environment:` subjects — no branch-ref credentials are needed.
 
 ```bash
 # Create the app registration
@@ -217,19 +217,18 @@ az ad app create --display-name "epcubegraph-github-actions"
 # Note the appId from the output, then create a service principal
 az ad sp create --id <appId>
 
-# Add federated credential for GitHub Actions
+# Add federated credentials for GitHub Environments
 az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions",
+  "name": "github-actions-staging",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/main",
+  "subject": "repo:sstjean/epcubegraph:environment:staging",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
-# Also add a wildcard credential for feature branches
 az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions-branches",
+  "name": "github-actions-production",
   "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:ref:refs/heads/*",
+  "subject": "repo:sstjean/epcubegraph:environment:production",
   "audiences": ["api://AzureADTokenExchange"]
 }'
 
@@ -270,5 +269,5 @@ Go to **Settings → Environments** and create:
 | epcube-exporter shows no metrics | Check Container App logs for login errors; verify `epcube_username` and `epcube_password` in `terraform.tfvars` |
 | API returns 401 | Token expired or wrong audience — re-acquire via `az account get-access-token` |
 | API returns 403 | Token missing `user_impersonation` scope — check Entra app registration |
-| VictoriaMetrics returns empty results | Wait 2+ minutes for data to flow; check VictoriaMetrics container logs for scrape errors |
+| API health is unhealthy or empty results persist | Check PostgreSQL and exporter container logs, then verify the API connection string and exporter `POSTGRES_DSN` wiring |
   

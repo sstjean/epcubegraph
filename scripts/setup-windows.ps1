@@ -186,6 +186,38 @@ if (Test-Command "docker") {
     $script:Installed++
 }
 
+# -- Node.js -------------------------------------------------------------------
+
+Write-Header "Node.js"
+
+$nodeRequired = "22"
+
+if (Test-Command "node") {
+    $nodeVer = ((node --version 2>$null) -replace 'v', '')
+    $nodeMajor = ($nodeVer -split '\.')[0]
+    if ([int]$nodeMajor -ge [int]$nodeRequired) {
+        Write-Skip "Node.js v$nodeVer"
+    } else {
+        Write-Warn "Node.js v$nodeVer found, but $nodeRequired.x required"
+        if (-not $Check) {
+            Write-Info "Installing Node.js $nodeRequired..."
+            winget install --id OpenJS.NodeJS.LTS --exact --accept-source-agreements --accept-package-agreements --silent
+            Write-Ok "Node.js $nodeRequired installed"
+            $script:Installed++
+        } else {
+            $script:Missing++
+        }
+    }
+} elseif ($Check) {
+    Write-Err "Node.js — NOT FOUND (need $nodeRequired+)"
+    $script:Missing++
+} else {
+    Write-Info "Installing Node.js $nodeRequired..."
+    winget install --id OpenJS.NodeJS.LTS --exact --accept-source-agreements --accept-package-agreements --silent
+    Write-Ok "Node.js $nodeRequired installed"
+    $script:Installed++
+}
+
 # -- VS Code ------------------------------------------------------------------
 
 Write-Header "Visual Studio Code"

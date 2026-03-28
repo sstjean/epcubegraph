@@ -1,4 +1,5 @@
 """Tests for epcube-exporter."""
+import base64
 import collections
 import json
 import threading
@@ -183,7 +184,7 @@ class TestEnergyBalance(unittest.TestCase):
 
         home_info = _make_home_device_info(
             solarPower=3.0,
-            gridPower=-1.0,  # API convention: negative = import
+            gridPower=1.0,  # API convention: positive = import
             backUpPower=2.0,
             batteryCurrentElectricity="15.5",
         )
@@ -196,7 +197,7 @@ class TestEnergyBalance(unittest.TestCase):
         device_snap = snap["devices"][0]
         # battery_kw = solar + grid - load = 3.0 + 1.0 - 2.0 = 2.0 (charging)
         self.assertAlmostEqual(device_snap["battery_kw"], 2.0)
-        # grid negated: -(-1.0) = 1.0 (importing)
+        # grid_kw = gridPower = 1.0 (importing)
         self.assertAlmostEqual(device_snap["grid_kw"], 1.0)
         # bat_peak_kwh tracks high-water mark
         self.assertAlmostEqual(device_snap["bat_peak_kwh"], 15.5)
@@ -427,7 +428,7 @@ class TestRenderStatusPage(unittest.TestCase):
         html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="imbalance"', html)
         self.assertIn("\u26a0", html)  # warning symbol
-        self.assertIn("Supply 0.00 kW", html)  # tooltip
+        self.assertIn("Expected battery -1.23 kW", html)  # tooltip
 
     def test_energy_balance_all_zeros_no_warning(self):
         """All zeros (idle system) should NOT be flagged."""
@@ -447,6 +448,74 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertNotIn('class="imbalance"', html)
         self.assertNotIn("\u26a0", html)
 
+    def test_battery_charging_green(self):
+        """Battery charging (positive) should get val-pos class (green)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 5.0, "battery_kw": 3.0, "grid_kw": 0.0,
+                "backup_kw": 2.0, "battery_soc": 60, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-pos">+3.00', html)
+
+    def test_battery_discharging_red(self):
+        """Battery discharging (negative) should get val-neg class (red)."""
+        snap = {
+            "time": "2026-03-17T22:00:00Z",
+            "time_minute": "2026-03-17T22:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": -2.5, "grid_kw": 0.0,
+                "backup_kw": 2.5, "battery_soc": 80, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-neg">-2.50', html)
+
+    def test_grid_import_red(self):
+        """Grid import (positive) should get val-neg class (red)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 0.0, "battery_kw": 0.0, "grid_kw": 1.5,
+                "backup_kw": 1.5, "battery_soc": 50, "self_sufficiency": 0,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-neg">+1.50', html)
+
+    def test_grid_export_green(self):
+        """Grid export (negative) should get val-pos class (green)."""
+        snap = {
+            "time": "2026-03-17T12:00:00Z",
+            "time_minute": "2026-03-17T12:00Z",
+            "devices": [{
+                "name": "Test", "id": "1",
+                "solar_kw": 5.0, "battery_kw": 2.0, "grid_kw": -1.0,
+                "backup_kw": 2.0, "battery_soc": 60, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "ress_count": 1, "solar_kwh": 0, "grid_import_kwh": 0,
+                "grid_export_kwh": 0, "backup_kwh": 0,
+            }],
+        }
+        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        self.assertIn('class="val-pos">-1.00', html)
+
     def test_uptime_formatting(self):
         html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())
         self.assertIn("1h 1m 5s", html)
@@ -464,9 +533,12 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn(exporter.__version__, html)
         self.assertIn("Version:", html)
 
-    def test_auto_refresh_meta(self):
+    def test_auto_refresh_via_fetch(self):
         html = exporter._render_status_page(self._make_status(), self._make_health())
-        self.assertIn('http-equiv="refresh"', html)
+        # Meta refresh removed; replaced with JS fetch-based background refresh
+        self.assertNotIn('http-equiv="refresh"', html)
+        self.assertIn('setInterval', html)
+        self.assertIn('fetch(location.href)', html)
 
     def test_utctime_class_for_js(self):
         snap = {
@@ -750,6 +822,9 @@ class TestPrometheusMetrics(unittest.TestCase):
             "epcube_solar_cumulative_generation_kwh",
             "epcube_grid_import_kwh",
             "epcube_grid_export_kwh",
+            "epcube_battery_stored_kwh",
+            "epcube_battery_peak_stored_kwh",
+            "epcube_home_supply_cumulative_kwh",
             "epcube_scrape_success",
             "epcube_device_info",
         ]
@@ -769,6 +844,244 @@ class TestPrometheusMetrics(unittest.TestCase):
         self.assertIn('device="epcube9999_battery"', metrics)
         self.assertIn('device="epcube9999_solar"', metrics)
         self.assertIn('ip="cloud"', metrics)
+
+    def test_battery_stored_kwh_exported(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(batteryCurrentElectricity="15.5")
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_battery_stored_kwh", metrics)
+        self.assertIn('epcube_battery_stored_kwh{device="epcube1234_battery"', metrics)
+        self.assertIn("15.5", metrics.split("epcube_battery_stored_kwh{")[1].split("\n")[0])
+
+    def test_home_supply_cumulative_kwh_exported(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        elec_data = _make_electricity_data(backUpElectricity=10.0)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, elec_data=elec_data)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_home_supply_cumulative_kwh", metrics)
+        self.assertIn('epcube_home_supply_cumulative_kwh{device="epcube1234_battery"', metrics)
+        self.assertIn("10.0", metrics.split("epcube_home_supply_cumulative_kwh{")[1].split("\n")[0])
+
+    def test_device_info_includes_system_status_label(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(systemStatus=1)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        # system_status label should appear on epcube_device_info lines
+        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
+        self.assertTrue(len(info_lines) >= 2)  # battery + solar
+        for line in info_lines:
+            self.assertIn('system_status="Self-Use"', line)
+
+    def test_device_info_includes_ress_count_label(self):
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(ressNumber=3)
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
+        self.assertTrue(len(info_lines) >= 2)
+        for line in info_lines:
+            self.assertIn('ress_count="3"', line)
+
+    def test_battery_peak_stored_kwh_exported(self):
+        """Peak battery stored tracks max and is exported as a Prometheus metric."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
+
+        # Act — first poll sets peak to 20.0
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home1)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        self.assertIn("epcube_battery_peak_stored_kwh", metrics)
+        line = [l for l in metrics.splitlines()
+                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
+        self.assertIn('device="epcube1234_battery"', line)
+        self.assertTrue(line.endswith("20.0"))
+
+    def test_battery_peak_retains_max_in_metric(self):
+        """After discharge, peak metric still reflects the day's high-water mark."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+
+        # Act — first poll at 20 kWh, second at 15 kWh
+        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home1)):
+            c.poll()
+        c._history[-1]["time_minute"] = "old"  # force new snapshot
+
+        home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home2)):
+            c.poll()
+
+        # Assert — peak should still be 20.0
+        metrics = c.get_metrics()
+        line = [l for l in metrics.splitlines()
+                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
+        self.assertTrue(line.endswith("20.0"))
+
+
+# ---------------------------------------------------------------------------
+# Negative zero normalization tests
+# ---------------------------------------------------------------------------
+
+class TestNegativeZeroNormalization(unittest.TestCase):
+
+    def test_nz_negative_zero_returns_positive_zero(self):
+        # Arrange
+        value = -0.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+        self.assertNotEqual(str(result), "-0.0")
+
+    def test_nz_positive_zero_returns_positive_zero(self):
+        # Arrange
+        value = 0.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+
+    def test_nz_integer_zero_returns_positive_zero(self):
+        # Arrange
+        value = 0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 0.0)
+
+    def test_nz_positive_value_passes_through(self):
+        # Arrange
+        value = 3.14
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, 3.14)
+
+    def test_nz_negative_value_passes_through(self):
+        # Arrange
+        value = -5.0
+
+        # Act
+        result = exporter._nz(value)
+
+        # Assert
+        self.assertEqual(result, -5.0)
+
+    def test_metrics_no_negative_zero_with_zero_grid_power(self):
+        """When API returns gridPower=0, negation must NOT produce -0 in metrics."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(
+            solarPower=0, batterySoc=50, batteryPower=0,
+            gridPower=0, backUpPower=0, selfHelpRate=0,
+            batteryCurrentElectricity="0",
+        )
+        elec_data = _make_electricity_data(
+            solarElectricity=0, gridElectricityFrom=0,
+            gridElectricityTo=0, backUpElectricity=0,
+        )
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info, elec_data)):
+            c.poll()
+
+        # Assert
+        metrics = c.get_metrics()
+        for line in metrics.splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            self.assertNotRegex(line, r'\s-0(\.0+)?$',
+                                f"Negative zero found in metric line: {line}")
+
+    def test_snapshot_no_negative_zero_with_zero_grid_power(self):
+        """Snapshot values must not contain negative zero."""
+        # Arrange
+        c = _make_collector()
+        devs = [_make_device()]
+        c._devices = devs
+        c._token = "fake-token"
+        home_info = _make_home_device_info(
+            solarPower=0, gridPower=0, backUpPower=0,
+        )
+
+        # Act
+        with patch.object(exporter, "_api_request",
+                          side_effect=_mock_api_for(devs, home_info=home_info)):
+            c.poll()
+
+        # Assert
+        snap = c._history[-1]
+        dev = snap["devices"][0]
+        self.assertNotEqual(str(dev["grid_kw"]), "-0.0")
+        self.assertNotEqual(str(dev["battery_kw"]), "-0.0")
+        self.assertNotEqual(str(dev["solar_kw"]), "-0.0")
 
 
 # ---------------------------------------------------------------------------
@@ -799,6 +1112,335 @@ class TestReauth(unittest.TestCase):
                 c._api("/home/homeDeviceInfo?sgSn=test")
 
         self.assertEqual(c._token, "new-token")
+
+
+# ---------------------------------------------------------------------------
+# JWT expiry decoding
+# ---------------------------------------------------------------------------
+
+class TestJwtExp(unittest.TestCase):
+
+    def test_decodes_valid_jwt_exp(self):
+        # Build a JWT with exp=1700000000
+        payload = base64.urlsafe_b64encode(json.dumps({"exp": 1700000000}).encode()).rstrip(b"=").decode()
+        token = f"header.{payload}.signature"
+        self.assertEqual(exporter._jwt_exp(token), 1700000000)
+
+    def test_returns_zero_for_invalid_token(self):
+        self.assertEqual(exporter._jwt_exp("not-a-jwt"), 0)
+
+    def test_returns_zero_for_missing_exp(self):
+        payload = base64.urlsafe_b64encode(json.dumps({"sub": "user"}).encode()).rstrip(b"=").decode()
+        token = f"header.{payload}.signature"
+        self.assertEqual(exporter._jwt_exp(token), 0)
+
+
+# ---------------------------------------------------------------------------
+# Stale data detection
+# ---------------------------------------------------------------------------
+
+class TestStaleDataDetection(unittest.TestCase):
+
+    def test_all_zeros_is_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "0.00",
+            "batterySoc": 0,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_nonzero_soc_is_not_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "0.00",
+            "batterySoc": 75,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_nonzero_backup_is_not_stale(self):
+        data = {
+            "solarPower": "0.00",
+            "gridPower": "0.00",
+            "backUpPower": "2.74",
+            "batterySoc": 0,
+            "batteryCurrentElectricity": "0.00",
+        }
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+    def test_empty_data_is_stale(self):
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale({}))
+
+    def test_none_data_is_stale(self):
+        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(None))
+
+    def test_normal_data_is_not_stale(self):
+        data = _make_home_device_info()["data"]
+        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+
+
+# ---------------------------------------------------------------------------
+# Proactive token refresh
+# ---------------------------------------------------------------------------
+
+class TestProactiveTokenRefresh(unittest.TestCase):
+
+    def test_token_expiring_soon_true_when_within_5min(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = time.time() + 200  # 3.3 min left
+        self.assertTrue(c._token_expiring_soon())
+
+    def test_token_expiring_soon_false_when_plenty_of_time(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = time.time() + 3600  # 1h left
+        self.assertFalse(c._token_expiring_soon())
+
+    def test_token_expiring_soon_false_when_no_exp(self):
+        c = _make_collector()
+        c._token = "some-token"
+        c._token_exp = 0
+        self.assertFalse(c._token_expiring_soon())
+
+    def test_ensure_auth_refreshes_expiring_token(self):
+        c = _make_collector()
+        c._token = "old-token"
+        c._token_exp = time.time() + 100  # about to expire
+        c._devices = [_make_device()]
+
+        with patch.object(exporter, "authenticate", return_value="fresh-token") as auth_mock:
+            with patch.object(exporter, "_api_request", return_value={"status": 200, "data": [_make_device()]}):
+                c._ensure_auth()
+
+        auth_mock.assert_called_once()
+        self.assertEqual(c._token, "fresh-token")
+
+    def test_ensure_auth_skips_refresh_when_token_valid(self):
+        c = _make_collector()
+        c._token = "valid-token"
+        c._token_exp = time.time() + 3600  # plenty of time
+
+        with patch.object(exporter, "authenticate") as auth_mock:
+            c._ensure_auth()
+
+        auth_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Stale data triggers re-auth during poll
+# ---------------------------------------------------------------------------
+
+class TestStaleDataReauth(unittest.TestCase):
+
+    def test_poll_reauths_on_stale_data(self):
+        c = _make_collector()
+        c._token = "stale-token"
+        c._token_exp = time.time() + 3600  # token not expired by clock
+        c._devices = [_make_device()]
+
+        call_count = {"n": 0}
+        stale_data = {"solarPower": "0.00", "gridPower": "0.00", "backUpPower": "0.00",
+                      "batterySoc": 0, "batteryCurrentElectricity": "0.00", "systemStatus": "?"}
+        good_data = _make_home_device_info()["data"]
+
+        def mock_api(method, path, **kwargs):
+            if "homeDeviceInfo" in path:
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    return {"status": 200, "data": stale_data}
+                return {"status": 200, "data": good_data}
+            elif "deviceList" in path:
+                return {"status": 200, "data": c._devices}
+            return {"status": 200, "data": {}}
+
+        with patch.object(exporter, "_api_request", side_effect=mock_api):
+            with patch.object(exporter, "authenticate", return_value="fresh-token"):
+                c.poll()
+
+        self.assertEqual(c._token, "fresh-token")
+        # Verify metrics were generated with good data (non-zero)
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+        self.assertIn("75", c._metrics_text)
+
+
+# ---------------------------------------------------------------------------
+# PostgresWriter tests
+# ---------------------------------------------------------------------------
+
+class TestPostgresWriter(unittest.TestCase):
+    """Tests for PostgresWriter using mocked psycopg2."""
+
+    def _make_mock_psycopg2(self):
+        """Create a mock psycopg2 module with connection and cursor."""
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_schema(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+
+        mock_pg.connect.assert_called_once_with("postgresql://test:test@localhost/test")
+        mock_cursor.execute.assert_called_once()
+        # The schema SQL should contain CREATE TABLE
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS devices", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS readings", call_args)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        writer.upsert_device("epcube1_battery", "storage_battery",
+                             alias="Test Device", manufacturer="Canadian Solar",
+                             product_code="EP Cube", uid="SN123")
+
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
+        self.assertIn("INSERT INTO devices", call_args[0][0])
+        self.assertIn("ON CONFLICT", call_args[0][0])
+        self.assertEqual(call_args[0][1][0], "epcube1_battery")
+        self.assertEqual(call_args[0][1][1], "storage_battery")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        readings = [
+            ("epcube1_battery", "battery_state_of_capacity_percent", now, 75.0),
+            ("epcube1_battery", "grid_power_watts", now, 500.0),
+        ]
+        writer.write_readings(readings)
+
+        mock_pg.extras.execute_values.assert_called_once()
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_empty_readings_is_noop(self, mock_pg):
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn.reset_mock()
+
+        writer.write_readings([])
+        mock_conn.commit.assert_not_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_reconnects_on_closed_connection(self, mock_pg):
+        mock_conn1, _ = self._make_mock_psycopg2()
+        mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
+
+        # First call returns conn1 (for init), then conn1.closed=True forces reconnect
+        mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn1.closed = True  # simulate connection dropped
+
+        writer.upsert_device("d1", "storage_battery")
+
+        # Should have connected twice
+        self.assertEqual(mock_pg.connect.call_count, 2)
+
+    @patch.object(exporter, "psycopg2")
+    def test_close(self, mock_pg):
+        mock_conn, _ = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer.close()
+
+        mock_conn.close.assert_called_once()
+
+
+class TestPollWithPostgres(unittest.TestCase):
+    """Tests that poll() writes to Postgres when a writer is configured."""
+
+    @patch.object(exporter, "psycopg2")
+    def test_poll_writes_to_postgres(self, mock_pg):
+        mock_conn, mock_cursor = MagicMock(), MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+
+        pg_writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+
+        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Should have called upsert_device (2 per device: battery + solar)
+        upsert_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'INSERT INTO devices' in str(call)]
+        self.assertGreaterEqual(len(upsert_calls), 2)
+
+        # Should have called write_readings via execute_values
+        self.assertTrue(mock_pg.extras.execute_values.called)
+
+    def test_poll_without_postgres_still_works(self):
+        """Poll works fine when pg_writer is None."""
+        c = _make_collector()  # no pg_writer
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Prometheus metrics should still be generated
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+
+    @patch.object(exporter, "psycopg2")
+    def test_poll_continues_on_postgres_error(self, mock_pg):
+        """Poll should not fail if Postgres write raises an exception."""
+        pg_writer = MagicMock()
+        pg_writer.upsert_device.side_effect = Exception("DB connection lost")
+
+        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()  # Should NOT raise
+
+        # Prometheus metrics should still be generated
+        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
 
 
 if __name__ == "__main__":

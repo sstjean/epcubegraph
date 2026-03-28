@@ -99,87 +99,66 @@ else
 fi
 
 # ==============================================================================
-# 2. VictoriaMetrics Container App
+# 2. Managed PostgreSQL Server
 # ==============================================================================
-header "VictoriaMetrics Container App"
+header "Managed PostgreSQL Server"
 
-VM_NAME="${ENV_NAME}-vm"
-VM_JSON=$(az containerapp show --name "$VM_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+PG_NAME="${ENV_NAME}-postgres"
+PG_JSON=$(az postgres flexible-server show --name "$PG_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
 
-if [[ -z "$VM_JSON" ]]; then
-  fail "VictoriaMetrics Container App '$VM_NAME' not found"
+if [[ -z "$PG_JSON" ]]; then
+  fail "Managed PostgreSQL server '$PG_NAME' not found"
 else
-  pass "Container App '$VM_NAME' exists"
+  pass "Managed PostgreSQL server '$PG_NAME' exists"
 
-  # Check running status
-  VM_STATUS=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
-  if [[ "$VM_STATUS" == "Succeeded" ]]; then
-    pass "Provisioning state: Succeeded"
+  PG_STATE=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',''))")
+  if [[ "$PG_STATE" == "Ready" ]]; then
+    pass "Server state: Ready"
   else
-    fail "Provisioning state: $VM_STATUS (expected Succeeded)"
+    fail "Server state: $PG_STATE (expected Ready)"
   fi
 
-  # Check ingress is internal (zero-trust: VM not internet-facing)
-  VM_INGRESS_EXT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
-  if [[ "$VM_INGRESS_EXT" == "False" ]]; then
-    pass "Ingress: internal only (zero-trust)"
+  PG_VERSION=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))")
+  if [[ "$PG_VERSION" == "17" ]]; then
+    pass "Server version: 17"
   else
-    fail "Ingress: external=$VM_INGRESS_EXT (expected False — VM should not be internet-facing)"
+    fail "Server version: $PG_VERSION (expected 17)"
   fi
 
-  # Check target port is 8428 (VictoriaMetrics direct, no vmauth)
-  VM_PORT=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$VM_PORT" == "8428" ]]; then
-    pass "Ingress target port: 8428 (VictoriaMetrics)"
+  PG_SKU=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); sku=d.get('sku',{}); print(sku.get('name','') or d.get('skuName',''))")
+  if [[ "$PG_SKU" == "Standard_B1ms" || "$PG_SKU" == "B_Standard_B1ms" ]]; then
+    pass "SKU: $PG_SKU"
   else
-    fail "Ingress target port: $VM_PORT (expected 8428)"
+    fail "SKU: $PG_SKU (expected Standard_B1ms/B_Standard_B1ms)"
   fi
 
-  # Internal apps still get an FQDN (used for inter-app communication)
-  VM_FQDN=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress'].get('fqdn',''))")
-  if [[ -n "$VM_FQDN" ]]; then
-    pass "Internal FQDN assigned: $VM_FQDN"
+  PG_PUBLIC=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('publicNetworkAccess',''))")
+  if [[ "${PG_PUBLIC,,}" == "disabled" ]]; then
+    pass "Public network access disabled"
   else
-    fail "No internal FQDN assigned"
+    fail "Public network access: $PG_PUBLIC (expected Disabled)"
   fi
 
-  # Check revision mode is Single
-  VM_REV_MODE=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration'].get('activeRevisionsMode',''))")
-  if [[ "$VM_REV_MODE" == "Single" ]]; then
-    pass "Revision mode: Single"
+  PG_SUBNET=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('delegatedSubnetResourceId',''))")
+  if [[ "$PG_SUBNET" == *"/subnets/postgres" ]]; then
+    pass "Delegated subnet configured"
   else
-    fail "Revision mode: $VM_REV_MODE (expected Single)"
+    fail "Delegated subnet missing or unexpected: $PG_SUBNET"
   fi
 
-  # Check containers: expect victoria-metrics only (vmauth removed)
-  CONTAINER_NAMES=$(echo "$VM_JSON" | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-containers = d['properties']['template']['containers']
-print(' '.join(c['name'] for c in containers))
-")
-  if echo "$CONTAINER_NAMES" | grep -q "victoria-metrics"; then
-    pass "Container 'victoria-metrics' present"
+  PG_DNS=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network',{}).get('privateDnsZoneArmResourceId',''))")
+  if [[ "$PG_DNS" == *".postgres.database.azure.com"* ]]; then
+    pass "Private DNS zone configured"
   else
-    fail "Container 'victoria-metrics' missing (found: $CONTAINER_NAMES)"
-  fi
-  if echo "$CONTAINER_NAMES" | grep -q "vmauth"; then
-    fail "Container 'vmauth' still present (should be removed)"
-  else
-    pass "vmauth removed (zero-trust simplification)"
+    fail "Private DNS zone missing or unexpected: $PG_DNS"
   fi
 
-  # Check min/max replicas = 1
-  VM_MIN=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['minReplicas'])")
-  VM_MAX=$(echo "$VM_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['template']['scale']['maxReplicas'])")
-  if [[ "$VM_MIN" == "1" && "$VM_MAX" == "1" ]]; then
-    pass "Replicas: min=1, max=1"
+  PG_FQDN=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('fullyQualifiedDomainName',''))")
+  if [[ -n "$PG_FQDN" ]]; then
+    pass "Private FQDN assigned: $PG_FQDN"
   else
-    fail "Replicas: min=$VM_MIN, max=$VM_MAX (expected 1/1)"
+    fail "No PostgreSQL FQDN assigned"
   fi
-
-  # VM is internal-only — no external smoke test needed (zero-trust)
-  pass "VM not internet-accessible — no external smoke test"
 fi
 
 # ==============================================================================
@@ -240,7 +219,7 @@ d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
 print(' '.join(e['name'] for e in envs))
 ")
-  for expected_env in AzureAd__Instance AzureAd__TenantId AzureAd__ClientId AzureAd__Audience VictoriaMetrics__Url; do
+  for expected_env in AzureAd__Instance AzureAd__TenantId AzureAd__ClientId AzureAd__Audience ConnectionStrings__DefaultConnection; do
     if echo "$API_ENVS" | grep -q "$expected_env"; then
       pass "Env var '$expected_env' configured"
     else
@@ -248,18 +227,18 @@ print(' '.join(e['name'] for e in envs))
     fi
   done
 
-  # Check VictoriaMetrics URL points to internal VM container
-  VM_URL=$(echo "$API_JSON" | python3 -c "
+  # Check API connection string is sourced from the expected secret
+  CONNECTION_STRING_SECRET=$(echo "$API_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
-vm = next((e for e in envs if e['name'] == 'VictoriaMetrics__Url'), None)
-print(vm['value'] if vm else '')
+conn = next((e for e in envs if e['name'] == 'ConnectionStrings__DefaultConnection'), None)
+print(conn.get('secretRef','') if conn else '')
 ")
-  if echo "$VM_URL" | grep -q "${ENV_NAME}-vm"; then
-    pass "VictoriaMetrics URL points to internal VM app"
+  if [[ "$CONNECTION_STRING_SECRET" == "api-connection-string" ]]; then
+    pass "API connection string secret configured"
   else
-    fail "VictoriaMetrics URL: $VM_URL (expected to contain '${ENV_NAME}-vm')"
+    fail "API connection string secret ref: $CONNECTION_STRING_SECRET (expected api-connection-string)"
   fi
 
   # Smoke test: health endpoint (unauthenticated)
@@ -274,13 +253,13 @@ print(vm['value'] if vm else '')
     fi
 
     # Authenticated endpoints should reject without token
-    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/query?query=up" 2>/dev/null) || true
+    API_NOAUTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/api/v1/devices" 2>/dev/null) || true
     if [[ "$API_NOAUTH" == "401" ]]; then
-      pass "Query endpoint rejects unauthenticated requests (401)"
+      pass "Protected endpoint rejects unauthenticated requests (401)"
     elif [[ "$API_NOAUTH" == "000" || -z "$API_NOAUTH" ]]; then
       skip "Could not reach API (timeout)"
     else
-      fail "Query endpoint returned HTTP $API_NOAUTH without token (expected 401)"
+      fail "Protected endpoint returned HTTP $API_NOAUTH without token (expected 401)"
     fi
 
     # Prometheus metrics endpoint (unauthenticated)
@@ -315,7 +294,7 @@ else
     fail "Provisioning state: $EXP_STATUS (expected Succeeded)"
   fi
 
-  # Check external ingress on port 9200
+  # Check external ingress on port 9250
   EXP_EXT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
   EXP_PORT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
   if [[ "$EXP_EXT" == "True" ]]; then
@@ -323,10 +302,10 @@ else
   else
     fail "Ingress: external=$EXP_EXT (expected True)"
   fi
-  if [[ "$EXP_PORT" == "9200" ]]; then
-    pass "Ingress target port: 9200"
+  if [[ "$EXP_PORT" == "9250" ]]; then
+    pass "Ingress target port: 9250"
   else
-    fail "Ingress target port: $EXP_PORT (expected 9200)"
+    fail "Ingress target port: $EXP_PORT (expected 9250)"
   fi
 
   # Check FQDN
@@ -353,7 +332,7 @@ d=json.load(sys.stdin)
 envs = d['properties']['template']['containers'][0].get('env',[])
 print(' '.join(e['name'] for e in envs))
 ")
-  for expected_env in EPCUBE_PORT EPCUBE_INTERVAL AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_AUDIENCE; do
+  for expected_env in EPCUBE_PORT EPCUBE_INTERVAL POSTGRES_DSN AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_AUDIENCE; do
     if echo "$EXP_ENVS" | grep -q "$expected_env"; then
       pass "Env var '$expected_env' configured"
     else
@@ -506,38 +485,29 @@ print(' '.join(s['name'] for s in secrets))
 fi
 
 # ==============================================================================
-# 7. Storage Account & File Share
+# 7. Managed PostgreSQL Database
 # ==============================================================================
-header "Storage Account"
+header "Managed PostgreSQL Database"
 
-SA_NAME=$(echo "${ENV_NAME}sa" | tr -d '-')
-SA_JSON=$(az storage account show --name "$SA_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+PG_DB_JSON=$(az postgres flexible-server db show --resource-group "$RG_NAME" --server-name "$PG_NAME" --database-name "epcubegraph" -o json 2>/dev/null || echo "")
 
-if [[ -z "$SA_JSON" ]]; then
-  fail "Storage Account '$SA_NAME' not found"
+if [[ -z "$PG_DB_JSON" ]]; then
+  fail "Managed PostgreSQL database 'epcubegraph' not found"
 else
-  pass "Storage Account '$SA_NAME' exists"
+  pass "Managed PostgreSQL database 'epcubegraph' exists"
 
-  SA_REPL=$(echo "$SA_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sku',{}).get('name',''))")
-  if [[ "$SA_REPL" == "Standard_LRS" ]]; then
-    pass "Replication: Standard_LRS"
+  PG_DB_CHARSET=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('charset',''))")
+  if [[ "$PG_DB_CHARSET" == "UTF8" ]]; then
+    pass "Database charset: UTF8"
   else
-    fail "Replication: $SA_REPL (expected Standard_LRS)"
+    fail "Database charset: $PG_DB_CHARSET (expected UTF8)"
   fi
 
-  # Check file share exists (use ARM API which uses Azure AD auth natively)
-  SHARE_JSON=$(az storage share-rm show --storage-account "$SA_NAME" --resource-group "$RG_NAME" --name "victoria-metrics-data" -o json 2>/dev/null || echo "")
-  if [[ -n "$SHARE_JSON" && "$SHARE_JSON" != "" ]]; then
-    pass "File share 'victoria-metrics-data' exists"
-
-    SHARE_QUOTA=$(echo "$SHARE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('shareQuota',''))")
-    if [[ "$SHARE_QUOTA" == "50" ]]; then
-      pass "File share quota: 50 GB"
-    else
-      fail "File share quota: ${SHARE_QUOTA} GB (expected 50)"
-    fi
+  PG_DB_COLLATION=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('collation',''))")
+  if [[ "$PG_DB_COLLATION" == "en_US.utf8" ]]; then
+    pass "Database collation: en_US.utf8"
   else
-    fail "File share 'victoria-metrics-data' not found"
+    fail "Database collation: $PG_DB_COLLATION (expected en_US.utf8)"
   fi
 fi
 

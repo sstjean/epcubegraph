@@ -2,20 +2,22 @@
 EP Cube Cloud Exporter — Bridges EP Cube cloud API to Prometheus metrics.
 
 Polls the EP Cube monitoring API (monitoring-us.epcube.com) and exposes 
-Prometheus-compatible metrics on :9200/metrics for VictoriaMetrics to scrape.
+Prometheus-compatible metrics on :9250/metrics for VictoriaMetrics to scrape.
 
 Produces the same epcube_* metric names as the mock exporter so the API
 and dashboard work without changes.
 
 Authentication: Automatically solves the AJ-Captcha block puzzle and logs in.
-Re-authenticates when the token expires (HTTP 401).
+Proactively refreshes the JWT before expiry (5-minute margin).  Also detects
+the cloud API's silent session expiry (returns 200 with all-zero data instead
+of 401) and forces re-authentication.
 
 Required env vars:
   EPCUBE_USERNAME  — EP Cube cloud account email
   EPCUBE_PASSWORD  — EP Cube cloud account password
 
 Optional env vars:
-  EPCUBE_PORT      — HTTP port for metrics (default: 9200)
+  EPCUBE_PORT      — HTTP port for metrics (default: 9250)
   EPCUBE_INTERVAL  — Poll interval in seconds (default: 60)
 """
 import base64
@@ -47,11 +49,12 @@ from Crypto.Util.Padding import pad
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-__version__ = "1.1.0"
+__version__ = "2.0.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
-METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9200"))
+METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 
 # Entra ID auth config (only used when auth is enabled)
 AZURE_TENANT_ID = os.environ.get("AZURE_TENANT_ID", "")
@@ -72,6 +75,115 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# ---------------------------------------------------------------------------
+# PostgreSQL writer (optional — enabled via POSTGRES_DSN)
+# ---------------------------------------------------------------------------
+
+from typing import Any
+
+psycopg2: Any = None
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    pass
+
+
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS devices (
+    id SERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL UNIQUE,
+    device_class TEXT NOT NULL,
+    alias TEXT,
+    manufacturer TEXT,
+    product_code TEXT,
+    uid TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS readings (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    UNIQUE (device_id, metric_name, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
+    ON readings (device_id, metric_name, timestamp DESC);
+"""
+
+
+class PostgresWriter:
+    """Writes telemetry readings and device info to PostgreSQL."""
+
+    def __init__(self, dsn):
+        self._dsn = dsn
+        self._conn = None
+        self._ensure_schema()
+
+    def _get_conn(self):
+        """Get or re-establish the database connection."""
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(self._dsn)
+            self._conn.autocommit = False
+        return self._conn
+
+    def _ensure_schema(self):
+        """Create tables and indexes if they don't exist."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_SCHEMA_SQL)
+        conn.commit()
+        log.info("PostgreSQL schema verified")
+
+    def upsert_device(self, device_id, device_class, alias=None,
+                      manufacturer=None, product_code=None, uid=None):
+        """Insert or update a device record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO devices (device_id, device_class, alias, manufacturer, product_code, uid)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (device_id) DO UPDATE SET
+                       device_class = EXCLUDED.device_class,
+                       alias = EXCLUDED.alias,
+                       manufacturer = EXCLUDED.manufacturer,
+                       product_code = EXCLUDED.product_code,
+                       uid = EXCLUDED.uid,
+                       updated_at = NOW()""",
+                (device_id, device_class, alias, manufacturer, product_code, uid),
+            )
+        conn.commit()
+
+    def write_readings(self, readings):
+        """Batch-insert readings. Each reading is (device_id, metric_name, timestamp, value).
+
+        Uses ON CONFLICT to deduplicate (same device + metric + timestamp).
+        """
+        if not readings:
+            return
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO readings (device_id, metric_name, timestamp, value)
+                   VALUES %s
+                   ON CONFLICT (device_id, metric_name, timestamp) DO UPDATE SET
+                       value = EXCLUDED.value""",
+                readings,
+                template="(%s, %s, %s, %s)",
+            )
+        conn.commit()
+
+    def close(self):
+        """Close the database connection."""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
 
 # ---------------------------------------------------------------------------
 # Cloud API helpers
@@ -98,6 +210,23 @@ def _api_request(method, path, data=None, token=None):
 
 class AuthExpiredError(Exception):
     pass
+
+
+def _jwt_exp(token):
+    """Decode JWT expiry (exp claim) without external libraries."""
+    try:
+        payload = token.split(".")[1]
+        # Add padding for base64
+        payload += "=" * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims.get("exp", 0)
+    except Exception:
+        return 0
+
+
+def _nz(v):
+    """Normalize negative zero to positive zero."""
+    return 0.0 if v == 0 else v
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +307,10 @@ def _solve_captcha(max_attempts=5):
         point_json = json.dumps({"x": x_pos, "y": 5}, separators=(",", ":"))
         encrypted_point = _aes_encrypt(point_json, secret_key)
 
+        # Human-like delay before submitting the solved puzzle
+        delay = 1.9 + (secrets.randbelow(1500) - 500) / 1000  # 1.4–2.9s
+        time.sleep(delay)
+
         result = _api_request("POST", "/common/captcha/check", {
             "captchaType": "blockPuzzle",
             "pointJson": encrypted_point,
@@ -224,10 +357,11 @@ class EpCubeCollector:
     # Keep last 10 minutes of snapshots (at 60s interval = ~10 entries)
     HISTORY_MAX = 10
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, pg_writer=None):
         self._username = username
         self._password = password
         self._token = None
+        self._token_exp = 0  # JWT expiry timestamp
         self._devices = []
         self._lock = threading.Lock()
         self._metrics_text = ""
@@ -238,16 +372,45 @@ class EpCubeCollector:
         self._consecutive_errors = 0
         self._bat_peak = {}  # device_id → {date: str, peak: float}
         self._start_time = time.time()
+        self._pg = pg_writer
 
     def _ensure_auth(self):
-        if not self._token:
+        if not self._token or self._token_expiring_soon():
+            if self._token:
+                log.info("Token expiring within 5 min, proactively re-authenticating...")
             self._token = authenticate(self._username, self._password)
+            self._token_exp = _jwt_exp(self._token)
+            if self._token_exp:
+                remaining = self._token_exp - time.time()
+                log.info("Token expires in %.0f min", remaining / 60)
             self._discover_devices()
+
+    def _token_expiring_soon(self):
+        """Return True if token expires within 5 minutes."""
+        if not self._token_exp:
+            return False
+        return time.time() > (self._token_exp - 300)
 
     def _reauth(self):
         log.info("Re-authenticating...")
         self._token = authenticate(self._username, self._password)
+        self._token_exp = _jwt_exp(self._token)
         self._discover_devices()
+
+    @staticmethod
+    def _data_looks_stale(data):
+        """Detect EP Cube cloud's silent session expiry.
+
+        When the JWT expires, the cloud API returns HTTP 200 with all operational
+        fields set to zero (or "0.00") instead of returning 401. This method
+        checks the key fields that should virtually never ALL be zero on a live
+        system: solarPower, gridPower, backUpPower, batterySoc, and
+        batteryCurrentElectricity.
+        """
+        if not data:
+            return True
+        _FIELDS = ("solarPower", "gridPower", "backUpPower", "batterySoc", "batteryCurrentElectricity")
+        return all(float(data.get(f, 0)) == 0 for f in _FIELDS)
 
     def _api(self, path):
         try:
@@ -269,6 +432,8 @@ class EpCubeCollector:
         self._ensure_auth()
 
         lines = []
+        pg_readings = []  # (device_id, metric_name, timestamp, value)
+        pg_devices = []   # (device_id, class, alias, manufacturer, product_code, uid)
         now_utc = datetime.now(timezone.utc)
         snapshot = {
             "time": now_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -289,6 +454,17 @@ class EpCubeCollector:
             try:
                 info = self._api(f"/home/homeDeviceInfo?sgSn={sg_sn}")
                 data = info.get("data", {})
+
+                # Stale-session detection: EP Cube cloud returns 200 with all-zero
+                # data when the JWT has silently expired, instead of a 401.
+                # If every operational field is zero, force re-auth and retry once.
+                if self._data_looks_stale(data):
+                    log.warning("Stale data detected for %s — all operational fields zero, forcing re-auth", dev_name)
+                    self._reauth()
+                    info = self._api(f"/home/homeDeviceInfo?sgSn={sg_sn}")
+                    data = info.get("data", {})
+                    if self._data_looks_stale(data):
+                        log.warning("Still zero after re-auth for %s — device may genuinely be idle", dev_name)
             except Exception as e:
                 log.error("Failed to fetch data for %s: %s", dev_name, e)
                 self._poll_errors += 1
@@ -310,46 +486,54 @@ class EpCubeCollector:
             sl = ",".join(f'{k}="{v}"' for k, v in sol_labels.items())
 
             # ── Solar metrics ──
-            solar_kw = float(data.get("solarPower", 0))
-            solar_w = round(solar_kw * 1000, 1)
+            solar_kw = _nz(float(data.get("solarPower", 0)))
+            solar_w = _nz(round(solar_kw * 1000, 1))
 
             lines.append("# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
             lines.append("# TYPE epcube_solar_instantaneous_generation_watts gauge")
             lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
 
             # ── Battery metrics ──
-            soc = float(data.get("batterySoc", 0))
+            soc = _nz(float(data.get("batterySoc", 0)))
 
             lines.append("# HELP epcube_battery_state_of_capacity_percent Battery SoC")
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
             lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
 
-            battery_kw = float(data.get("batteryPower", 0))
-            battery_w = round(battery_kw * 1000, 1)
-            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
-            lines.append("# TYPE epcube_battery_power_watts gauge")
-            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
-
-            # ── Grid metrics ── (API uses opposite sign: negate so positive=import)
-            grid_kw = -float(data.get("gridPower", 0))
-            grid_w = round(grid_kw * 1000, 1)
+            # ── Grid metrics ── (API already uses positive=import, negative=export)
+            grid_kw = _nz(float(data.get("gridPower", 0)))
+            grid_w = _nz(round(grid_kw * 1000, 1))
             lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
             lines.append("# TYPE epcube_grid_power_watts gauge")
             lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_w}")
 
             # ── Backup/home load metrics ──
-            backup_kw = float(data.get("backUpPower", 0))
-            backup_w = round(backup_kw * 1000, 1)
+            backup_kw = _nz(float(data.get("backUpPower", 0)))
+            backup_w = _nz(round(backup_kw * 1000, 1))
 
             lines.append("# HELP epcube_home_load_power_watts Home load power consumption")
             lines.append("# TYPE epcube_home_load_power_watts gauge")
             lines.append(f"epcube_home_load_power_watts{{{bl}}} {backup_w}")
 
+            # ── Battery power (derived from energy balance — API batteryPower is unreliable) ──
+            # positive = charging, negative = discharging
+            battery_kw = _nz(round(solar_kw + grid_kw - backup_kw, 2))
+            battery_w = _nz(round(battery_kw * 1000, 1))
+            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
+            lines.append("# TYPE epcube_battery_power_watts gauge")
+            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
+
             # ── Self-sufficiency rate ──
-            self_help = float(data.get("selfHelpRate", 0))
+            self_help = _nz(float(data.get("selfHelpRate", 0)))
             lines.append("# HELP epcube_self_sufficiency_rate Self-sufficiency percentage")
             lines.append("# TYPE epcube_self_sufficiency_rate gauge")
             lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_help}")
+
+            # ── Battery stored energy ──
+            bat_stored_kwh = _nz(float(data.get("batteryCurrentElectricity", 0)))
+            lines.append("# HELP epcube_battery_stored_kwh Current battery energy level")
+            lines.append("# TYPE epcube_battery_stored_kwh gauge")
+            lines.append(f"epcube_battery_stored_kwh{{{bl}}} {bat_stored_kwh}")
 
             # ── Capture snapshot for debug UI ──
             _STATUS_MAP = {
@@ -358,7 +542,6 @@ class EpCubeCollector:
             }
             raw_status = data.get("systemStatus", "?")
             system_status = f"{_STATUS_MAP.get(raw_status, raw_status)} ({raw_status})"
-            bat_stored_kwh = float(data.get("batteryCurrentElectricity", 0))
             # Track peak battery stored for the day (resets at midnight)
             today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
             peak_entry = self._bat_peak.get(dev_id)
@@ -367,16 +550,16 @@ class EpCubeCollector:
             else:
                 self._bat_peak[dev_id] = {"date": today_str, "peak": bat_stored_kwh}
             bat_peak_kwh = self._bat_peak[dev_id]["peak"]
+            lines.append("# HELP epcube_battery_peak_stored_kwh Peak battery energy level today")
+            lines.append("# TYPE epcube_battery_peak_stored_kwh gauge")
+            lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
             ress_count = data.get("ressNumber", "?")
-            # Derive battery kW from energy balance (API batteryPower is unreliable)
-            # positive = charging, negative = discharging
-            battery_kw_derived = round(solar_kw + grid_kw - backup_kw, 2)
             snapshot["devices"].append({
                 "name": dev_name,
                 "id": dev_id,
                 "solar_kw": solar_kw,
                 "battery_soc": soc,
-                "battery_kw": battery_kw_derived,
+                "battery_kw": battery_kw,
                 "grid_kw": grid_kw,
                 "backup_kw": backup_kw,
                 "self_sufficiency": self_help,
@@ -399,15 +582,38 @@ class EpCubeCollector:
                 lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
 
             # ── Device info ──
+            status_label = _STATUS_MAP.get(raw_status, str(raw_status))
             for dl in [bat_labels, sol_labels]:
                 info_labels = {
                     **dl,
                     "manufacturer": "Canadian Solar",
                     "product_code": f"EP Cube (devType={dev_type})",
                     "uid": sg_sn,
+                    "system_status": status_label,
+                    "ress_count": str(ress_count),
                 }
                 il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
                 lines.append(f"epcube_device_info{{{il}}} 1")
+
+            # ── Accumulate Postgres readings ──
+            if self._pg:
+                bat_device_id = bat_labels["device"]
+                sol_device_id = sol_labels["device"]
+                pg_devices.append((bat_device_id, "storage_battery", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+                pg_devices.append((sol_device_id, "home_solar", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+                ts = now_utc
+                pg_readings.extend([
+                    (sol_device_id, "solar_instantaneous_generation_watts", ts, solar_w),
+                    (bat_device_id, "battery_state_of_capacity_percent", ts, soc),
+                    (bat_device_id, "grid_power_watts", ts, grid_w),
+                    (bat_device_id, "home_load_power_watts", ts, backup_w),
+                    (bat_device_id, "battery_power_watts", ts, battery_w),
+                    (bat_device_id, "self_sufficiency_rate", ts, self_help),
+                    (bat_device_id, "battery_stored_kwh", ts, bat_stored_kwh),
+                    (bat_device_id, "battery_peak_stored_kwh", ts, bat_peak_kwh),
+                ])
 
         # Also try to get daily energy totals
         # Build a lookup from device id to snapshot entry for merging
@@ -421,13 +627,13 @@ class EpCubeCollector:
                 edata = elec.get("data", {})
                 bl = f'device="epcube{dev["id"]}_battery",ip="cloud",class="storage_battery"'
 
-                solar_kwh = float(edata.get("solarElectricity", 0))
+                solar_kwh = _nz(float(edata.get("solarElectricity", 0)))
                 lines.append("# HELP epcube_solar_cumulative_generation_kwh Total energy generated today")
                 lines.append("# TYPE epcube_solar_cumulative_generation_kwh gauge")
                 lines.append(f"epcube_solar_cumulative_generation_kwh{{{bl}}} {solar_kwh}")
 
-                grid_from = float(edata.get("gridElectricityFrom", 0))
-                grid_to = float(edata.get("gridElectricityTo", 0))
+                grid_from = _nz(float(edata.get("gridElectricityFrom", 0)))
+                grid_to = _nz(float(edata.get("gridElectricityTo", 0)))
                 lines.append("# HELP epcube_grid_import_kwh Grid energy imported today")
                 lines.append("# TYPE epcube_grid_import_kwh gauge")
                 lines.append(f"epcube_grid_import_kwh{{{bl}}} {grid_from}")
@@ -435,7 +641,10 @@ class EpCubeCollector:
                 lines.append("# TYPE epcube_grid_export_kwh gauge")
                 lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_to}")
 
-                backup_kwh = float(edata.get("backUpElectricity", 0))
+                backup_kwh = _nz(float(edata.get("backUpElectricity", 0)))
+                lines.append("# HELP epcube_home_supply_cumulative_kwh Daily cumulative home supply")
+                lines.append("# TYPE epcube_home_supply_cumulative_kwh gauge")
+                lines.append(f"epcube_home_supply_cumulative_kwh{{{bl}}} {backup_kwh}")
 
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])
@@ -444,6 +653,17 @@ class EpCubeCollector:
                     snap_dev["grid_import_kwh"] = grid_from
                     snap_dev["grid_export_kwh"] = grid_to
                     snap_dev["backup_kwh"] = backup_kwh
+
+                # Accumulate daily totals for Postgres
+                if self._pg:
+                    bat_dev_id = f"epcube{dev['id']}_battery"
+                    sol_dev_id = f"epcube{dev['id']}_solar"
+                    pg_readings.extend([
+                        (sol_dev_id, "solar_cumulative_generation_kwh", now_utc, solar_kwh),
+                        (bat_dev_id, "grid_import_kwh", now_utc, grid_from),
+                        (bat_dev_id, "grid_export_kwh", now_utc, grid_to),
+                        (bat_dev_id, "home_supply_cumulative_kwh", now_utc, backup_kwh),
+                    ])
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -461,6 +681,16 @@ class EpCubeCollector:
                 self._history.append(snapshot)
 
         log.info("Poll complete: %d metric lines for %d device(s)", len(lines), len(self._devices))
+
+        # ── Write to PostgreSQL (if configured) ──
+        if self._pg and (pg_devices or pg_readings):
+            try:
+                for d in pg_devices:
+                    self._pg.upsert_device(*d)
+                self._pg.write_readings(pg_readings)
+                log.info("Postgres: wrote %d readings for %d devices", len(pg_readings), len(pg_devices) // 2)
+            except Exception as e:
+                log.error("Postgres write failed: %s", e)
 
     def get_health(self):
         """Return health status. Unhealthy if no poll in 5 min or 5+ consecutive errors."""
@@ -533,18 +763,27 @@ def _render_status_page(status, health):
                 for dev in snap["devices"]:
                     if dev["id"] != dev_id:
                         continue
-                    supply = dev["solar_kw"] + abs(dev.get("battery_kw", 0)) + abs(dev.get("grid_kw", 0))
-                    load = dev["backup_kw"]
-                    imbalance = abs(supply - load)
-                    row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.1 else ''
-                    warn_td = f' title="Supply {supply:.2f} kW ≠ Load {load:.2f} kW"' if load > 0 and imbalance > 0.1 else ''
+                    battery_kw = _nz(float(dev.get("battery_kw", 0)))
+                    grid_kw = _nz(float(dev.get("grid_kw", 0)))
+                    solar_kw = _nz(float(dev["solar_kw"]))
+                    load = _nz(float(dev["backup_kw"]))
+                    expected_battery = solar_kw + grid_kw - load
+                    imbalance = abs(expected_battery - battery_kw)
+                    row_cls = ' class="imbalance"' if load > 0 and imbalance > 0.5 else ''
+                    warn_td = f' title="Expected battery {expected_battery:+.2f} kW ≠ Actual {battery_kw:+.2f} kW"' if load > 0 and imbalance > 0.5 else ''
+                    fmt_bat = f"{battery_kw:+.2f}" if battery_kw != 0 else "0.00"
+                    fmt_grid = f"{grid_kw:+.2f}" if grid_kw != 0 else "0.00"
+                    # Battery: green=charging(+), red=discharging(-)
+                    bat_cls = ' class="val-pos"' if battery_kw > 0 else (' class="val-neg"' if battery_kw < 0 else '')
+                    # Grid: green=export(-), red=import(+)
+                    grid_cls = ' class="val-neg"' if grid_kw > 0 else (' class="val-pos"' if grid_kw < 0 else '')
                     rows.append(
                         f'<tr{row_cls}>'
                         f'<td class="utctime" data-utc="{snap["time"]}">{snap["time"]}</td>'
-                        f'<td style="text-align:right">{dev["solar_kw"]:.2f}</td>'
-                        f'<td style="text-align:right">{dev.get("battery_kw", 0):+.2f}</td>'
-                        f'<td style="text-align:right">{dev.get("grid_kw", 0):+.2f}</td>'
-                        f'<td style="text-align:right"{warn_td}>{dev["backup_kw"]:.2f}{" ⚠" if row_cls else ""}</td>'
+                        f'<td style="text-align:right">{solar_kw:.2f}</td>'
+                        f'<td style="text-align:right"{bat_cls}>{fmt_bat}</td>'
+                        f'<td style="text-align:right"{grid_cls}>{fmt_grid}</td>'
+                        f'<td style="text-align:right"{warn_td}>{load:.2f}{" ⚠" if row_cls else ""}</td>'
                         f'<td style="text-align:right">{dev["battery_soc"]:.0f}%</td>'
                         f'<td style="text-align:right">{dev.get("self_sufficiency", 0):.0f}%</td>'
                         f'<td class="section-divider" style="text-align:right">{dev.get("solar_kwh", 0):.1f}</td>'
@@ -593,7 +832,6 @@ def _render_status_page(status, health):
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="30">
 <title>epcube-exporter status</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }}
@@ -613,6 +851,8 @@ def _render_status_page(status, health):
   tr.imbalance {{ background: #3a2000; }}
   tr.imbalance:hover {{ background: #4a2800; }}
   tr:hover {{ background: #16213e; }}
+  .val-pos {{ color: #00d4aa; }}
+  .val-neg {{ color: #e74c3c; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
 </style>
 </head><body>
@@ -629,10 +869,27 @@ def _render_status_page(status, health):
 </div>
 {tables_html}
 <script>
-document.querySelectorAll('.utctime').forEach(el => {{
-  const d = new Date(el.dataset.utc);
-  el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', hour12: true}});
-}});
+function convertTimes() {{
+  document.querySelectorAll('.utctime').forEach(el => {{
+    const d = new Date(el.dataset.utc);
+    el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', hour12: true}});
+  }});
+}}
+convertTimes();
+
+// Background auto-refresh: fetches new HTML and swaps body content in-place.
+// No full page reload = no focus stealing.
+setInterval(async () => {{
+  try {{
+    const resp = await fetch(location.href);
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.body.innerHTML = doc.body.innerHTML;
+    convertTimes();
+  }} catch (e) {{}}
+}}, 30000);
 </script>
 <div class="footer">Auto-refreshes every 30s &middot; Last 10 polls (~10 min) &middot;
   <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
@@ -949,7 +1206,16 @@ def main():
         log.error("EPCUBE_USERNAME and EPCUBE_PASSWORD environment variables required")
         sys.exit(1)
 
-    collector = EpCubeCollector(username, password)
+    # Initialize Postgres writer if configured
+    pg_writer = None
+    if POSTGRES_DSN:
+        if psycopg2 is None:
+            log.error("POSTGRES_DSN is set but psycopg2 is not installed")
+            sys.exit(1)
+        pg_writer = PostgresWriter(POSTGRES_DSN)
+        log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
+
+    collector = EpCubeCollector(username, password, pg_writer=pg_writer)
 
     # Initial poll (blocks until first data is available)
     collector.poll()

@@ -51,3 +51,6 @@ docker-compose.override.yml
 *.tmp
 *.log
 *.pyc
+.vite/
+preferences-review.md
+PHILLIP-RULES.md
