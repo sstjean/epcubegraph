@@ -76,7 +76,7 @@ Placed in the `dashboard/` root (alongside `index.html`). Controls SWA routing b
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://login.microsoftonline.com https://*.azurecontainerapps.io https://*.applicationinsights.azure.com https://*.monitor.azure.com; img-src 'self' data:; font-src 'self'"
+    "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://login.microsoftonline.com https://*.login.microsoftonline.com https://*.azurecontainerapps.io; img-src 'self' data:; font-src 'self'; frame-src https://login.microsoftonline.com https://*.login.microsoftonline.com"
   }
 }
 ```

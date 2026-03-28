@@ -105,7 +105,7 @@ interface RangeReadingsResponse {
 
 **Source**: `GET /api/v1/grid?start=<ts>&end=<ts>&step=<s>` → derived grid metric
 
-Same response format as `RangeReadingsResponse`. Sign convention: positive = net import from grid (kWh), negative = net export to grid (kWh).
+Same response format as `RangeReadingsResponse`. Sign convention: positive = net import from grid (watts), negative = net export to grid (watts).
 
 **Dashboard usage**: Both current readings (latest grid value via `fetchGridPower()` with no params) and historical graphs (grid power over time with start/end/step).
 
@@ -149,11 +149,11 @@ The dashboard integrates `@microsoft/applicationinsights-web` for client-side er
 User opens dashboard
   → MSAL.js: acquireTokenSilent() or loginRedirect()
   → GET /api/v1/devices (with bearer token)
-  → For each device: GET /api/v1/query?query=<latest-metric>
+  → For each device: GET /api/v1/readings/current?metric=<metric>
   → Render current readings view
 
 User selects time range (e.g., "Last 7 days")
-  → GET /api/v1/query_range?query=<metric>&start=<7d-ago>&end=<now>&step=1h
+  → GET /api/v1/readings/range?metric=<metric>&start=<7d-ago>&end=<now>&step=3600
   → GET /api/v1/grid?start=<7d-ago>&end=<now>&step=1h
   → Convert to uPlot data format (null for gaps → broken lines)
   → Render historical graph

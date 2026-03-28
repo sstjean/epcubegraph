@@ -13,7 +13,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 ## Purpose
 
-Per constitution v1.16.0 (GitHub Issue Discipline — Task Tracking): tasks do NOT get individual GitHub issues. Instead, tasks are reflected as checklist items in their parent User Story issue body. This agent syncs tasks.md into the appropriate User Story and Feature issue bodies.
+Per constitution v1.18.0 (GitHub Issue Discipline — Task Tracking): tasks do NOT get individual GitHub issues. Instead, tasks are reflected as checklist items in their parent User Story issue body. This agent syncs tasks.md into the appropriate User Story and Feature issue bodies.
 
 ## Outline
 
