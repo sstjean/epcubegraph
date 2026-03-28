@@ -150,21 +150,37 @@ jobs:
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
-      - name: Wait for firewall propagation
+
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
           for attempt in $(seq 1 45); do
-            if az storage container list \
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/45 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 45 attempts (11 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -601,21 +617,36 @@ jobs:
             echo "Key Vault does not exist yet — skipping (first deploy)"
           fi
 
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
           for attempt in $(seq 1 45); do
-            if az storage container list \
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/45 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 45 attempts (11 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -1061,22 +1092,37 @@ jobs:
             echo "Key Vault does not exist — skipping"
           fi
 
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
           for attempt in $(seq 1 45); do
-            if az storage container list \
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/45 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 45 attempts (11 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
@@ -1269,21 +1315,36 @@ jobs:
             echo "Key Vault does not exist yet — skipping"
           fi
 
-      - name: Wait for firewall propagation
+      # Write-based check — reads propagate before writes in Azure Storage
+      # IP rules, so a read-only check (container list) can pass while
+      # Terraform's blob lease (write) still gets 403.  Uploading a probe
+      # blob confirms the runner has actual write access. (Fixes #68)
+      - name: Wait for firewall propagation (write check)
         run: |
-          echo "Waiting for tfstate storage firewall propagation..."
+          echo "Waiting for tfstate storage write access..."
+          PROBE="__firewall-probe-$$"
           for attempt in $(seq 1 45); do
-            if az storage container list \
+            if echo "probe" | az storage blob upload \
               --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+              --container-name tfstate \
+              --name "$PROBE" \
               --auth-mode login \
+              --overwrite \
+              --file /dev/stdin \
               --output none 2>/dev/null; then
-              echo "✓ tfstate storage accessible (attempt $attempt)"
+              az storage blob delete \
+                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+                --container-name tfstate \
+                --name "$PROBE" \
+                --auth-mode login \
+                --output none 2>/dev/null || true
+              echo "✓ tfstate storage write-accessible (attempt $attempt)"
               exit 0
             fi
-            echo "Attempt $attempt/45 — not yet accessible, waiting 15s..."
+            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
             sleep 15
           done
-          echo "::error::tfstate storage not accessible after 45 attempts (11 min)"
+          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
           exit 1
 
       - name: Setup Terraform
