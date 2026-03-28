@@ -94,8 +94,8 @@ if (!string.IsNullOrEmpty(allowedOrigin))
               .WithMethods("GET")
               .WithHeaders("Authorization", "Content-Type");
     });
+    app.UseCors();
 }
-app.UseCors();
 
 // Prometheus HTTP metrics middleware (app observability)
 app.UseHttpMetrics();
