@@ -29,8 +29,14 @@ async function authFetch(url: string, isRetry = false): Promise<Response> {
       await getAccessToken();
       return authFetch(url, true);
     }
-    const errorBody = await response.json();
-    throw new ApiError(errorBody.error || `HTTP ${response.status}`, response.status);
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody.error || errorMessage;
+    } catch {
+      // Empty or non-JSON response body — use status code message
+    }
+    throw new ApiError(errorMessage, response.status);
   }
 
   return response;
