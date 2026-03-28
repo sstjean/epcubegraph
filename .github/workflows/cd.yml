@@ -130,7 +130,8 @@ jobs:
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
+            --output none
+          echo "✓ Runner IP added to tfstate storage firewall"
 
       - name: Whitelist runner IP on Key Vault
         run: |
@@ -141,7 +142,7 @@ jobs:
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none 2>/dev/null || true
+              --output none
             echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
@@ -596,7 +597,8 @@ jobs:
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
+            --output none
+          echo "✓ Runner IP added to tfstate storage firewall"
 
       - name: Whitelist runner IP on Key Vault
         run: |
@@ -607,7 +609,7 @@ jobs:
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none 2>/dev/null || true
+              --output none
             echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping (first deploy)"
@@ -1070,7 +1072,8 @@ jobs:
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
+            --output none
+          echo "✓ Runner IP added to tfstate storage firewall"
 
       - name: Whitelist runner IP on Key Vault
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
@@ -1082,7 +1085,7 @@ jobs:
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none 2>/dev/null || true
+              --output none
             echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist — skipping"
@@ -1294,7 +1297,8 @@ jobs:
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
+            --output none
+          echo "✓ Runner IP added to tfstate storage firewall"
 
       - name: Whitelist runner IP on Key Vault
         run: |
@@ -1305,7 +1309,7 @@ jobs:
             az keyvault network-rule add \
               --name "$KV_NAME" \
               --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none 2>/dev/null || true
+              --output none
             echo "✓ Runner IP added to Key Vault firewall"
           else
             echo "Key Vault does not exist yet — skipping"
