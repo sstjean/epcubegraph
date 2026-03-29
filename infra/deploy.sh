@@ -95,7 +95,7 @@ tf_init() {
 tf_apply() {
   info "Applying Terraform configuration..."
   cd "$SCRIPT_DIR"
-  terraform apply -auto-approve -input=false "$(tf_var_ip)" "$@"
+  terraform apply -auto-approve -input=false "$(tf_var_ip)" -var=keyvault_public_access=true "$@"
   ok "Terraform apply complete"
 }
 

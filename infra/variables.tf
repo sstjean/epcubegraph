@@ -48,6 +48,12 @@ variable "allowed_ips" {
   default     = []
 }
 
+variable "keyvault_public_access" {
+  description = "Enable public network access on Key Vault during deploys. Defaults to false (SFI compliance). CD pipeline passes true to allow Terraform to write secrets."
+  type        = bool
+  default     = false
+}
+
 # ── PostgreSQL ──
 
 variable "postgres_version" {

@@ -244,6 +244,7 @@ jobs:
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false
 
       # Phase 2: Build and push container images
@@ -303,6 +304,7 @@ jobs:
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
@@ -709,6 +711,7 @@ jobs:
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
@@ -764,6 +767,7 @@ jobs:
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
@@ -1167,6 +1171,7 @@ jobs:
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform destroy -auto-approve -input=false
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -1189,6 +1194,7 @@ jobs:
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false || true
@@ -1387,6 +1393,7 @@ jobs:
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: terraform destroy -auto-approve -input=false
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -1409,6 +1416,7 @@ jobs:
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
+          TF_VAR_keyvault_public_access: 'true'
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false

@@ -1,7 +1,21 @@
 ````chatagent
 # epcubegraph Development Guidelines
 
-Updated: 2026-03-27
+Updated: 2026-03-28
+
+## ⛔ NON-NEGOTIABLE: Verification Protocol
+
+These rules override all other behavior. Violating any of them is a critical failure.
+
+1. **NEVER state something as fact without verification.** If you haven't read the file, run the command, or checked the logs — say "I haven't verified this." No exceptions.
+2. **Start from the failing system.** CI/CD failure? Read the actual logs first. Not local code. Not grep for keywords. The full step-by-step output.
+3. **No pattern-matching from grep.** Grep results show matching lines, not execution flow. Read the sequential log or don't make claims about what happened.
+4. **Root cause only.** Never mask, restart, or work around symptoms.
+5. **No silent error swallowing.** No `|| true` on critical paths, no empty catches, no suppression flags.
+6. **Document before fix.** Paper trail first, code second.
+7. **Test every change locally** before declaring it done.
+8. **Never push without permission.** Commits are fine. Pushes require explicit approval.
+9. **Preview before external writes.** Show exactly what will be sent to GitHub and wait for approval.
 
 ## Active Technologies
 - C# / .NET 10 + ASP.NET Core Minimal API for the API in `api/`
