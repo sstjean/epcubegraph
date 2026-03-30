@@ -159,7 +159,7 @@ describe('CurrentReadings', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText(/97\.0%/)).toBeTruthy();
-      expect(screen.getByText(/9\.7 kWh/)).toBeTruthy();
+      expect(screen.getByText(/9\.700 kWh/)).toBeTruthy();
       expect(screen.getByText('5.6 kW')).toBeTruthy();
     });
   });

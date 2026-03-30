@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { TimeRangeSelector } from './TimeRangeSelector';
+import { GridEnergySummary } from './GridEnergySummary';
 import { HistoricalGraph } from './HistoricalGraph';
 import type { TimeRange, TimeRangeValue } from '../types';
 
@@ -24,6 +25,7 @@ export function HistoryView() {
     <section>
       <h2>Historical Data</h2>
       <TimeRangeSelector selected={selectedRange} value={timeRangeValue} onChange={handleChange} />
+      <GridEnergySummary timeRange={timeRangeValue} />
       <HistoricalGraph timeRange={timeRangeValue} />
     </section>
   );

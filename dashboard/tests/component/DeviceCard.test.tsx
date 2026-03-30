@@ -72,7 +72,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert — Battery SOC gauge displays kWh as separate smaller text
-    expect(screen.getByText('9.7 kWh')).toBeTruthy();
+    expect(screen.getByText('9.700 kWh')).toBeTruthy();
     expect(screen.getByText('85.3%')).toBeTruthy();
   });
 

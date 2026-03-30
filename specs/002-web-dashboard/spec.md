@@ -41,6 +41,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 2. **Given** at least 30 days of historical data exists, **When** I select a 30-day time range, **Then** the graph renders within 2 seconds.
 3. **Given** I select a custom date range, **When** the graph renders, **Then** it shows only data within the specified range.
 4. **Given** no data exists for a requested time range, **When** I view that range, **Then** the interface clearly indicates no data is available rather than showing a blank or misleading graph.
+5. **Given** grid power data exists for the selected time range, **When** I view the history page, **Then** a bar graph displays Grid Import (kWh), Solar Export (kWh), and Net (Export − Import) totals summed across both EP Cubes, with the Net bar colored green when positive (net producer) and red when negative (net consumer).
 
 ---
 
@@ -80,6 +81,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - **FR-022**: Historical graph legends MUST display live values when the cursor hovers over the chart (time, and value per series). When the cursor is outside the chart, the legend MUST show the label and color swatch for each series.
 - **FR-023**: Historical graph series colors MUST be consistent across all charts and MUST match their legend labels. The color-to-series mapping MUST be verified against the actual data series order.
 - **FR-024**: Historical graph Y-axis MUST display values in kW (kilowatts) when values exceed 999 W, with one decimal place (e.g., "1.5 kW"). Values ≤999 W MUST display as whole watts (e.g., "750 W"). Legend hover values MUST use the same formatting.
+- **FR-025**: History page MUST display a grid energy summary bar graph showing three bars: Grid Import (total kWh pulled from grid), Solar Export (total kWh pushed to grid), and Net (Export − Import). Values MUST be summed across all devices for the selected time period. kWh MUST be computed client-side from `grid_power_watts` time series fetched at hourly resolution (step=3600s) regardless of the historical chart's display step, to preserve the bidirectional import/export split that coarser buckets would collapse. The Net bar MUST be colored green when positive (net producer) and red when negative (net consumer). Energy values MUST NOT be rounded in computation; they MUST be displayed at 3 decimal places (watt-level precision: 1 W = 0.001 kWh) so bar widths and labels always agree. (#72)
 
 ### Key Entities
 
@@ -97,6 +99,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - **SC-004**: *Removed — Grafana integration descoped.*
 - **SC-005**: 100% of dashboard access is authenticated; no unauthenticated access is possible.
 - **SC-006**: The dashboard works correctly on Chrome, Firefox, Safari, and Edge (current and previous major version).
+- **SC-007**: Grid energy summary bar graph correctly computes and displays Import, Export, and Net kWh totals from grid_power_watts time series data.
 
 ## Assumptions
 
@@ -128,6 +131,12 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - Q: What is the minimum data retention period for historical telemetry? → A: Indefinite (never delete, grow forever).
 - Q: When the API returns data for only 1 of the 2 devices, how should the dashboard behave? → A: Show both cards; display the missing device as "offline" using the existing stale-data indicator (FR-006).
 - Q: Should the dashboard expose any operational health signal beyond what the user sees in the UI? → A: Integrate Application Insights for client-side error telemetry.
+
+### Session 2026-03-29
+
+- Q: How should the bar graph handle coarse time steps (30d/1y) where AVG() collapses the import/export split? → A: Bar graph always fetches grid data at hourly resolution (step=3600s) regardless of the chart's display step. ~720 points per device for 30d is lightweight and preserves accuracy.
+- Q: What should the bar graph show when there is no grid data for the period? → A: Show "No Grid Data" message when API returns empty series. Show zero-value bars when data exists but sums to zero.
+- Q: What precision should kWh values use? → A: No rounding in computation. Display at 3 decimal places (watt-level precision: 1 W = 0.001 kWh). This ensures bar widths always match label text — the original 2-decimal rounding + 1-decimal display caused visible bars for values that displayed as "0.0 kWh". `formatKwh` updated globally to 3 decimals (also affects battery stored kWh on Current page).
 
 ## Dependencies
 

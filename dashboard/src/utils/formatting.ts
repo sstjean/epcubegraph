@@ -18,7 +18,7 @@ export function formatPercent(value: number): string {
 
 export function formatKwh(value: number): string {
   if (value == null || Number.isNaN(value)) return '—';
-  return `${value.toFixed(1)} kWh`;
+  return `${value.toFixed(3)} kWh`;
 }
 
 export function formatRelativeTime(epoch: number): string {

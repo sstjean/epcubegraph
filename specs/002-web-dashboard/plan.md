@@ -8,7 +8,7 @@
 Build a web dashboard (Preact SPA) for viewing EP Cube energy telemetry data in a browser. The dashboard:
 
 1. **Current readings** (US1, #33): Displays live solar, battery, home load, and grid metrics for 2 EP Cube devices in a side-by-side grid, auto-polling every 5 seconds (FR-012), with stale/offline indicators when data exceeds 3 minutes old. Includes animated energy flow diagram (FR-017) with toggle to gauge dial view.
-2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, calendar month for yearly). Data gaps rendered as broken lines. Aggregation notice when downsampled.
+2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, calendar month for yearly). Data gaps rendered as broken lines. Aggregation notice when downsampled. Grid energy summary bar graph showing Import, Export, and Net kWh totals (#72).
 
 The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.js + Entra ID (PKCE), consumes the Feature 001 REST API exclusively (FR-011), and reports client-side errors to Azure Application Insights (FR-020).
 
@@ -98,11 +98,13 @@ dashboard/
 │   │   ├── EnergyFlowDiagram.tsx # US1: animated SVG energy flow per device (FR-017)
 │   │   ├── ErrorBoundary.tsx    # Global error handling + retry
 │   │   ├── GaugeDial.tsx        # SVG arc gauge for single metric (reusable)
+│   │   ├── GridEnergySummary.tsx # US2: grid energy bar graph (import/export/net kWh, FR-025)
 │   │   ├── HistoricalGraph.tsx  # US2: uPlot time-series chart
 │   │   ├── HistoryView.tsx      # US2: time range selector + graph container
 │   │   └── TimeRangeSelector.tsx # Presets: today, 7d, 30d, 1y, custom
 │   └── utils/
 │       ├── formatting.ts        # formatWatts, formatKw, formatPercent, formatKwh, formatRelativeTime
+│       ├── gridEnergy.ts        # computeGridEnergy — kWh from grid_power_watts time series (FR-025)
 │       └── polling.ts           # Auto-poll at 5s interval
 └── tests/
     ├── setup.ts                 # Test setup (happy-dom, jest-dom matchers)
@@ -113,6 +115,7 @@ dashboard/
     │   ├── EnergyFlowDiagram.test.tsx
     │   ├── ErrorBoundary.test.tsx
     │   ├── GaugeDial.test.tsx
+    │   ├── GridEnergySummary.test.tsx
     │   ├── HistoricalGraph.test.tsx
     │   ├── HistoryView.test.tsx
     │   └── TimeRangeSelector.test.tsx
@@ -120,6 +123,7 @@ dashboard/
         ├── api.test.ts
         ├── auth.test.ts
         ├── formatting.test.ts
+        ├── gridEnergy.test.ts
         ├── main.test.tsx
         ├── polling.test.ts
         └── telemetry.test.ts
@@ -163,6 +167,15 @@ The Battery SOC gauge displays remaining stored energy (kWh) as a secondary valu
 ### Energy Flow Diagram (FR-017)
 
 The default current-readings view is an animated SVG energy flow diagram per device. Flow lines animate directionally (CSS dashed-line animation) between Solar, Grid, EP Cube Gateway, Battery, and Home nodes. Lines activate when power exceeds a 10W threshold and dim when inactive. Battery node shows SOC ring, stored kWh, and charge/discharge state. A radiogroup toggle switches between Flow and Gauges views.
+
+### Grid Energy Summary Bar Graph (FR-025, #72)
+
+The History page displays a grid energy summary above the per-device time-series charts. This bar graph shows 3 horizontal bars:
+- **Grid Import**: total kWh pulled from the grid (sum of positive `grid_power_watts` samples × step/3600)
+- **Solar Export**: total kWh pushed to the grid (sum of |negative `grid_power_watts`| samples × step/3600)
+- **Net**: Export − Import (positive = net producer, negative = net consumer)
+
+Values are summed across all devices (both EP Cubes). Unlike the per-device historical charts (FR-021), this is a single combined view because the net grid position is a whole-system metric. The bar graph always fetches grid data at hourly resolution (step=3600s) regardless of the chart's display step, to preserve the bidirectional import/export split that coarser buckets would collapse. The Net bar is conditionally colored: green when positive (net producer = good), red when negative (net consumer). When the API returns empty series (no data for the period), the component shows "No Grid Data" instead of bars. When data exists but sums to zero, zero-value bars are shown. The computation is implemented as a pure utility function (`computeGridEnergy`) for testability, with the `GridEnergySummary` component handling data fetching and rendering. CSS horizontal bars are used (no additional charting library) since only 3 static bars are needed.
 
 ### Application Insights Integration (FR-020)
 

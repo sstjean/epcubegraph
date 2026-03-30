@@ -69,7 +69,7 @@ describe('EnergyFlowDiagram', () => {
 
     const texts = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
     expect(texts.some((t) => t?.includes('66.0%'))).toBe(true);
-    expect(texts.some((t) => t?.includes('6.6 kWh'))).toBe(true);
+    expect(texts.some((t) => t?.includes('6.600 kWh'))).toBe(true);
   });
 
   // Flow line activation

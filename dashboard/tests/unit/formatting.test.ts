@@ -131,7 +131,7 @@ describe('formatting', () => {
   });
 
   describe('formatKwh', () => {
-    it('formats kWh with 1 decimal', async () => {
+    it('formats kWh with 3 decimals', async () => {
       // Arrange
       const { formatKwh } = await import('../../src/utils/formatting');
 
@@ -139,10 +139,10 @@ describe('formatting', () => {
       const result = formatKwh(9.7);
 
       // Assert
-      expect(result).toBe('9.7 kWh');
+      expect(result).toBe('9.700 kWh');
     });
 
-    it('formats zero as 0.0 kWh', async () => {
+    it('formats zero as 0.000 kWh', async () => {
       // Arrange
       const { formatKwh } = await import('../../src/utils/formatting');
 
@@ -150,7 +150,7 @@ describe('formatting', () => {
       const result = formatKwh(0);
 
       // Assert
-      expect(result).toBe('0.0 kWh');
+      expect(result).toBe('0.000 kWh');
     });
 
     it('returns "—" for NaN', async () => {
