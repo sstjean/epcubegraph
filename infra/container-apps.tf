@@ -93,7 +93,7 @@ resource "azurerm_container_app" "api" {
 
       env {
         name  = "Cors__AllowedOrigin"
-        value = "https://${azurerm_static_web_app.dashboard.default_host_name}"
+        value = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? "https://${var.dashboard_subdomain}.${var.custom_domain_zone_name}" : "https://${azurerm_static_web_app.dashboard.default_host_name}"
       }
     }
   }

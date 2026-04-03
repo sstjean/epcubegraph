@@ -42,4 +42,11 @@ exporter_port = 9250
 # Override only if you need additional IPs (e.g., team members):
 # allowed_ips = ["203.0.113.10", "198.51.100.20"]
 
+# ── Custom Domains (requires devsbx-common deployed first) ──
+# custom_domain_zone_name = "devsbx.xyz"
+# custom_domain_zone_rg   = "devsbx-shared"
+# dashboard_subdomain     = "epcube"          # epcube.devsbx.xyz
+# api_subdomain           = "epcube-api"      # epcube-api.devsbx.xyz
+# custom_domain_ttl       = 300
+
 

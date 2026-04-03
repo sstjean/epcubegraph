@@ -54,6 +54,38 @@ variable "keyvault_public_access" {
   default     = false
 }
 
+# ── Custom Domains ──
+
+variable "custom_domain_zone_name" {
+  description = "DNS zone name for custom domains (e.g., 'devsbx.xyz'). Empty string disables custom domains."
+  type        = string
+  default     = ""
+}
+
+variable "custom_domain_zone_rg" {
+  description = "Resource group containing the shared DNS zone"
+  type        = string
+  default     = "devsbx-shared"
+}
+
+variable "dashboard_subdomain" {
+  description = "Subdomain for the dashboard SWA (e.g., 'epcube' → epcube.devsbx.xyz). Empty string disables."
+  type        = string
+  default     = ""
+}
+
+variable "api_subdomain" {
+  description = "Subdomain for the API Container App (e.g., 'epcube-api' → epcube-api.devsbx.xyz). Empty string disables."
+  type        = string
+  default     = ""
+}
+
+variable "custom_domain_ttl" {
+  description = "TTL in seconds for custom domain DNS records"
+  type        = number
+  default     = 300
+}
+
 # ── PostgreSQL ──
 
 variable "postgres_version" {
