@@ -8,12 +8,12 @@ describe('GaugeDial', () => {
 
   it('renders with role="meter" and correct aria attributes', () => {
     render(
-      <GaugeDial value={3500} max={12000} label="Solar" displayValue="3.5 kW" unit="generation" color="#f59e0b" />
+      <GaugeDial value={3456} max={12000} label="Solar" displayValue="3.456 kW" unit="generation" color="#f59e0b" />
     );
 
     const meter = screen.getByRole('meter');
     expect(meter).toBeTruthy();
-    expect(meter.getAttribute('aria-valuenow')).toBe('3500');
+    expect(meter.getAttribute('aria-valuenow')).toBe('3456');
     expect(meter.getAttribute('aria-valuemin')).toBe('0');
     expect(meter.getAttribute('aria-valuemax')).toBe('12000');
   });
@@ -31,7 +31,7 @@ describe('GaugeDial', () => {
 
   it('shows label below the SVG', () => {
     render(
-      <GaugeDial value={1200} max={5000} label="Battery Power" displayValue="1.2 kW" unit="charging" color="#3b82f6" />
+      <GaugeDial value={1234} max={5000} label="Battery Power" displayValue="1.234 kW" unit="charging" color="#3b82f6" />
     );
 
     expect(screen.getByText('Battery Power')).toBeTruthy();
@@ -39,16 +39,16 @@ describe('GaugeDial', () => {
 
   it('includes label and value in aria-label', () => {
     render(
-      <GaugeDial value={500} max={10000} label="Grid (Import)" displayValue="500.0 W" unit="import" color="#ef4444" />
+      <GaugeDial value={567} max={10000} label="Grid (Import)" displayValue="567.000 W" unit="import" color="#ef4444" />
     );
 
     const meter = screen.getByRole('meter');
-    expect(meter.getAttribute('aria-label')).toBe('Grid (Import): 500.0 W import');
+    expect(meter.getAttribute('aria-label')).toBe('Grid (Import): 567.000 W import');
   });
 
   it('renders SVG with background and foreground arcs', () => {
     const { container } = render(
-      <GaugeDial value={6000} max={12000} label="Solar" displayValue="6.0 kW" unit="generation" color="#f59e0b" />
+      <GaugeDial value={6789} max={12000} label="Solar" displayValue="6.789 kW" unit="generation" color="#f59e0b" />
     );
 
     const paths = container.querySelectorAll('path');
@@ -57,7 +57,7 @@ describe('GaugeDial', () => {
 
   it('renders only background arc when value is 0', () => {
     const { container } = render(
-      <GaugeDial value={0} max={12000} label="Solar" displayValue="0.0 W" unit="generation" color="#f59e0b" />
+      <GaugeDial value={0} max={12000} label="Solar" displayValue="0.000 W" unit="generation" color="#f59e0b" />
     );
 
     const paths = container.querySelectorAll('path');
@@ -66,7 +66,7 @@ describe('GaugeDial', () => {
 
   it('clamps value at max (ratio never exceeds 1)', () => {
     render(
-      <GaugeDial value={15000} max={12000} label="Solar" displayValue="15.0 kW" unit="generation" color="#f59e0b" />
+      <GaugeDial value={15678} max={12000} label="Solar" displayValue="15.678 kW" unit="generation" color="#f59e0b" />
     );
 
     const meter = screen.getByRole('meter');
@@ -78,7 +78,7 @@ describe('GaugeDial', () => {
 
   it('handles negative values on unidirectional gauge (clamps to zero fill)', () => {
     const { container } = render(
-      <GaugeDial value={-1500} max={10000} label="Grid (Export)" displayValue="-1.5 kW" unit="export" color="#10b981" />
+      <GaugeDial value={-1234} max={10000} label="Grid (Export)" displayValue="-1.234 kW" unit="export" color="#10b981" />
     );
 
     const paths = container.querySelectorAll('path');
@@ -138,13 +138,13 @@ describe('GaugeDial', () => {
   // Bidirectional gauge tests (min < 0)
   it('supports bidirectional mode with min < 0', () => {
     const { container } = render(
-      <GaugeDial value={-3000} min={-5000} max={20000} label="Grid (Export)" displayValue="-3.0 kW" unit="export" color="#10b981" />
+      <GaugeDial value={-3456} min={-5000} max={20000} label="Grid (Export)" displayValue="-3.456 kW" unit="export" color="#10b981" />
     );
 
     const meter = screen.getByRole('meter');
     expect(meter.getAttribute('aria-valuemin')).toBe('-5000');
     expect(meter.getAttribute('aria-valuemax')).toBe('20000');
-    expect(meter.getAttribute('aria-valuenow')).toBe('-3000');
+    expect(meter.getAttribute('aria-valuenow')).toBe('-3456');
 
     const paths = container.querySelectorAll('path');
     expect(paths.length).toBe(2); // bg arc + fg arc
@@ -152,7 +152,7 @@ describe('GaugeDial', () => {
 
   it('renders zero tick mark for bidirectional gauges', () => {
     const { container } = render(
-      <GaugeDial value={5000} min={-5000} max={20000} label="Grid (Import)" displayValue="5.0 kW" unit="import" color="#ef4444" />
+      <GaugeDial value={5678} min={-5000} max={20000} label="Grid (Import)" displayValue="5.678 kW" unit="import" color="#ef4444" />
     );
 
     const line = container.querySelector('line');
@@ -170,7 +170,7 @@ describe('GaugeDial', () => {
 
   it('bidirectional gauge fills from zero toward negative value', () => {
     const { container } = render(
-      <GaugeDial value={-2000} min={-5000} max={20000} label="Grid (Export)" displayValue="-2.0 kW" unit="export" color="#10b981" />
+      <GaugeDial value={-2345} min={-5000} max={20000} label="Grid (Export)" displayValue="-2.345 kW" unit="export" color="#10b981" />
     );
 
     // Should have bg + fg arcs
@@ -180,7 +180,7 @@ describe('GaugeDial', () => {
 
   it('bidirectional gauge shows no fill arc when value is exactly 0', () => {
     const { container } = render(
-      <GaugeDial value={0} min={-5000} max={20000} label="Grid" displayValue="0.0 W" unit="" color="#10b981" />
+      <GaugeDial value={0} min={-5000} max={20000} label="Grid" displayValue="0.000 W" unit="" color="#10b981" />
     );
 
     // Only background arc, no foreground
@@ -191,25 +191,25 @@ describe('GaugeDial', () => {
   it('renders secondary value text when secondaryValue prop is provided', () => {
     // Arrange & Act
     const { container } = render(
-      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.7 kWh" unit="charge" color="#22c55e" />
+      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.700 kWh" unit="charge" color="#22c55e" />
     );
 
     // Assert
     const texts = container.querySelectorAll('text');
     const textContents = Array.from(texts).map((t) => t.textContent);
     expect(textContents).toContain('85.0%');
-    expect(textContents).toContain('9.7 kWh');
+    expect(textContents).toContain('9.700 kWh');
   });
 
   it('includes secondaryValue in aria-label when provided', () => {
     // Arrange & Act
     render(
-      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.7 kWh" unit="charge" color="#22c55e" />
+      <GaugeDial value={85} max={100} label="Battery SOC" displayValue="85.0%" secondaryValue="9.700 kWh" unit="charge" color="#22c55e" />
     );
 
     // Assert
     const meter = screen.getByRole('meter');
-    expect(meter.getAttribute('aria-label')).toContain('9.7 kWh');
+    expect(meter.getAttribute('aria-label')).toContain('9.700 kWh');
   });
 
   it('bidirectional gauge with negative value clamped to same angle as zero renders empty fg arc', () => {

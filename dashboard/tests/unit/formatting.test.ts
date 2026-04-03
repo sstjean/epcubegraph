@@ -7,10 +7,10 @@ describe('formatting', () => {
       const { formatWatts } = await import('../../src/utils/formatting');
 
       // Act
-      const result = formatWatts(500);
+      const result = formatWatts(456);
 
       // Assert
-      expect(result).toBe('500.0 W');
+      expect(result).toBe('456.000 W');
     });
 
     it('auto-scales to kW for values >= 1000', async () => {
@@ -18,10 +18,10 @@ describe('formatting', () => {
       const { formatWatts } = await import('../../src/utils/formatting');
 
       // Act
-      const result = formatWatts(1500);
+      const result = formatWatts(1234);
 
       // Assert
-      expect(result).toBe('1.5 kW');
+      expect(result).toBe('1.234 kW');
     });
 
     it('auto-scales to MW for values >= 1000000', async () => {
@@ -29,10 +29,10 @@ describe('formatting', () => {
       const { formatWatts } = await import('../../src/utils/formatting');
 
       // Act
-      const result = formatWatts(2500000);
+      const result = formatWatts(2345000);
 
       // Assert
-      expect(result).toBe('2.5 MW');
+      expect(result).toBe('2.345 MW');
     });
 
     it('handles negative watts correctly', async () => {
@@ -40,10 +40,10 @@ describe('formatting', () => {
       const { formatWatts } = await import('../../src/utils/formatting');
 
       // Act
-      const result = formatWatts(-1500);
+      const result = formatWatts(-1234);
 
       // Assert
-      expect(result).toBe('-1.5 kW');
+      expect(result).toBe('-1.234 kW');
     });
 
     it('returns "—" for NaN', async () => {
@@ -68,7 +68,7 @@ describe('formatting', () => {
       expect(result).toBe('—');
     });
 
-    it('formats zero as 0.0 W', async () => {
+    it('formats zero as 0.000 W', async () => {
       // Arrange
       const { formatWatts } = await import('../../src/utils/formatting');
 
@@ -76,17 +76,17 @@ describe('formatting', () => {
       const result = formatWatts(0);
 
       // Assert
-      expect(result).toBe('0.0 W');
+      expect(result).toBe('0.000 W');
     });
   });
 
   describe('formatKw', () => {
     it('always formats in kW', async () => {
       const { formatKw } = await import('../../src/utils/formatting');
-      expect(formatKw(500)).toBe('0.5 kW');
-      expect(formatKw(1500)).toBe('1.5 kW');
-      expect(formatKw(60)).toBe('0.1 kW');
-      expect(formatKw(0)).toBe('0.0 kW');
+      expect(formatKw(1234)).toBe('1.234 kW');
+      expect(formatKw(5678)).toBe('5.678 kW');
+      expect(formatKw(123)).toBe('0.123 kW');
+      expect(formatKw(0)).toBe('0.000 kW');
     });
 
     it('returns — for NaN', async () => {
