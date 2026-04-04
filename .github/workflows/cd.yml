@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' && github.event.inputs.destroy != 'true')
     outputs:
       env_name: ${{ steps.env.outputs.env_name }}
       state_key: ${{ steps.env.outputs.state_key }}
@@ -533,7 +533,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.event.inputs.destroy != 'true')
     steps:
       - run: echo "Production deployment — CI passed on main or manual dispatch"
 
