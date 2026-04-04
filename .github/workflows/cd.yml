@@ -84,10 +84,6 @@ jobs:
 
     env:
       TF_VAR_environment_name: ${{ needs.check-ci.outputs.env_name }}
-      TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
-      TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
-      TF_VAR_dashboard_subdomain: 'epcube-staging'
-      TF_VAR_api_subdomain: 'epcube-api-staging'
 
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
@@ -309,6 +305,10 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
+          TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
+          TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
+          TF_VAR_dashboard_subdomain: 'epcube-staging'
+          TF_VAR_api_subdomain: 'epcube-api-staging'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
@@ -551,10 +551,6 @@ jobs:
 
     env:
       TF_VAR_environment_name: 'epcubegraph'
-      TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
-      TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
-      TF_VAR_dashboard_subdomain: 'epcube'
-      TF_VAR_api_subdomain: 'epcube-api'
 
     outputs:
       resource_group: ${{ steps.tf-output.outputs.resource_group }}
@@ -722,6 +718,10 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
+          TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
+          TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
+          TF_VAR_dashboard_subdomain: 'epcube'
+          TF_VAR_api_subdomain: 'epcube-api'
         run: terraform apply -auto-approve -input=false
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
@@ -778,6 +778,10 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
+          TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
+          TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
+          TF_VAR_dashboard_subdomain: 'epcube'
+          TF_VAR_api_subdomain: 'epcube-api'
         run: terraform apply -auto-approve -input=false
 
       - name: Capture Terraform outputs
