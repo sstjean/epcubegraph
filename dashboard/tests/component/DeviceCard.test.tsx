@@ -81,7 +81,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 567 }} />);
 
     // Assert
-    expect(screen.getByText('567.000 W')).toBeTruthy();
+    expect(screen.getByText('567 W')).toBeTruthy();
     expect(screen.getByText('Grid (Import)')).toBeTruthy();
   });
 
@@ -99,7 +99,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 0 }} />);
 
     // Assert
-    expect(screen.getByText('0.000 W')).toBeTruthy();
+    expect(screen.getByText('0 W')).toBeTruthy();
     expect(screen.getByText('Grid (Idle)')).toBeTruthy();
   });
 

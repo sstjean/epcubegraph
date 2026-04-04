@@ -39,11 +39,11 @@ describe('GaugeDial', () => {
 
   it('includes label and value in aria-label', () => {
     render(
-      <GaugeDial value={567} max={10000} label="Grid (Import)" displayValue="567.000 W" unit="import" color="#ef4444" />
+      <GaugeDial value={567} max={10000} label="Grid (Import)" displayValue="567 W" unit="import" color="#ef4444" />
     );
 
     const meter = screen.getByRole('meter');
-    expect(meter.getAttribute('aria-label')).toBe('Grid (Import): 567.000 W import');
+    expect(meter.getAttribute('aria-label')).toBe('Grid (Import): 567 W import');
   });
 
   it('renders SVG with background and foreground arcs', () => {
@@ -57,7 +57,7 @@ describe('GaugeDial', () => {
 
   it('renders only background arc when value is 0', () => {
     const { container } = render(
-      <GaugeDial value={0} max={12000} label="Solar" displayValue="0.000 W" unit="generation" color="#f59e0b" />
+      <GaugeDial value={0} max={12000} label="Solar" displayValue="0 W" unit="generation" color="#f59e0b" />
     );
 
     const paths = container.querySelectorAll('path');
@@ -180,7 +180,7 @@ describe('GaugeDial', () => {
 
   it('bidirectional gauge shows no fill arc when value is exactly 0', () => {
     const { container } = render(
-      <GaugeDial value={0} min={-5000} max={20000} label="Grid" displayValue="0.000 W" unit="" color="#10b981" />
+      <GaugeDial value={0} min={-5000} max={20000} label="Grid" displayValue="0 W" unit="" color="#10b981" />
     );
 
     // Only background arc, no foreground

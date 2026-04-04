@@ -10,7 +10,7 @@ describe('formatting', () => {
       const result = formatWatts(456);
 
       // Assert
-      expect(result).toBe('456.000 W');
+      expect(result).toBe('456 W');
     });
 
     it('auto-scales to kW for values >= 1000', async () => {
@@ -68,7 +68,7 @@ describe('formatting', () => {
       expect(result).toBe('—');
     });
 
-    it('formats zero as 0.000 W', async () => {
+    it('formats zero as 0 W', async () => {
       // Arrange
       const { formatWatts } = await import('../../src/utils/formatting');
 
@@ -76,7 +76,7 @@ describe('formatting', () => {
       const result = formatWatts(0);
 
       // Assert
-      expect(result).toBe('0.000 W');
+      expect(result).toBe('0 W');
     });
   });
 
