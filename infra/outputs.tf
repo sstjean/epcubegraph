@@ -75,3 +75,15 @@ output "dashboard_client_id" {
   description = "Entra ID client ID for the dashboard SPA"
   value       = azuread_application.dashboard.client_id
 }
+
+# ── Custom Domain Outputs ──
+
+output "dashboard_custom_url" {
+  description = "Dashboard URL via custom domain (empty if not configured)"
+  value       = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? "https://${var.dashboard_subdomain}.${var.custom_domain_zone_name}" : ""
+}
+
+output "api_custom_url" {
+  description = "API URL via custom domain (empty if not configured)"
+  value       = var.custom_domain_zone_name != "" && var.api_subdomain != "" ? "https://${var.api_subdomain}.${var.custom_domain_zone_name}" : ""
+}

@@ -138,19 +138,19 @@ describe('CurrentReadings', () => {
         { device_id: 'epcube5488_battery', timestamp: 1, value: 97 },
       ]})
       .mockResolvedValueOnce({ metric: 'battery_power_watts', readings: [
-        { device_id: 'epcube5488_battery', timestamp: 1, value: 500 },
+        { device_id: 'epcube5488_battery', timestamp: 1, value: 1234 },
       ]})
       .mockResolvedValueOnce({ metric: 'solar_instantaneous_generation_watts', readings: [
-        { device_id: 'epcube5488_solar', timestamp: 1, value: 5580 },
+        { device_id: 'epcube5488_solar', timestamp: 1, value: 5678 },
       ]})
       .mockResolvedValueOnce({ metric: 'grid_power_watts', readings: [
-        { device_id: 'epcube5488_battery', timestamp: 1, value: 3660 },
+        { device_id: 'epcube5488_battery', timestamp: 1, value: 3456 },
       ]})
       .mockResolvedValueOnce({ metric: 'home_load_power_watts', readings: [
-        { device_id: 'epcube5488_battery', timestamp: 1, value: 1200 },
+        { device_id: 'epcube5488_battery', timestamp: 1, value: 2345 },
       ]})
       .mockResolvedValueOnce({ metric: 'battery_stored_kwh', readings: [
-        { device_id: 'epcube5488_battery', timestamp: 1, value: 9.7 },
+        { device_id: 'epcube5488_battery', timestamp: 1, value: 9.876 },
       ]});
 
     // Act
@@ -159,8 +159,8 @@ describe('CurrentReadings', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText(/97\.0%/)).toBeTruthy();
-      expect(screen.getByText(/9\.7 kWh/)).toBeTruthy();
-      expect(screen.getByText('5.6 kW')).toBeTruthy();
+      expect(screen.getByText(/9\.876 kWh/)).toBeTruthy();
+      expect(screen.getByText('5.678 kW')).toBeTruthy();
     });
   });
 

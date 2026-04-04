@@ -65,10 +65,15 @@ resource "azuread_application" "dashboard" {
   sign_in_audience = "AzureADMyOrg"
 
   single_page_application {
-    redirect_uris = [
-      "https://${azurerm_static_web_app.dashboard.default_host_name}/",
-      "http://localhost:5173/",
-    ]
+    redirect_uris = concat(
+      [
+        "https://${azurerm_static_web_app.dashboard.default_host_name}/",
+        "http://localhost:5173/",
+      ],
+      var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? [
+        "https://${var.dashboard_subdomain}.${var.custom_domain_zone_name}/",
+      ] : [],
+    )
   }
 
   required_resource_access {

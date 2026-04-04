@@ -10,7 +10,7 @@ const TODAY_START_SEC = Math.floor(new Date(2026, 2, 25, 0, 0, 0).getTime() / 10
 const NOW_SEC = Math.floor(FIXED_NOW / 1000);
 
 const todayValue: TimeRangeValue = { start: TODAY_START_SEC, end: NOW_SEC, step: 60 };
-const sevenDayValue: TimeRangeValue = { start: NOW_SEC - 7 * 86400, end: NOW_SEC, step: 3600 };
+const sevenDayValue: TimeRangeValue = { start: NOW_SEC - 7 * 86400, end: NOW_SEC, step: 86400 };
 const customValue: TimeRangeValue = { start: NOW_SEC - 86400, end: NOW_SEC, step: 60 };
 
 describe('TimeRangeSelector', () => {
@@ -72,7 +72,7 @@ describe('TimeRangeSelector', () => {
     vi.restoreAllMocks();
   });
 
-  it('emits onChange with step=3600s for "7d"', () => {
+  it('emits onChange with step=86400s for "7d"', () => {
     // Arrange
     const onChange = vi.fn();
     const now = Date.now();
@@ -85,7 +85,7 @@ describe('TimeRangeSelector', () => {
 
     // Assert
     const value = onChange.mock.calls[0][1];
-    expect(value.step).toBe(3600);
+    expect(value.step).toBe(86400);
     expect(value.start).toBe(Math.floor(now / 1000) - 7 * 86400);
 
     vi.restoreAllMocks();
@@ -198,7 +198,7 @@ describe('TimeRangeSelector', () => {
     }
   });
 
-  it('auto-selects tier for custom ranges: <=7d gets step=3600', () => {
+  it('auto-selects tier for custom ranges: <=6d gets step=3600', () => {
     // Arrange
     const onChange = vi.fn();
     render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
@@ -206,7 +206,7 @@ describe('TimeRangeSelector', () => {
     const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
     const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
 
-    // Act — 5-day range
+    // Act — 5-day range (≤6 days → hourly step)
     fireEvent.change(startInput, { target: { value: '2026-03-18' } });
     fireEvent.change(endInput, { target: { value: '2026-03-23' } });
 

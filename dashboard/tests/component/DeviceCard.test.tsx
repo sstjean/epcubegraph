@@ -4,12 +4,12 @@ import { h } from 'preact';
 import { DeviceCard } from '../../src/components/DeviceCard';
 
 const baseMetrics = {
-  solarWatts: 3500,
-  batteryWatts: 1200,
+  solarWatts: 3456,
+  batteryWatts: 1234,
   batteryPercent: 85.3,
-  batteryStoredKwh: 9.7,
-  gridWatts: 500,
-  homeLoadWatts: 2800,
+  batteryStoredKwh: 9.876,
+  gridWatts: 567,
+  homeLoadWatts: 2345,
 };
 
 describe('DeviceCard', () => {
@@ -55,7 +55,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert
-    expect(screen.getByText('3.5 kW')).toBeTruthy();
+    expect(screen.getByText('3.456 kW')).toBeTruthy();
   });
 
   it('shows battery power and SOC formatted correctly', () => {
@@ -63,7 +63,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert — battery dd contains both power and SOC
-    expect(screen.getByText(/1\.2 kW/)).toBeTruthy();
+    expect(screen.getByText(/1\.234 kW/)).toBeTruthy();
     expect(screen.getByText(/85\.3%/)).toBeTruthy();
   });
 
@@ -72,25 +72,25 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
 
     // Assert — Battery SOC gauge displays kWh as separate smaller text
-    expect(screen.getByText('9.7 kWh')).toBeTruthy();
+    expect(screen.getByText('9.876 kWh')).toBeTruthy();
     expect(screen.getByText('85.3%')).toBeTruthy();
   });
 
   it('shows grid power with "Import" label when positive', () => {
     // Arrange & Act
-    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 500 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 567 }} />);
 
     // Assert
-    expect(screen.getByText('500.0 W')).toBeTruthy();
+    expect(screen.getByText('567 W')).toBeTruthy();
     expect(screen.getByText('Grid (Import)')).toBeTruthy();
   });
 
   it('shows grid power with "Export" label when negative', () => {
     // Arrange & Act
-    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: -1500 }} />);
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: -4567 }} />);
 
     // Assert
-    expect(screen.getByText('1.5 kW')).toBeTruthy();
+    expect(screen.getByText('4.567 kW')).toBeTruthy();
     expect(screen.getByText('Grid (Export)')).toBeTruthy();
   });
 
@@ -99,7 +99,7 @@ describe('DeviceCard', () => {
     render(<DeviceCard name="EP Cube v2" online={true} metrics={{ ...baseMetrics, gridWatts: 0 }} />);
 
     // Assert
-    expect(screen.getByText('0.0 W')).toBeTruthy();
+    expect(screen.getByText('0 W')).toBeTruthy();
     expect(screen.getByText('Grid (Idle)')).toBeTruthy();
   });
 

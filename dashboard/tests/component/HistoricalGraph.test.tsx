@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
-import { HistoricalGraph, buildDeviceChartData, getAggregationLabel } from '../../src/components/HistoricalGraph';
+import { HistoricalGraph, buildDeviceChartData, getAggregationLabel, shouldUseBars, formatTooltipTimestamp, formatAxisDates } from '../../src/components/HistoricalGraph';
 import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
 import { withRetry } from '../../src/utils/retry';
 import type { DeviceListResponse, RangeReadingsResponse, TimeRangeValue } from '../../src/types';
@@ -25,15 +25,22 @@ vi.mock('../../src/utils/retry', () => ({
   isRetryableError: vi.fn(),
 }));
 
+const { capturedUPlotOpts, barsSpy } = vi.hoisted(() => ({
+  capturedUPlotOpts: [] as Record<string, unknown>[],
+  barsSpy: vi.fn(() => vi.fn()),
+}));
+
 // Mock uPlot — happy-dom doesn't support canvas
 vi.mock('uplot', () => {
   return {
     default: class MockUPlot {
+      static paths = { bars: barsSpy };
       root: HTMLDivElement;
       over: HTMLDivElement;
       cursor: { idx: number | null; left: number; top: number };
       ctx: { canvas: { height: number }; createLinearGradient: () => { addColorStop: () => void } };
       constructor(opts: Record<string, unknown>, data: unknown, target: HTMLElement) {
+        capturedUPlotOpts.push(opts);
         this.root = document.createElement('div');
         this.root.className = 'uplot';
         this.over = document.createElement('div');
@@ -144,6 +151,7 @@ function setupTwoDeviceMocks(ts: number[] = defaultTimestamps) {
 describe('HistoricalGraph', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedUPlotOpts.length = 0;
   });
 
   afterEach(cleanup);
@@ -647,5 +655,184 @@ describe('getAggregationLabel', () => {
 
   it('returns "monthly" for step > 86400', () => {
     expect(getAggregationLabel(2592000)).toBe('monthly');
+  });
+});
+
+describe('shouldUseBars', () => {
+  it('returns false for step < 86400 (line chart)', () => {
+    expect(shouldUseBars(60)).toBe(false);
+    expect(shouldUseBars(1800)).toBe(false);
+    expect(shouldUseBars(3600)).toBe(false);
+  });
+
+  it('returns true for step >= 86400 (bar chart for daily+ resolution)', () => {
+    expect(shouldUseBars(86400)).toBe(true);
+    expect(shouldUseBars(2592000)).toBe(true);
+  });
+});
+
+describe('formatTooltipTimestamp', () => {
+  // Use a known epoch: 2024-03-23 14:30:00 UTC = 1711200600
+  const epoch = 1711200600;
+
+  it('returns time only for sub-hourly step (line chart)', () => {
+    const result = formatTooltipTimestamp(epoch, 60);
+    // Should contain a time pattern like "2:30 PM" or "14:30" (locale-dependent)
+    expect(result).toMatch(/\d{1,2}:\d{2}/);
+    // Should NOT contain a month name
+    expect(result).not.toMatch(/Mar|Jan|Feb|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec/i);
+  });
+
+  it('returns date + time for hourly step (multi-day line chart)', () => {
+    const result = formatTooltipTimestamp(epoch, 3600);
+    // Should contain both a month abbreviation and a time
+    expect(result).toMatch(/\d{1,2}:\d{2}/);
+    expect(result).toMatch(/Mar/i);
+  });
+
+  it('returns date only for daily step', () => {
+    const result = formatTooltipTimestamp(epoch, 86400);
+    // Should contain a month abbreviation and year
+    expect(result).toMatch(/Mar/i);
+    expect(result).toMatch(/2024/);
+    // Should NOT contain a colon (no time)
+    expect(result).not.toMatch(/:/);
+  });
+
+  it('returns date only for monthly step', () => {
+    const result = formatTooltipTimestamp(epoch, 2592000);
+    expect(result).toMatch(/Mar/i);
+    expect(result).not.toMatch(/:/);
+  });
+});
+
+describe('formatAxisDates', () => {
+  it('returns short date labels without year or time', () => {
+    // 2024-03-23 14:30:00 UTC
+    const labels = formatAxisDates([1711200600]);
+    expect(labels[0]).toMatch(/Mar/i);
+    expect(labels[0]).toMatch(/23/);
+    expect(labels[0]).not.toMatch(/:/);
+    expect(labels[0]).not.toMatch(/2024/);
+  });
+
+  it('deduplicates consecutive splits on the same calendar day', () => {
+    // Two splits same day: noon and 1 PM of 2024-03-23 UTC (same local date in any timezone)
+    const noon = 1711195200;     // 2024-03-23 12:00:00 UTC
+    const onePm = 1711198800;    // 2024-03-23 13:00:00 UTC
+    // Next day noon
+    const nextNoon = 1711281600; // 2024-03-24 12:00:00 UTC
+    const labels = formatAxisDates([noon, onePm, nextNoon]);
+    // First occurrence gets the label
+    expect(labels[0]).toMatch(/Mar/i);
+    // Second occurrence same day gets empty string
+    expect(labels[1]).toBe('');
+    // Next day gets its own label
+    expect(labels[2]).toMatch(/Mar/i);
+    expect(labels[2]).not.toBe(labels[0]);
+  });
+});
+
+describe('FR-026 bar chart rendering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedUPlotOpts.length = 0;
+  });
+
+  afterEach(cleanup);
+
+  it('uses bar paths for Solar, Home Load, Grid when step >= 86400', async () => {
+    // Arrange
+    setupTwoDeviceMocks([1711152000, 1711238400]);
+
+    // Act
+    render(<HistoricalGraph timeRange={{ start: 1711152000, end: 1711756800, step: 86400 }} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    expect(barsSpy).toHaveBeenCalled();
+    const opts = capturedUPlotOpts[0] as { series: Array<{ paths?: unknown; label?: string }> };
+    expect(opts.series[1].paths).toBeDefined(); // Solar
+    expect(opts.series[2].paths).toBeDefined(); // Home Load
+    expect(opts.series[3].paths).toBeDefined(); // Grid
+  });
+
+  it('x-axis shows deduplicated date-only labels for bar charts (step >= 86400)', async () => {
+    // Arrange
+    setupTwoDeviceMocks([1711152000, 1711238400]);
+
+    // Act
+    render(<HistoricalGraph timeRange={{ start: 1711152000, end: 1711756800, step: 86400 }} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    const opts = capturedUPlotOpts[0] as { axes: Array<{ values?: (u: unknown, splits: number[]) => string[] }> };
+    const xAxis = opts.axes[0];
+    expect(typeof xAxis.values).toBe('function');
+    // Two splits on different days
+    const labels = xAxis.values!(null, [1711152000, 1711238400]);
+    expect(labels[0]).toMatch(/Mar/i);
+    expect(labels[1]).toMatch(/Mar/i);
+    expect(labels[0]).not.toMatch(/:/);
+  });
+
+  it('x-axis uses default uPlot formatting for line charts (step < 86400)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={{ start: 1711152000, end: 1711238400, step: 60 }} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    const opts = capturedUPlotOpts[0] as { axes: Array<{ values?: unknown }> };
+    const xAxis = opts.axes[0];
+    expect(xAxis.values).toBeUndefined();
+  });
+
+  it('Battery % always renders as line (no paths) even at step >= 86400', async () => {
+    // Arrange
+    setupTwoDeviceMocks([1711152000, 1711238400]);
+
+    // Act
+    render(<HistoricalGraph timeRange={{ start: 1711152000, end: 1711756800, step: 86400 }} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    const opts = capturedUPlotOpts[0] as { series: Array<{ paths?: unknown; scale?: string }> };
+    const batteryPctSeries = opts.series[4];
+    expect(batteryPctSeries.scale).toBe('%');
+    expect(batteryPctSeries.paths).toBeUndefined();
+  });
+
+  it('does not use bar paths when step < 86400', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={{ start: 1711152000, end: 1711238400, step: 60 }} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    expect(barsSpy).not.toHaveBeenCalled();
+    const opts = capturedUPlotOpts[0] as { series: Array<{ paths?: unknown }> };
+    expect(opts.series[1].paths).toBeUndefined();
+    expect(opts.series[2].paths).toBeUndefined();
+    expect(opts.series[3].paths).toBeUndefined();
   });
 });

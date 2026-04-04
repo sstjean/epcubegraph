@@ -245,7 +245,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Phase 2: Build and push container images
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
@@ -305,7 +305,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       - name: Capture Terraform outputs
         id: tf-output
@@ -319,6 +319,8 @@ jobs:
           echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
           echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
           echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
+          API_CUSTOM=$(terraform output -raw api_custom_url 2>/dev/null) || API_CUSTOM=""
+          echo "api_custom_url=${API_CUSTOM}" >> "$GITHUB_OUTPUT"
 
       # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
       - name: Get SWA deployment token
@@ -339,7 +341,7 @@ jobs:
       - name: Build dashboard
         working-directory: dashboard
         env:
-          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_API_BASE_URL: ${{ steps.tf-output.outputs.api_custom_url != '' && format('{0}/api/v1', steps.tf-output.outputs.api_custom_url) || format('https://{0}/api/v1', steps.tf-output.outputs.api_fqdn) }}
           VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
           VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
           VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
@@ -712,7 +714,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
       - name: Azure Re-Login (OIDC)
@@ -768,7 +770,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       - name: Capture Terraform outputs
         id: tf-output
@@ -782,6 +784,8 @@ jobs:
           echo "dashboard_client_id=$(terraform output -raw dashboard_client_id)" >> "$GITHUB_OUTPUT"
           echo "entra_tenant_id=$(terraform output -raw entra_tenant_id)" >> "$GITHUB_OUTPUT"
           echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
+          API_CUSTOM=$(terraform output -raw api_custom_url 2>/dev/null) || API_CUSTOM=""
+          echo "api_custom_url=${API_CUSTOM}" >> "$GITHUB_OUTPUT"
 
       # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
       - name: Get SWA deployment token
@@ -802,7 +806,7 @@ jobs:
       - name: Build dashboard
         working-directory: dashboard
         env:
-          VITE_API_BASE_URL: https://${{ steps.tf-output.outputs.api_fqdn }}/api/v1
+          VITE_API_BASE_URL: ${{ steps.tf-output.outputs.api_custom_url != '' && format('{0}/api/v1', steps.tf-output.outputs.api_custom_url) || format('https://{0}/api/v1', steps.tf-output.outputs.api_fqdn) }}
           VITE_ENTRA_CLIENT_ID: ${{ steps.tf-output.outputs.dashboard_client_id }}
           VITE_ENTRA_TENANT_ID: ${{ steps.tf-output.outputs.entra_tenant_id }}
           VITE_ENTRA_API_SCOPE: api://${{ steps.tf-output.outputs.entra_app_client_id }}/user_impersonation
@@ -1172,7 +1176,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
       - name: Azure Re-Login for Retry (OIDC)
@@ -1198,7 +1202,7 @@ jobs:
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false || true
-          terraform destroy -auto-approve -input=false
+          terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
           echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
 
       - name: Delete state blob
@@ -1394,7 +1398,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
       - name: Azure Re-Login for Retry (OIDC)
@@ -1420,7 +1424,7 @@ jobs:
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false
-          terraform destroy -auto-approve -input=false
+          terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       - name: Delete state blob
         run: |

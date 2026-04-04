@@ -29,6 +29,42 @@ export function getAggregationLabel(step: number): string | null {
   return 'monthly';
 }
 
+/** Threshold for switching from line to bar chart rendering (FR-026). */
+export const BAR_STEP_THRESHOLD = 86400;
+
+/** Returns true when charts should render power series as grouped vertical bars. */
+export function shouldUseBars(step: number): boolean {
+  return step >= BAR_STEP_THRESHOLD;
+}
+
+/** Format a tooltip timestamp based on chart step resolution. */
+export function formatTooltipTimestamp(epochSec: number, step: number): string {
+  const d = new Date(epochSec * 1000);
+  if (step >= 86400) {
+    // Daily or monthly bars — show date only
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  if (step >= 3600) {
+    // Multi-day hourly line chart — show date + time
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' +
+      d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  // Intra-day line chart (1-minute) — time only
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Format x-axis splits as date-only labels, deduplicating so each date appears once. */
+export function formatAxisDates(splits: number[]): string[] {
+  let prevLabel = '';
+  return splits.map((epochSec) => {
+    const label = new Date(epochSec * 1000)
+      .toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    if (label === prevLabel) return '';
+    prevLabel = label;
+    return label;
+  });
+}
+
 /**
  * Filter a range response's series to only device_ids belonging to a device group.
  * Returns the matching TimeSeries entries.
@@ -179,6 +215,14 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
 
     const container = chartContainerRef.current!;
     const chartDivs = container.querySelectorAll<HTMLDivElement>('[data-chart]');
+    const useBars = shouldUseBars(timeRange.step);
+
+    // For grouped bars: 3 power series each taking ~20% of the interval width
+    const barAligns = [-1, 0, 1] as const;
+    const barBuilders = useBars
+      ? barAligns.map((align) => uPlot.paths.bars!({ size: [0.6 / 3, 64], align, gap: 1 }))
+      : null;
+
     deviceCharts.forEach((chart, idx) => {
       const target = chartDivs[idx];
 
@@ -202,10 +246,8 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
               return;
             }
             const ts = chart.data[0][idx] as number;
-            const time = new Date(ts * 1000).toLocaleTimeString(undefined, {
-              hour: '2-digit', minute: '2-digit',
-            });
-            let html = `<div class="chart-tooltip-time">${time}</div>`;
+            const timeLabel = formatTooltipTimestamp(ts, timeRange.step);
+            let html = `<div class="chart-tooltip-time">${timeLabel}</div>`;
             for (let s = 0; s < SERIES_LABELS.length; s++) {
               const val = chart.data[s + 1]?.[idx];
               const formatted = s === 3 ? formatPercent(val as number) : formatWatts(val as number);
@@ -230,17 +272,27 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
         },
         series: [
           { label: 'Time' },
-          { label: 'Solar', stroke: SERIES_COLORS[0], width: 2, spanGaps: false, fill: 'rgba(245, 197, 66, 0.15)' },
-          { label: 'Home Load', stroke: SERIES_COLORS[1], width: 2, spanGaps: false },
           {
-            label: 'Grid', stroke: SERIES_COLORS[2], width: 2, spanGaps: false,
-            fill: (u: uPlot) => {
-              const canvas = u.ctx.canvas;
-              const grad = u.ctx.createLinearGradient(0, 0, 0, canvas.height);
-              grad.addColorStop(0, 'rgba(255, 87, 34, 0.25)');
-              grad.addColorStop(1, 'rgba(255, 87, 34, 0)');
-              return grad;
-            },
+            label: 'Solar', stroke: SERIES_COLORS[0], width: useBars ? 1 : 2, spanGaps: false,
+            fill: useBars ? SERIES_COLORS[0] : 'rgba(245, 197, 66, 0.15)',
+            ...(barBuilders && { paths: barBuilders[0] }),
+          },
+          {
+            label: 'Home Load', stroke: SERIES_COLORS[1], width: useBars ? 1 : 2, spanGaps: false,
+            ...(barBuilders && { fill: SERIES_COLORS[1], paths: barBuilders[1] }),
+          },
+          {
+            label: 'Grid', stroke: SERIES_COLORS[2], width: useBars ? 1 : 2, spanGaps: false,
+            fill: useBars
+              ? SERIES_COLORS[2]
+              : (u: uPlot) => {
+                const canvas = u.ctx.canvas;
+                const grad = u.ctx.createLinearGradient(0, 0, 0, canvas.height);
+                grad.addColorStop(0, 'rgba(255, 87, 34, 0.25)');
+                grad.addColorStop(1, 'rgba(255, 87, 34, 0)');
+                return grad;
+              },
+            ...(barBuilders && { paths: barBuilders[2] }),
           },
           {
             label: 'Battery %', stroke: SERIES_COLORS[3], width: 2, spanGaps: false,
@@ -262,6 +314,9 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
             stroke: '#a0aec0',
             grid: { stroke: 'rgba(255,255,255,0.1)' },
             ticks: { stroke: 'rgba(255,255,255,0.2)' },
+            ...(useBars && {
+              values: (_u: uPlot, splits: number[]) => formatAxisDates(splits),
+            }),
           },
           {
             label: 'Power',

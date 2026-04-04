@@ -1,14 +1,14 @@
 export function formatWatts(watts: number): string {
   if (watts == null || Number.isNaN(watts)) return '—';
   const abs = Math.abs(watts);
-  if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(1)} MW`;
-  if (abs >= 1_000) return `${(watts / 1_000).toFixed(1)} kW`;
-  return `${watts.toFixed(1)} W`;
+  if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(3)} MW`;
+  if (abs >= 1_000) return `${(watts / 1_000).toFixed(3)} kW`;
+  return `${Math.round(watts)} W`;
 }
 
 export function formatKw(watts: number): string {
   if (watts == null || Number.isNaN(watts)) return '—';
-  return `${(watts / 1_000).toFixed(1)} kW`;
+  return `${(watts / 1_000).toFixed(3)} kW`;
 }
 
 export function formatPercent(value: number): string {
@@ -18,7 +18,7 @@ export function formatPercent(value: number): string {
 
 export function formatKwh(value: number): string {
   if (value == null || Number.isNaN(value)) return '—';
-  return `${value.toFixed(1)} kWh`;
+  return `${value.toFixed(3)} kWh`;
 }
 
 export function formatRelativeTime(epoch: number): string {

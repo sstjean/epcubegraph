@@ -119,8 +119,8 @@ describe('HistoryView', () => {
     await waitFor(() => {
       expect(mockFetchRangeReadings).toHaveBeenCalled();
       const call = mockFetchRangeReadings.mock.calls[0];
-      // step should be 3600 for 7d
-      expect(call[3]).toBe(3600);
+      // step should be 86400 for 7d
+      expect(call[3]).toBe(86400);
     });
   });
 

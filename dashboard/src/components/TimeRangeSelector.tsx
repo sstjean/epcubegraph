@@ -21,10 +21,10 @@ function getNowMs(): number {
 
 /** Calculate tiered step based on duration in seconds. */
 function calculateStep(durationSec: number): number {
-  if (durationSec <= 86400) return 60;         // ≤1d → 1-minute resolution
-  if (durationSec <= 7 * 86400) return 3600;   // ≤7d → hourly
-  if (durationSec <= 30 * 86400) return 86400;  // ≤30d → daily
-  return 2592000;                                // >30d → by calendar month (support in #66)
+  if (durationSec <= 86400) return 60;           // ≤1d → 1-minute resolution
+  if (durationSec <= 6 * 86400) return 3600;     // ≤6d → hourly (line chart)
+  if (durationSec <= 30 * 86400) return 86400;   // ≤30d → daily (bar chart)
+  return 2592000;                                 // >30d → by calendar month
 }
 
 function computePresetValue(preset: TimeRange): TimeRangeValue {
@@ -38,7 +38,7 @@ function computePresetValue(preset: TimeRange): TimeRangeValue {
       return { start: Math.floor(startOfToday.getTime() / 1000), end: nowSec, step: 60 };
     }
     case '7d':
-      return { start: nowSec - 7 * 86400, end: nowSec, step: 3600 };
+      return { start: nowSec - 7 * 86400, end: nowSec, step: 86400 };
     case '30d':
       return { start: nowSec - 30 * 86400, end: nowSec, step: 86400 };
     case '1y':

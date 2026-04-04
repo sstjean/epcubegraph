@@ -111,6 +111,22 @@ Same response format as `RangeReadingsResponse`. Sign convention: positive = net
 
 ---
 
+## Entity: Grid Energy Summary (Client-Side Derived)
+
+**Source**: Computed client-side from `GET /api/v1/grid` response data
+
+```typescript
+interface GridEnergySummary {
+  importKwh: number;   // Total kWh pulled from grid (positive grid_power_watts samples)
+  exportKwh: number;   // Total kWh pushed to grid (|negative grid_power_watts| samples)
+  netKwh: number;      // exportKwh − importKwh (positive = net producer, negative = net consumer)
+}
+```
+
+**Dashboard usage**: Grid energy bar graph on the History page (FR-025, #72). The `computeGridEnergy()` utility processes all device series from the grid endpoint: for each time-series point, `kWh = (watts / 1000) × (step_seconds / 3600)`. Positive watts accumulate into `importKwh`, negative watts (absolute value) into `exportKwh`. Net = Export − Import. Values are **not rounded** in the utility — full floating-point precision is preserved. Display formatting uses `formatKwh()` at 3 decimal places (watt-level precision). Displayed as 3 horizontal bars with conditional coloring: Net bar is green when positive (net producer) and red when negative (net consumer).
+
+---
+
 ## Client-Side State (In-Memory Only)
 
 The dashboard maintains ephemeral UI state — not persisted across sessions:
@@ -158,6 +174,8 @@ User selects time range (e.g., "Last 7 days")
   → Convert to uPlot data format (null for gaps → broken lines)
   → Render historical graph
   → If step > 1m, show aggregation notice
+  → Compute grid energy summary (import/export/net kWh from grid response)
+  → Render grid energy bar graph (FR-025)
 
 Every 30 seconds (polling, FR-012):
   → Repeat current readings queries
