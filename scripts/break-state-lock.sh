@@ -20,6 +20,32 @@ STATE_KEY="${1:-epcubegraph}.tfstate"
 
 echo "Breaking lease on: ${STORAGE_ACCOUNT}/${CONTAINER}/${STATE_KEY}"
 
+# Ensure cleanup on exit (even on failure). Registered before any firewall
+# changes so an early failure (e.g., IP detection) still restores state.
+DEPLOYER_IP=""
+FIREWALL_OPENED=false
+
+cleanup() {
+  if [[ "$FIREWALL_OPENED" != "true" ]]; then
+    return 0
+  fi
+  echo "Restoring firewall..."
+  if [[ -n "$DEPLOYER_IP" ]]; then
+    az storage account network-rule remove \
+      --account-name "$STORAGE_ACCOUNT" \
+      --resource-group "$RESOURCE_GROUP" \
+      --ip-address "$DEPLOYER_IP" \
+      --output none 2>/dev/null || true
+  fi
+  az storage account update \
+    --name "$STORAGE_ACCOUNT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --public-network-access Disabled \
+    --output none 2>/dev/null || true
+  echo "Firewall restored"
+}
+trap cleanup EXIT
+
 # 1. Enable public network access (defaultAction remains Deny)
 echo "Opening firewall..."
 az storage account update \
@@ -27,6 +53,7 @@ az storage account update \
   --resource-group "$RESOURCE_GROUP" \
   --public-network-access Enabled \
   --output none
+FIREWALL_OPENED=true
 
 # 2. Whitelist deployer IP
 DEPLOYER_IP=$(curl -sf https://api.ipify.org)
@@ -36,23 +63,6 @@ az storage account network-rule add \
   --ip-address "$DEPLOYER_IP" \
   --output none
 echo "IP ${DEPLOYER_IP} added to firewall"
-
-# 3. Ensure cleanup on exit (even on failure)
-cleanup() {
-  echo "Restoring firewall..."
-  az storage account network-rule remove \
-    --account-name "$STORAGE_ACCOUNT" \
-    --resource-group "$RESOURCE_GROUP" \
-    --ip-address "$DEPLOYER_IP" \
-    --output none 2>/dev/null || true
-  az storage account update \
-    --name "$STORAGE_ACCOUNT" \
-    --resource-group "$RESOURCE_GROUP" \
-    --public-network-access Disabled \
-    --output none 2>/dev/null || true
-  echo "Firewall restored"
-}
-trap cleanup EXIT
 
 # 4. Wait for firewall propagation, then break lease
 echo "Waiting for firewall propagation..."

@@ -12,7 +12,7 @@ export interface GridEnergySummary {
  *
  * Sign convention from exporter: positive = import, negative = export.
  * Each sample represents an average over one step interval, so
- * kWh = watts × (stepSeconds / 3600).
+ * kWh = (watts / 1000) × (stepSeconds / 3600).
  *
  * Net = export − import (positive = net producer, negative = net consumer).
  */

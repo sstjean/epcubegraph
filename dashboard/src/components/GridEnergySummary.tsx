@@ -74,6 +74,7 @@ export function GridEnergySummary({ timeRange }: GridEnergySummaryProps) {
           label="Net"
           value={data.netKwh}
           maxValue={maxBar}
+          minValue={-maxBar}
           colorClass={netIsPositive ? 'bar-net-positive' : 'bar-net-negative'}
         />
       </div>
@@ -86,9 +87,10 @@ interface BarRowProps {
   value: number;
   maxValue: number;
   colorClass: string;
+  minValue?: number;
 }
 
-function BarRow({ label, value, maxValue, colorClass }: BarRowProps) {
+function BarRow({ label, value, maxValue, colorClass, minValue = 0 }: BarRowProps) {
   const widthPercent = (Math.abs(value) / maxValue) * 100;
 
   return (
@@ -101,7 +103,7 @@ function BarRow({ label, value, maxValue, colorClass }: BarRowProps) {
           role="meter"
           aria-label={label}
           aria-valuenow={value}
-          aria-valuemin={0}
+          aria-valuemin={minValue}
           aria-valuemax={maxValue}
         />
       </div>

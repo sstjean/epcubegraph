@@ -8,7 +8,7 @@
 Build a web dashboard (Preact SPA) for viewing EP Cube energy telemetry data in a browser. The dashboard:
 
 1. **Current readings** (US1, #33): Displays live solar, battery, home load, and grid metrics for 2 EP Cube devices in a side-by-side grid, auto-polling every 5 seconds (FR-012), with stale/offline indicators when data exceeds 3 minutes old. Includes animated energy flow diagram (FR-017) with toggle to gauge dial view.
-2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for weekly, daily for monthly, calendar month for yearly). Data gaps rendered as broken lines. Aggregation notice when downsampled. Grid energy summary bar graph showing Import, Export, and Net kWh totals (#72).
+2. **Historical graphs** (US2, #34): Interactive line charts via uPlot with time range presets (today, 7d, 30d, 1y, custom) and tiered data resolution (1-min for daily, hourly for 2–6 day ranges, daily for weekly/monthly, calendar month for yearly). Data gaps rendered as broken lines. Aggregation notice when downsampled. Grid energy summary bar graph showing Import, Export, and Net kWh totals (#72).
 
 The SPA is hosted on Azure Static Web Apps (Free tier), authenticates via MSAL.js + Entra ID (PKCE), consumes the Feature 001 REST API exclusively (FR-011), and reports client-side errors to Azure Application Insights (FR-020).
 
