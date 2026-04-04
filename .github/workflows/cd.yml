@@ -245,7 +245,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Phase 2: Build and push container images
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
@@ -305,7 +305,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       - name: Capture Terraform outputs
         id: tf-output
@@ -714,7 +714,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
       - name: Azure Re-Login (OIDC)
@@ -770,7 +770,7 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform apply -auto-approve -input=false
+        run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       - name: Capture Terraform outputs
         id: tf-output
@@ -1176,7 +1176,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
       - name: Azure Re-Login for Retry (OIDC)
@@ -1202,7 +1202,7 @@ jobs:
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false || true
-          terraform destroy -auto-approve -input=false
+          terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
           echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
 
       - name: Delete state blob
@@ -1398,7 +1398,7 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
-        run: terraform destroy -auto-approve -input=false
+        run: terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
       - name: Azure Re-Login for Retry (OIDC)
@@ -1424,7 +1424,7 @@ jobs:
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false
-          terraform destroy -auto-approve -input=false
+          terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       - name: Delete state blob
         run: |
