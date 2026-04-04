@@ -245,6 +245,10 @@ jobs:
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
           TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
           TF_VAR_keyvault_public_access: 'true'
+          TF_VAR_custom_domain_zone_name: 'devsbx.xyz'
+          TF_VAR_custom_domain_zone_rg: 'devsbx-shared'
+          TF_VAR_dashboard_subdomain: 'epcube-staging'
+          TF_VAR_api_subdomain: 'epcube-api-staging'
         run: terraform apply -auto-approve -input=false
 
       # Phase 2: Build and push container images
