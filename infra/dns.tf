@@ -88,3 +88,24 @@ resource "azurerm_container_app_custom_domain" "api" {
 
   depends_on = [time_sleep.dns_propagation]
 }
+
+# Azure provisions managed certs asynchronously after the custom domain is created,
+# but doesn't auto-bind them via the Terraform API. Wait for cert provisioning,
+# then explicitly bind with az CLI. Retries up to 5 times with 15s between
+# attempts to handle eventual consistency delays.
+resource "time_sleep" "api_cert_provisioning" {
+  count           = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
+  create_duration = "60s"
+  depends_on      = [azurerm_container_app_custom_domain.api]
+}
+
+resource "terraform_data" "api_cert_bind" {
+  count            = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
+  triggers_replace = [azurerm_container_app_custom_domain.api[0].id]
+
+  provisioner "local-exec" {
+    command = "for i in 1 2 3 4 5; do az containerapp hostname bind --hostname ${var.api_subdomain}.${var.custom_domain_zone_name} --name ${azurerm_container_app.api[0].name} --resource-group ${azurerm_resource_group.main.name} --environment ${azurerm_container_app_environment.main.name} --validation-method CNAME && break || echo \"Attempt $i failed, retrying in 15s...\" && sleep 15; done"
+  }
+
+  depends_on = [time_sleep.api_cert_provisioning]
+}
