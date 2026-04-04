@@ -25,6 +25,19 @@ resource "azurerm_dns_cname_record" "dashboard" {
   record              = azurerm_static_web_app.dashboard.default_host_name
 }
 
+# Azure DNS needs time to propagate CNAME records before SWA can validate them.
+# Without this delay, SWA returns 400 "CNAME Record is invalid."
+resource "time_sleep" "dns_propagation" {
+  count           = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? 1 : 0
+  create_duration = "30s"
+
+  depends_on = [
+    azurerm_dns_cname_record.dashboard,
+    azurerm_dns_cname_record.api,
+    azurerm_dns_txt_record.api_verification,
+  ]
+}
+
 # SWA custom domain binding — CNAME validation auto-provisions managed TLS cert
 resource "azurerm_static_web_app_custom_domain" "dashboard" {
   count             = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? 1 : 0
@@ -32,7 +45,7 @@ resource "azurerm_static_web_app_custom_domain" "dashboard" {
   domain_name       = "${var.dashboard_subdomain}.${var.custom_domain_zone_name}"
   validation_type   = "cname-delegation"
 
-  depends_on = [azurerm_dns_cname_record.dashboard]
+  depends_on = [time_sleep.dns_propagation]
 }
 
 # ── API (Container App) Custom Domain ──
@@ -73,8 +86,5 @@ resource "azurerm_container_app_custom_domain" "api" {
     ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
   }
 
-  depends_on = [
-    azurerm_dns_txt_record.api_verification,
-    azurerm_dns_cname_record.api,
-  ]
+  depends_on = [time_sleep.dns_propagation]
 }
