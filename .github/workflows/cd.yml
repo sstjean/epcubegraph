@@ -115,23 +115,20 @@ jobs:
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
 
-      - name: Enable public network access on tfstate storage
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on tfstate storage
+      - name: Pre-warm firewall and enable public access on tfstate storage
         run: |
           az storage account network-rule add \
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none
-          echo "✓ Runner IP added to tfstate storage firewall"
+          echo "✓ Runner IP pre-warmed in firewall rules"
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on Key Vault
         run: |
@@ -586,23 +583,20 @@ jobs:
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
 
-      - name: Enable public network access on tfstate storage
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on tfstate storage
+      - name: Pre-warm firewall and enable public access on tfstate storage
         run: |
           az storage account network-rule add \
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none
-          echo "✓ Runner IP added to tfstate storage firewall"
+          echo "✓ Runner IP pre-warmed in firewall rules"
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on Key Vault
         run: |
@@ -1063,17 +1057,7 @@ jobs:
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
 
-      - name: Enable public network access on tfstate storage
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on tfstate storage
+      - name: Pre-warm firewall and enable public access on tfstate storage
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         run: |
           az storage account network-rule add \
@@ -1081,7 +1065,13 @@ jobs:
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none
-          echo "✓ Runner IP added to tfstate storage firewall"
+          echo "✓ Runner IP pre-warmed in firewall rules"
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on Key Vault
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
@@ -1292,23 +1282,20 @@ jobs:
           echo "::add-mask::${RUNNER_IP}"
           echo "✓ Detected runner IP"
 
-      - name: Enable public network access on tfstate storage
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on tfstate storage
+      - name: Pre-warm firewall and enable public access on tfstate storage
         run: |
           az storage account network-rule add \
             --account-name "$TFSTATE_STORAGE_ACCOUNT" \
             --resource-group "$TFSTATE_RESOURCE_GROUP" \
             --ip-address "${{ steps.ip.outputs.runner_ip }}" \
             --output none
-          echo "✓ Runner IP added to tfstate storage firewall"
+          echo "✓ Runner IP pre-warmed in firewall rules"
+          az storage account update \
+            --name "$TFSTATE_STORAGE_ACCOUNT" \
+            --resource-group "$TFSTATE_RESOURCE_GROUP" \
+            --public-network-access Enabled \
+            --output none
+          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
 
       - name: Whitelist runner IP on Key Vault
         run: |

@@ -46,25 +46,27 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 1. Enable public network access (defaultAction remains Deny)
-echo "Opening firewall..."
+# 1. Pre-warm IP rule while publicNetworkAccess is still Disabled,
+#    then enable. This avoids the slow propagation delay that occurs
+#    when adding an IP rule after enabling public access.
+DEPLOYER_IP=$(curl -sf https://api.ipify.org)
+echo "Pre-warming IP ${DEPLOYER_IP} in firewall rules..."
+az storage account network-rule add \
+  --account-name "$STORAGE_ACCOUNT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --ip-address "$DEPLOYER_IP" \
+  --output none
+
+echo "Enabling public network access..."
 az storage account update \
   --name "$STORAGE_ACCOUNT" \
   --resource-group "$RESOURCE_GROUP" \
   --public-network-access Enabled \
   --output none
 FIREWALL_OPENED=true
+echo "✓ Firewall open with pre-warmed IP"
 
-# 2. Whitelist deployer IP
-DEPLOYER_IP=$(curl -sf https://api.ipify.org)
-az storage account network-rule add \
-  --account-name "$STORAGE_ACCOUNT" \
-  --resource-group "$RESOURCE_GROUP" \
-  --ip-address "$DEPLOYER_IP" \
-  --output none
-echo "IP ${DEPLOYER_IP} added to firewall"
-
-# 4. Wait for firewall propagation, then break lease
+# 2. Wait for firewall propagation, then break lease
 echo "Waiting for firewall propagation..."
 sleep 20
 
