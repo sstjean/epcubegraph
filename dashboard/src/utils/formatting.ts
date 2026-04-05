@@ -6,6 +6,15 @@ export function formatWatts(watts: number): string {
   return `${Math.round(watts)} W`;
 }
 
+/** 1-decimal axis labels — readable at a glance, hover shows full precision. */
+export function formatWattsAxis(watts: number): string {
+  if (watts == null || Number.isNaN(watts)) return '—';
+  const abs = Math.abs(watts);
+  if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(1)} MW`;
+  if (abs >= 1_000) return `${(watts / 1_000).toFixed(1)} kW`;
+  return `${Math.round(watts)} W`;
+}
+
 export function formatKw(watts: number): string {
   if (watts == null || Number.isNaN(watts)) return '—';
   return `${(watts / 1_000).toFixed(3)} kW`;
