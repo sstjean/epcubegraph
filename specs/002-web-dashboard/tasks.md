@@ -146,13 +146,13 @@
 
 ### Tests for FR-020 (TDD — write tests FIRST, confirm they FAIL)
 
-- [ ] T046 [P] Write telemetry unit tests in dashboard/tests/unit/telemetry.test.ts: initTelemetry initializes ApplicationInsights when connection string is set, initTelemetry is no-op when connection string is empty/undefined, trackException calls appInsights.trackException, trackApiError calls appInsights.trackEvent with url and status, trackPageLoad calls appInsights.trackPageView, module is mock-friendly (exports simple wrapper functions)
+- [x] T046 [P] Write telemetry unit tests in dashboard/tests/unit/telemetry.test.ts: initTelemetry initializes ApplicationInsights when connection string is set, initTelemetry is no-op when connection string is empty/undefined, trackException calls appInsights.trackException, trackApiError calls appInsights.trackEvent with url and status, trackPageLoad calls appInsights.trackPageView, module is mock-friendly (exports simple wrapper functions)
 
 ### Implementation for FR-020
 
-- [ ] T047 [P] Implement dashboard/src/telemetry.ts: lazy init of @microsoft/applicationinsights-web when VITE_APPINSIGHTS_CONNECTION_STRING is set, export initTelemetry(), trackException(error), trackApiError(url, status), trackPageLoad() wrapper functions. No PII captured. Silent when connection string absent (local dev/tests).
-- [ ] T048 [US1] Wire telemetry into dashboard: call initTelemetry() in main.tsx after MSAL init, call trackApiError() in api.ts on 4xx/5xx responses, call trackPageLoad() in App.tsx on route change, wrap ErrorBoundary componentDidCatch with trackException()
-- [ ] T049 [P] Create Azure Application Insights Terraform resource in infra/application-insights.tf: azurerm_application_insights linked to existing Log Analytics workspace, add appinsights_connection_string output to infra/outputs.tf, add VITE_APPINSIGHTS_CONNECTION_STRING to CD workflow env vars
+- [x] T047 [P] Implement dashboard/src/telemetry.ts: lazy init of @microsoft/applicationinsights-web when VITE_APPINSIGHTS_CONNECTION_STRING is set, export initTelemetry(), trackException(error), trackApiError(url, status), trackPageLoad() wrapper functions. No PII captured. Silent when connection string absent (local dev/tests).
+- [x] T048 [US1] Wire telemetry into dashboard: call initTelemetry() in main.tsx after MSAL init, call trackApiError() in api.ts on 4xx/5xx responses, call trackPageLoad() in App.tsx on route change, wrap ErrorBoundary componentDidCatch with trackException()
+- [x] T049 [P] Create Azure Application Insights Terraform resource in infra/application-insights.tf: azurerm_application_insights linked to existing Log Analytics workspace, add appinsights_connection_string output to infra/outputs.tf, add VITE_APPINSIGHTS_CONNECTION_STRING to CD workflow env vars
 
 **Checkpoint**: Application Insights captures unhandled exceptions, failed API calls, and page load performance in production/staging. Silent in local dev and tests.
 
@@ -239,9 +239,9 @@ FR-020: T046 test then T047 then T048 then T049
 | 2. Foundational | 12 | 12 | 0 |
 | 3. US1 (P1, #33) | 24 | 24 | 0 |
 | 4. US2 (P2, #34) | 11 | 11 | 0 |
-| 5. FR-020 | 4 | 0 | 4 |
+| 5. FR-020 | 4 | 4 | 0 |
 | 6. Polish | 5 | 1 | 4 |
-| **Total** | **60** | **52** | **8** |
+| **Total** | **60** | **56** | **4** |
 
 ---
 

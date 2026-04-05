@@ -92,3 +92,9 @@ output "exporter_custom_url" {
   description = "Exporter debug page URL via custom domain (empty if not configured)"
   value       = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" ? "https://${var.exporter_subdomain}.${var.custom_domain_zone_name}" : ""
 }
+
+output "appinsights_connection_string" {
+  description = "Application Insights connection string for dashboard telemetry"
+  value       = azurerm_application_insights.dashboard.connection_string
+  sensitive   = true
+}
