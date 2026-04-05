@@ -51,4 +51,35 @@ export interface TimeRangeValue {
   step: number;
 }
 
+// Settings types — Feature 006
 
+export interface SettingEntry {
+  key: string;
+  value: string;
+  last_modified: string;
+}
+
+export interface SettingsResponse {
+  settings: SettingEntry[];
+}
+
+export interface PanelHierarchyEntry {
+  id: number;
+  parent_device_gid: number;
+  child_device_gid: number;
+}
+
+export interface PanelHierarchyResponse {
+  entries: PanelHierarchyEntry[];
+}
+
+export interface DisplayNameOverride {
+  id: number;
+  device_gid: number;
+  channel_number: string | null;
+  display_name: string;
+}
+
+export interface DisplayNamesResponse {
+  overrides: DisplayNameOverride[];
+}
