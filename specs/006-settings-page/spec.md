@@ -5,6 +5,18 @@
 **Status**: Draft
 **Input**: Dashboard Settings page for runtime configuration management. View and modify system settings without redeployment: polling intervals, panel hierarchy, device/circuit display names. Stored in PostgreSQL, exposed through API endpoints.
 
+## Clarifications
+
+### Session 2026-04-05
+- Q: Where should the Settings page be accessible? → A: Nav bar link with gear icon alongside Current / History.
+- Q: Single key-value table or typed tables? → A: Typed tables: `settings` (scalars), `panel_hierarchy` (parent/child), `display_name_overrides` (device/channel/name).
+- Q: How should exporters read settings? → A: Direct PostgreSQL read (already have DB connection). No API dependency.
+- Q: Independent section saves or single form? → A: Independent saves — each section has its own Save button.
+- Q: Modify EP Cube exporter too? → A: Yes, both exporters read interval from DB.
+- Q: How to handle missing settings on fresh deploy? → A: Hardcoded fallback defaults in code; DB rows created on first save from Settings page.
+- Q: Where does the device/circuit list come from? → A: Database (devices/circuits discovered by exporter during polling).
+- Q: Show confirmation after save? → A: Yes, brief success message (e.g., "Settings saved").
+
 ## User Scenarios & Testing
 
 ### User Story 1 — View and Modify Polling Intervals (Priority: P1)
@@ -67,17 +79,20 @@ As a homeowner, I want to override the default device and circuit names with my 
 
 ### Functional Requirements
 
-- **FR-001**: The dashboard MUST provide a Settings page accessible via navigation, protected by the same Entra ID authentication as other pages.
+- **FR-001**: The dashboard MUST provide a Settings page at the `/settings` route, accessible via a gear icon + "Settings" link in the main nav bar alongside Current and History. Protected by the same Entra ID authentication as other pages.
 - **FR-002**: The Settings page MUST display current polling intervals for each data source (EP Cube, Emporia Vue) with the ability to modify each independently.
 - **FR-003**: The Settings page MUST validate polling interval inputs: minimum 1 second, maximum 3600 seconds (1 hour). Invalid values MUST be rejected with a clear error message before saving.
 - **FR-004**: The Settings page MUST display the current panel hierarchy as a parent-child tree and allow adding or removing relationships.
 - **FR-005**: The Settings page MUST validate panel hierarchy changes — circular references MUST be rejected.
 - **FR-006**: The Settings page MUST display all known devices and circuits with their current display names (custom override or source default) and allow editing.
 - **FR-007**: Clearing a custom display name MUST revert to the source system's default name (e.g., Emporia app name).
-- **FR-008**: All settings MUST be stored in PostgreSQL and exposed through authenticated API endpoints (GET to read, PUT/PATCH to update).
+- **FR-008**: Settings MUST be stored in PostgreSQL using typed tables: `settings` for scalar key-value pairs (e.g., polling intervals), `panel_hierarchy` for parent-child panel relationships, and `display_name_overrides` for custom device/circuit names. All exposed through authenticated API endpoints (GET to read, PUT/PATCH to update).
+- **FR-008a**: Each settings section (polling intervals, panel hierarchy, device names) MUST save independently with its own Save button. A brief success message (e.g., "Settings saved") MUST be displayed after a successful save.
 - **FR-009**: Settings changes MUST take effect on the next poll cycle without requiring exporter restart or redeployment.
 - **FR-010**: The API MUST authenticate all settings endpoints using Microsoft Entra ID bearer tokens with `user_impersonation` scope. Unauthenticated requests MUST be rejected with HTTP 401.
-- **FR-011**: The exporter(s) MUST read polling interval settings from the database on each poll cycle (or cache with a short TTL) so changes take effect promptly.
+- **FR-011**: The exporter(s) MUST read polling interval settings directly from PostgreSQL on each poll cycle (or cache with a short TTL) so changes take effect promptly. No API dependency — exporters already have a database connection. Both EP Cube and Emporia Vue exporters MUST be modified to read their intervals from the database.
+- **FR-011a**: When no settings rows exist in the database (fresh deployment), the system MUST use hardcoded fallback defaults (EP Cube: 30s, Vue: 1s). Database rows are created on first save from the Settings page.
+- **FR-011b**: The device/circuit list for the renaming feature MUST be populated from the database (devices and circuits previously discovered by the exporter during polling), not from live API calls to external systems.
 
 ### Key Entities
 
