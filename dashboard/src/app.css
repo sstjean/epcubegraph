@@ -655,3 +655,12 @@ section > h2 {
   color: var(--text-muted);
   padding: 0.5rem 0;
 }
+
+/* uPlot legend — clickable series toggle */
+.uplot .u-legend .u-label {
+  cursor: pointer;
+}
+
+.uplot .u-legend .u-label:hover {
+  text-decoration: underline;
+}
