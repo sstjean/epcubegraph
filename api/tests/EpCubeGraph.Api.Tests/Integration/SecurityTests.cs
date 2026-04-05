@@ -7,7 +7,6 @@ namespace EpCubeGraph.Api.Tests.Integration;
 /// Security tests:
 /// - All telemetry endpoints reject unauthenticated requests
 /// - /health exposes no telemetry data
-/// - /metrics is unauthenticated but exposes only process metrics
 /// </summary>
 public class SecurityTests : IClassFixture<TestWebApplicationFactory>
 {
@@ -41,16 +40,5 @@ public class SecurityTests : IClassFixture<TestWebApplicationFactory>
         Assert.DoesNotContain("epcube_", content);
         Assert.DoesNotContain("battery", content.ToLowerInvariant());
         Assert.DoesNotContain("solar", content.ToLowerInvariant());
-    }
-
-    [Fact]
-    public async Task Metrics_ExposesOnlyProcessMetrics_NoTelemetry()
-    {
-        var response = await _client.GetAsync("/metrics");
-        var content = await response.Content.ReadAsStringAsync();
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        // prometheus-net exposes process metrics, not telemetry data
-        Assert.DoesNotContain("epcube_", content);
     }
 }

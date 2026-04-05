@@ -22,6 +22,7 @@ namespace EpCubeGraph.Api.Tests.Fixtures;
 public class MockableTestFactory : WebApplicationFactory<Program>
 {
     public ConfigurableMockStore MockStore { get; } = new();
+    public ConfigurableMockSettingsStore MockSettingsStore { get; } = new();
 
     public string? EnvironmentOverride { get; set; }
 
@@ -54,6 +55,14 @@ public class MockableTestFactory : WebApplicationFactory<Program>
 
             // Register our mock as the sole implementation
             services.AddSingleton<IMetricsStore>(MockStore);
+
+            // Register mock settings store
+            var settingsDescriptors = services
+                .Where(d => d.ServiceType == typeof(ISettingsStore))
+                .ToList();
+            foreach (var d in settingsDescriptors)
+                services.Remove(d);
+            services.AddSingleton<ISettingsStore>(MockSettingsStore);
 
             // Bypass Entra ID: add "Test" scheme that always succeeds
             services.AddAuthentication("Test")
@@ -164,5 +173,74 @@ public sealed class ConfigurableMockStore : IMetricsStore
     {
         if (ShouldThrow) return Task.FromResult(false);
         return Task.FromResult(PingResult);
+    }
+}
+
+/// <summary>
+/// Configurable mock of ISettingsStore.
+/// Tests configure behaviour before making HTTP calls.
+/// </summary>
+public sealed class ConfigurableMockSettingsStore : ISettingsStore
+{
+    private List<SettingEntry> _settings = new();
+    private List<PanelHierarchyEntry> _hierarchy = new();
+    private List<DisplayNameOverride> _displayNames = new();
+    private SettingEntry? _lastUpdated;
+
+    public void SetSettings(List<SettingEntry> settings) => _settings = settings;
+    public void SetHierarchy(List<PanelHierarchyEntry> hierarchy) => _hierarchy = hierarchy;
+    public void SetDisplayNames(List<DisplayNameOverride> names) => _displayNames = names;
+
+    public void Reset()
+    {
+        _settings = new List<SettingEntry>();
+        _hierarchy = new List<PanelHierarchyEntry>();
+        _displayNames = new List<DisplayNameOverride>();
+        _lastUpdated = null;
+    }
+
+    public Task<IReadOnlyList<SettingEntry>> GetAllSettingsAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<SettingEntry>>(_settings);
+
+    public Task<SettingEntry?> GetSettingAsync(string key, CancellationToken ct = default)
+        => Task.FromResult(_settings.FirstOrDefault(s => s.Key == key));
+
+    public Task<SettingEntry> UpdateSettingAsync(string key, string value, CancellationToken ct = default)
+    {
+        var entry = new SettingEntry(key, value, DateTimeOffset.UtcNow);
+        _lastUpdated = entry;
+        var idx = _settings.FindIndex(s => s.Key == key);
+        if (idx >= 0) _settings[idx] = entry;
+        else _settings.Add(entry);
+        return Task.FromResult(entry);
+    }
+
+    public Task<IReadOnlyList<PanelHierarchyEntry>> GetHierarchyAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<PanelHierarchyEntry>>(_hierarchy);
+
+    public Task<IReadOnlyList<PanelHierarchyEntry>> UpdateHierarchyAsync(
+        IReadOnlyList<PanelHierarchyInputEntry> entries, CancellationToken ct = default)
+    {
+        _hierarchy = entries.Select((e, i) => new PanelHierarchyEntry(i + 1, e.ParentDeviceGid, e.ChildDeviceGid)).ToList();
+        return Task.FromResult<IReadOnlyList<PanelHierarchyEntry>>(_hierarchy);
+    }
+
+    public Task<IReadOnlyList<DisplayNameOverride>> GetDisplayNamesAsync(CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<DisplayNameOverride>>(_displayNames);
+
+    public Task<IReadOnlyList<DisplayNameOverride>> UpdateDisplayNamesForDeviceAsync(
+        long deviceGid, IReadOnlyList<DisplayNameInputEntry> overrides, CancellationToken ct = default)
+    {
+        _displayNames.RemoveAll(d => d.DeviceGid == deviceGid);
+        var newEntries = overrides.Select((o, i) =>
+            new DisplayNameOverride(_displayNames.Count + i + 1, deviceGid, o.ChannelNumber, o.DisplayName)).ToList();
+        _displayNames.AddRange(newEntries);
+        return Task.FromResult<IReadOnlyList<DisplayNameOverride>>(newEntries);
+    }
+
+    public Task<bool> DeleteDisplayNameAsync(long deviceGid, string channelNumber, CancellationToken ct = default)
+    {
+        var removed = _displayNames.RemoveAll(d => d.DeviceGid == deviceGid && d.ChannelNumber == channelNumber);
+        return Task.FromResult(removed > 0);
     }
 }

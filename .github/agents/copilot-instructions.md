@@ -21,7 +21,6 @@ These rules override all other behavior. Violating any of them is a critical fai
 - C# / .NET 10 + ASP.NET Core Minimal API for the API in `api/`
 - Microsoft.Identity.Web for Entra ID JWT validation and `user_impersonation` scope enforcement
 - Npgsql for PostgreSQL access from the API
-- `prometheus-net.AspNetCore` for API operational metrics
 - Python 3.12 for `local/epcube-exporter/`
 - psycopg2 for exporter PostgreSQL writes
 - Terraform (`azurerm ~>4.0`, `azuread ~>3.0`) for Azure infrastructure in `infra/`
