@@ -1,4 +1,5 @@
 import { Component, ComponentChildren } from 'preact';
+import { trackException } from '../telemetry';
 
 interface ErrorBoundaryProps {
   children: ComponentChildren;
@@ -16,6 +17,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error) {
     this.setState({ hasError: true, error });
+    trackException(error);
   }
 
   render() {
