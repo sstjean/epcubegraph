@@ -19,8 +19,8 @@
 
 **Purpose**: Shared models and types
 
-- [ ] T002 [P] Create Settings models in api/src/EpCubeGraph.Api/Models/Settings.cs: SettingEntry (key, value, lastModified), PanelHierarchyEntry (id, parentDeviceGid, childDeviceGid), DisplayNameOverride (id, deviceGid, channelNumber, displayName)
-- [ ] T003 [P] Create settings types in dashboard/src/types.ts: SettingEntry, PanelHierarchyEntry, DisplayNameOverride, matching API response shapes
+- [X] T002 [P] Create Settings models in api/src/EpCubeGraph.Api/Models/Settings.cs: SettingEntry (key, value, lastModified), PanelHierarchyEntry (id, parentDeviceGid, childDeviceGid), DisplayNameOverride (id, deviceGid, channelNumber, displayName)
+- [X] T003 [P] Create settings types in dashboard/src/types.ts: SettingEntry, PanelHierarchyEntry, DisplayNameOverride, matching API response shapes
 
 ---
 
@@ -30,19 +30,19 @@
 
 ### Tests (TDD)
 
-- [ ] T004 [P] [US1] Write SettingsService unit tests in api/tests/EpCubeGraph.Api.Tests/Unit/SettingsServiceTests.cs: GetAllSettings returns key-value pairs, GetSetting returns single value, UpdateSetting persists new value and updates last_modified, UpdateSetting with invalid key returns error, GetAllSettings returns empty when no rows exist
-- [ ] T005 [P] [US1] Write settings API integration tests in api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointsTests.cs: GET /api/v1/settings returns all settings, PUT /api/v1/settings/{key} updates value, PUT with invalid value returns 400, PUT with value outside bounds (min 1, max 3600) returns 400, all endpoints return 401 without auth
-- [ ] T006 [P] [US1] Write polling intervals component tests in dashboard/tests/component/SettingsPage.test.tsx: renders polling interval inputs with current values, validates min/max bounds, shows error for invalid input, saves successfully and shows success message, displays fallback defaults when no DB rows exist
-- [ ] T007 [P] [US1] Write exporter settings read tests in local/epcube-exporter/test_exporter.py: reads poll interval from settings table, falls back to default (30s) when no row exists, falls back to default on DB read error
+- [X] T004 [P] [US1] Write SettingsService unit tests in api/tests/EpCubeGraph.Api.Tests/Unit/SettingsServiceTests.cs: GetAllSettings returns key-value pairs, GetSetting returns single value, UpdateSetting persists new value and updates last_modified, UpdateSetting with invalid key returns error, GetAllSettings returns empty when no rows exist
+- [X] T005 [P] [US1] Write settings API integration tests in api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointsTests.cs: GET /api/v1/settings returns all settings, PUT /api/v1/settings/{key} updates value, PUT with invalid value returns 400, PUT with value outside bounds (min 1, max 3600) returns 400, all endpoints return 401 without auth
+- [X] T006 [P] [US1] Write polling intervals component tests in dashboard/tests/component/SettingsPage.test.tsx: renders polling interval inputs with current values, validates min/max bounds, shows error for invalid input, saves successfully and shows success message, displays fallback defaults when no DB rows exist
+- [X] T007 [P] [US1] Write exporter settings read tests in local/epcube-exporter/test_exporter.py: reads poll interval from settings table, falls back to default (30s) when no row exists, falls back to default on DB read error
 
 ### Implementation
 
-- [ ] T008 [US1] Implement SettingsService in api/src/EpCubeGraph.Api/Services/SettingsService.cs: GetAllSettings, GetSetting, UpdateSetting with Npgsql. Table auto-created if not exists. Validates polling interval bounds (1-3600).
-- [ ] T009 [US1] Implement settings endpoints in api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs: GET /api/v1/settings, PUT /api/v1/settings/{key}. Wire into Program.cs with auth.
-- [ ] T010 [US1] Implement polling intervals section in dashboard/src/components/SettingsPage.tsx: number inputs for epcube_poll_interval_seconds (editable) and vue_poll_interval_seconds (disabled, labeled "Coming in Feature 005"), independent Save button, validation (1-3600), success message on save.
-- [ ] T011 [US1] Add settings API functions to dashboard/src/api.ts: fetchSettings(), updateSetting(key, value)
-- [ ] T012 [US1] Add /settings route to dashboard/src/App.tsx with gear icon + "Settings" nav link
-- [ ] T013 [US1] Modify local/epcube-exporter/exporter.py: read epcube_poll_interval_seconds from settings table on each poll cycle, fallback to 30s default
+- [X] T008 [US1] Implement SettingsService in api/src/EpCubeGraph.Api/Services/SettingsService.cs: GetAllSettings, GetSetting, UpdateSetting with Npgsql. Table auto-created if not exists. Validates polling interval bounds (1-3600).
+- [X] T009 [US1] Implement settings endpoints in api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs: GET /api/v1/settings, PUT /api/v1/settings/{key}. Wire into Program.cs with auth.
+- [X] T010 [US1] Implement polling intervals section in dashboard/src/components/SettingsPage.tsx: number inputs for epcube_poll_interval_seconds (editable) and vue_poll_interval_seconds (disabled, labeled "Coming in Feature 005"), independent Save button, validation (1-3600), success message on save.
+- [X] T011 [US1] Add settings API functions to dashboard/src/api.ts: fetchSettings(), updateSetting(key, value)
+- [X] T012 [US1] Add /settings route to dashboard/src/App.tsx with gear icon + "Settings" nav link
+- [X] T013 [US1] Modify local/epcube-exporter/exporter.py: read epcube_poll_interval_seconds from settings table on each poll cycle, fallback to 30s default
 
 ---
 

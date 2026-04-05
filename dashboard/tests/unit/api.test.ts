@@ -297,3 +297,236 @@ describe('api', () => {
     }
   });
 });
+
+describe('Settings API', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    globalThis.fetch = vi.fn();
+  });
+
+  it('fetchSettings calls GET /settings', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ settings: [] }),
+    });
+    const { fetchSettings } = await import('../../src/api');
+
+    // Act
+    const result = await fetchSettings();
+
+    // Assert
+    expect(result.settings).toEqual([]);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it('updateSetting calls PUT /settings/{key} with body', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({}),
+    });
+    const { updateSetting } = await import('../../src/api');
+
+    // Act
+    await updateSetting('epcube_poll_interval_seconds', '60');
+
+    // Assert
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings/epcube_poll_interval_seconds',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ value: '60' }),
+      }),
+    );
+  });
+
+  it('fetchHierarchy calls GET /settings/hierarchy', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ entries: [] }),
+    });
+    const { fetchHierarchy } = await import('../../src/api');
+
+    // Act
+    const result = await fetchHierarchy();
+
+    // Assert
+    expect(result.entries).toEqual([]);
+  });
+
+  it('fetchDisplayNames calls GET /settings/display-names', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ overrides: [] }),
+    });
+    const { fetchDisplayNames } = await import('../../src/api');
+
+    // Act
+    const result = await fetchDisplayNames();
+
+    // Assert
+    expect(result.overrides).toEqual([]);
+  });
+
+  it('clearDisplayName calls DELETE', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    const { clearDisplayName } = await import('../../src/api');
+
+    // Act
+    await clearDisplayName(1234, '5');
+
+    // Assert
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings/display-names/1234/5',
+      expect.objectContaining({ method: 'DELETE' }),
+    );
+  });
+
+  it('authFetchWrite tracks API errors on non-ok response', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: 'Validation failed' }),
+    });
+    const { updateSetting } = await import('../../src/api');
+
+    // Act & Assert
+    try {
+      await updateSetting('bad_key', 'value');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toBe('Validation failed');
+    }
+  });
+
+  it('updateHierarchy calls PUT with entries', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ entries: [{ id: 1, parent_device_gid: 100, child_device_gid: 200 }] }),
+    });
+    const { updateHierarchy } = await import('../../src/api');
+
+    // Act
+    const result = await updateHierarchy([{ parent_device_gid: 100, child_device_gid: 200 }]);
+
+    // Assert
+    expect(result.entries.length).toBe(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings/hierarchy',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ entries: [{ parent_device_gid: 100, child_device_gid: 200 }] }),
+      }),
+    );
+  });
+
+  it('updateDisplayNames calls PUT with overrides', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ overrides: [] }),
+    });
+    const { updateDisplayNames } = await import('../../src/api');
+
+    // Act
+    await updateDisplayNames(1234, [{ channel_number: '1', display_name: 'Kitchen' }]);
+
+    // Assert
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings/display-names/1234',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({ overrides: [{ channel_number: '1', display_name: 'Kitchen' }] }),
+      }),
+    );
+  });
+
+  it('authFetchWrite attaches bearer token when auth enabled', async () => {
+    // Arrange
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    vi.doMock('../../src/auth', () => ({
+      getAccessToken: vi.fn().mockResolvedValue('test-token'),
+      initializeMsal: vi.fn(),
+      isAuthenticated: vi.fn().mockReturnValue(true),
+    }));
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    const { updateSetting } = await import('../../src/api');
+
+    // Act
+    await updateSetting('key', 'val');
+
+    // Assert
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
+      }),
+    );
+  });
+
+  it('authFetchWrite throws when auth enabled but no token', async () => {
+    // Arrange
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    vi.doMock('../../src/auth', () => ({
+      getAccessToken: vi.fn().mockResolvedValue(null),
+      initializeMsal: vi.fn(),
+      isAuthenticated: vi.fn().mockReturnValue(false),
+    }));
+    const { updateSetting } = await import('../../src/api');
+
+    // Act & Assert
+    try {
+      await updateSetting('key', 'val');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toBe('Authentication in progress');
+    }
+  });
+
+  it('authFetchWrite handles non-JSON error response', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => { throw new Error('not json'); },
+    });
+    const { updateSetting } = await import('../../src/api');
+
+    // Act & Assert
+    try {
+      await updateSetting('key', 'val');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toBe('HTTP 500');
+    }
+  });
+
+  it('authFetchWrite uses status message when error body has no error field', async () => {
+    // Arrange
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve({ message: 'no error field' }),
+    });
+    const { updateSetting } = await import('../../src/api');
+
+    // Act & Assert
+    try {
+      await updateSetting('key', 'val');
+      expect.fail('Should have thrown');
+    } catch (err) {
+      expect((err as Error).message).toBe('HTTP 422');
+    }
+  });
+});

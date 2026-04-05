@@ -323,6 +323,8 @@ class TestRenderStatusPage(unittest.TestCase):
             "poll_count": 10,
             "poll_errors": 0,
             "last_poll": time.time() - 30,
+            "poll_interval": 30,
+            "next_poll_at": time.time() + 15,
             "devices": 2,
             "history": [],
         }
@@ -533,12 +535,43 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn(exporter.__version__, html)
         self.assertIn("Version:", html)
 
+    def test_poll_interval_displayed(self):
+        html = exporter._render_status_page(self._make_status(poll_interval=10), self._make_health())
+        self.assertIn("Poll interval:", html)
+        self.assertIn("10s", html)
+
+    def test_countdown_displayed(self):
+        next_at = time.time() + 20
+        html = exporter._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
+        self.assertIn("Next poll in:", html)
+        self.assertIn('id="countdown"', html)
+        self.assertIn(f'data-next="{next_at}"', html)
+
+    def test_countdown_zero_when_past(self):
+        next_at = time.time() - 5  # already past
+        html = exporter._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
+        self.assertIn('>0s<', html)
+
+    def test_countdown_waiting_when_no_next_poll(self):
+        html = exporter._render_status_page(self._make_status(next_poll_at=0), self._make_health())
+        self.assertIn("waiting", html)
+
+    def test_countdown_js_ticks(self):
+        html = exporter._render_status_page(self._make_status(), self._make_health())
+        self.assertIn("getElementById('countdown')", html)
+        self.assertIn("parseFloat(el.dataset.next)", html)
+
     def test_auto_refresh_via_fetch(self):
         html = exporter._render_status_page(self._make_status(), self._make_health())
         # Meta refresh removed; replaced with JS fetch-based background refresh
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn('setInterval', html)
         self.assertIn('fetch(location.href)', html)
+
+    def test_auto_refresh_matches_poll_interval(self):
+        html = exporter._render_status_page(self._make_status(poll_interval=10), self._make_health())
+        self.assertIn('}, 10000)', html)
+        self.assertIn('Auto-refreshes every 10s', html)
 
     def test_utctime_class_for_js(self):
         snap = {
