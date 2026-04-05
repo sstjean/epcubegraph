@@ -19,7 +19,7 @@
 
 ## User Scenarios & Testing
 
-### User Story 1 — View and Modify Polling Intervals (Priority: P1)
+### User Story 1 — View and Modify Polling Intervals (Priority: P1, #82)
 
 As a system administrator, I want to adjust polling intervals for data sources (EP Cube exporter, Emporia Vue exporter) from the dashboard without redeploying, so I can tune data freshness vs. API load in real time.
 
@@ -35,7 +35,7 @@ As a system administrator, I want to adjust polling intervals for data sources (
 
 ---
 
-### User Story 2 — Manage Panel Hierarchy (Priority: P2)
+### User Story 2 — Manage Panel Hierarchy (Priority: P2, #83)
 
 As a homeowner, I want to define which electrical panels are nested under other panels from the dashboard, so the system can deduplicate overlapping power measurements without me editing config files.
 
@@ -52,7 +52,7 @@ As a homeowner, I want to define which electrical panels are nested under other 
 
 ---
 
-### User Story 3 — Rename Devices and Circuits (Priority: P3)
+### User Story 3 — Rename Devices and Circuits (Priority: P3, #84)
 
 As a homeowner, I want to override the default device and circuit names with my own display names from the dashboard, so the UI shows meaningful labels like "Kitchen Fridge" instead of "Circuit 7."
 

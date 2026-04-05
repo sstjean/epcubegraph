@@ -21,7 +21,7 @@
 
 ## User Scenarios & Testing
 
-### User Story 1 — Ingest Vue Circuit Data (Priority: P1)
+### User Story 1 — Ingest Vue Circuit Data (Priority: P1, #85)
 
 As a homeowner with Emporia Vue devices monitoring my electrical panels, I want the system to automatically retrieve power readings from all Vue devices and store them in the database, so I have circuit-level visibility into my home's energy consumption.
 
@@ -38,7 +38,7 @@ As a homeowner with Emporia Vue devices monitoring my electrical panels, I want 
 
 ---
 
-### User Story 2 — Deduplicate Nested Panel Measurements (Priority: P2)
+### User Story 2 — Deduplicate Nested Panel Measurements (Priority: P2, #86)
 
 As a homeowner whose main panel feeds downstream subpanels (some of which have their own Vue monitors), I want the system to automatically subtract nested panel draws from parent panel totals, so I see the true unique power consumption of each panel without double-counting.
 
@@ -54,7 +54,7 @@ As a homeowner whose main panel feeds downstream subpanels (some of which have t
 
 ---
 
-### User Story 3 — Expose Vue Data Through an API (Priority: P3)
+### User Story 3 — Expose Vue Data Through an API (Priority: P3, #87)
 
 As a dashboard user, I want to query Vue circuit data through a REST API, so I can view circuit-level power consumption in the dashboard or any other consumer.
 
@@ -70,7 +70,7 @@ As a dashboard user, I want to query Vue circuit data through a REST API, so I c
 
 ---
 
-### User Story 4 — Display Vue Data on the Dashboard (Priority: P4)
+### User Story 4 — Display Vue Data on the Dashboard (Priority: P4, #88)
 
 As a homeowner, I want to see my circuit-level energy consumption on the dashboard in various visualizations, so I can identify which circuits and appliances are consuming the most power.
 
