@@ -95,6 +95,31 @@ describe('formatting', () => {
     });
   });
 
+  describe('formatWattsAxis', () => {
+    it('uses 1-decimal kW for axis readability', async () => {
+      const { formatWattsAxis } = await import('../../src/utils/formatting');
+      expect(formatWattsAxis(1234)).toBe('1.2 kW');
+      expect(formatWattsAxis(5678)).toBe('5.7 kW');
+      expect(formatWattsAxis(-1500)).toBe('-1.5 kW');
+    });
+
+    it('uses 1-decimal MW for large values', async () => {
+      const { formatWattsAxis } = await import('../../src/utils/formatting');
+      expect(formatWattsAxis(2345000)).toBe('2.3 MW');
+    });
+
+    it('uses whole watts for sub-kW', async () => {
+      const { formatWattsAxis } = await import('../../src/utils/formatting');
+      expect(formatWattsAxis(567)).toBe('567 W');
+      expect(formatWattsAxis(0)).toBe('0 W');
+    });
+
+    it('returns — for NaN', async () => {
+      const { formatWattsAxis } = await import('../../src/utils/formatting');
+      expect(formatWattsAxis(NaN)).toBe('—');
+    });
+  });
+
   describe('formatPercent', () => {
     it('formats 0-100 with % suffix', async () => {
       // Arrange

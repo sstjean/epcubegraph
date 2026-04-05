@@ -68,8 +68,8 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - **FR-009**: *Removed — Grafana integration descoped.*
 - **FR-010**: All dashboard access MUST be authenticated per the constitution's security requirements.
 - **FR-011**: Dashboard MUST consume data exclusively through the versioned API from feature 001-data-ingestor.
-- **FR-012**: Dashboard MUST automatically poll for updated readings every 5 seconds to keep displayed data current without manual refresh.
-- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), 2–6 day view at hourly intervals, weekly/monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤6d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level.
+- **FR-012**: Dashboard MUST automatically poll for updated readings every 30 seconds to keep displayed data current without manual refresh.
+- **FR-013**: Dashboard MUST apply tiered data resolution based on the selected time range: daily view at collection interval (default: 1 min), 2–6 day view at hourly intervals, 7-day/monthly view at daily intervals, yearly view at calendar month intervals. Custom date ranges MUST auto-select the closest matching tier based on range duration (≤1d → 1 min, ≤6d → 1h, ≤30d → 1d, >30d → calendar month). When data is downsampled, the dashboard MUST display a visible notice indicating the aggregation level.
 - **FR-014**: Dashboard MUST handle authentication failures gracefully: when a token expires or Entra ID is unreachable mid-session, the dashboard MUST redirect to re-authentication while preserving the current view state (selected page, time range, filters).
 - **FR-015**: Dashboard MUST use semantic HTML elements, support keyboard navigation, and maintain sufficient color contrast (≥4.5:1 ratio) for readability. No formal WCAG audit or automated accessibility test suite is required.
 - **FR-016**: *Removed — duplicate of SC-001.*
@@ -116,7 +116,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 ### Session 2026-03-16
 
 - Q: What age of data should trigger the stale/offline indicator? → A: 3× the collection interval (default: 3 minutes)
-- Q: How should the dashboard keep current readings up to date? → A: Auto-poll every 5 seconds
+- Q: How should the dashboard keep current readings up to date? → A: Auto-poll every 30 seconds
 - Q: How should data gaps be visualized in historical graphs? → A: Broken line (discontinuous segments, no connection across gaps)
 - Q: What Grafana data source type should be used? → A: *Descoped — Grafana integration removed (FR-009).*
 - Q: How should large time ranges beyond 30 days be handled? → A: Tiered downsampling — daily at collection interval, weekly at hourly, monthly at daily, yearly/custom >30d at calendar month — with visible aggregation notice. Custom ranges are unrestricted and auto-select the closest tier.

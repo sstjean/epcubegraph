@@ -1,5 +1,6 @@
 import { getAccessToken } from './auth';
 import { ApiError } from './utils/retry';
+import { trackApiError } from './telemetry';
 import type {
   DeviceListResponse,
   CurrentReadingsResponse,
@@ -36,6 +37,7 @@ async function authFetch(url: string, isRetry = false): Promise<Response> {
     } catch {
       // Empty or non-JSON response body — use status code message
     }
+    trackApiError(url, response.status);
     throw new ApiError(errorMessage, response.status);
   }
 

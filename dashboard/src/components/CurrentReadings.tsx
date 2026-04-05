@@ -16,6 +16,16 @@ export interface DeviceGroup {
   metrics: DeviceCardMetrics;
 }
 
+/** Self-contained component that ticks every second to update relative time. */
+function RelativeTime({ epoch }: { epoch: number }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <>{formatRelativeTime(epoch)}</>;
+}
+
 
 
 /** Find the metric value for a given device name from a current readings response. */
@@ -152,7 +162,7 @@ export function CurrentReadings() {
         </div>
       )}
       {lastRefreshed > 0 && (
-        <p class="last-updated">Last updated: {formatRelativeTime(lastRefreshed)}</p>
+        <p class="last-updated">Last updated: <RelativeTime epoch={lastRefreshed} /></p>
       )}
     </section>
   );

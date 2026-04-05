@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
-import { HistoricalGraph, buildDeviceChartData, getAggregationLabel, shouldUseBars, formatTooltipTimestamp, formatAxisDates } from '../../src/components/HistoricalGraph';
+import { HistoricalGraph, buildDeviceChartData, getAggregationLabel, shouldUseBars, formatTooltipTimestamp, formatAxisDates, computeAxisSize, powerAxisSize } from '../../src/components/HistoricalGraph';
 import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
 import { withRetry } from '../../src/utils/retry';
 import type { DeviceListResponse, RangeReadingsResponse, TimeRangeValue } from '../../src/types';
@@ -234,6 +234,52 @@ describe('HistoricalGraph', () => {
       const deviceCharts = document.querySelectorAll('.device-chart');
       expect(deviceCharts.length).toBe(2);
     });
+  });
+
+  it('each chart contains Solar, Home Load, Grid, and Battery % series (T051)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — both chart instances have all 4 series + Time
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBe(2);
+    });
+
+    for (const opts of capturedUPlotOpts) {
+      const series = (opts as { series: Array<{ label?: string }> }).series;
+      const labels = series.map((s) => s.label);
+      expect(labels).toContain('Solar');
+      expect(labels).toContain('Home Load');
+      expect(labels).toContain('Grid');
+      expect(labels).toContain('Battery %');
+    }
+  });
+
+  it('series colors are consistent across all charts (FR-023)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — same stroke color for same series label across charts
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBe(2);
+    });
+
+    const chart1Series = (capturedUPlotOpts[0] as { series: Array<{ label?: string; stroke?: string }> }).series;
+    const chart2Series = (capturedUPlotOpts[1] as { series: Array<{ label?: string; stroke?: string }> }).series;
+
+    // Solar, Home Load, Grid, Battery % (indices 1-4) must have matching stroke colors
+    for (let i = 1; i < chart1Series.length; i++) {
+      expect(chart1Series[i].stroke).toBe(chart2Series[i].stroke);
+      expect(chart1Series[i].stroke).toBeTruthy();
+    }
   });
 
   it('renders accessible container with aria-label and aria-busy (FR-015)', async () => {
@@ -658,6 +704,62 @@ describe('getAggregationLabel', () => {
   });
 });
 
+describe('computeAxisSize', () => {
+  it('returns default 60 when values is null', () => {
+    expect(computeAxisSize(null, () => 0)).toBe(60);
+  });
+
+  it('computes size from widest label plus padding', () => {
+    // Mock measureWidth: "10.0 kW" = 50px, "5.0 kW" = 40px
+    const measureWidth = (text: string) => text.length * 7;
+    const values = ['5.0 kW', '10.0 kW', '15.0 kW'];
+    // widest = "15.0 kW" = 7 chars * 7 = 49, ceil(49) + 18 = 67
+    expect(computeAxisSize(values, measureWidth)).toBe(67);
+  });
+
+  it('skips null values', () => {
+    const measureWidth = (text: string) => text.length * 7;
+    const values = [null, '5.0 kW', null];
+    // widest = "5.0 kW" = 6 chars * 7 = 42, ceil(42) + 18 = 60
+    expect(computeAxisSize(values, measureWidth)).toBe(60);
+  });
+
+  it('handles all null values', () => {
+    const measureWidth = () => 0;
+    const values = [null, null];
+    // maxWidth = 0, ceil(0) + 18 = 18
+    expect(computeAxisSize(values, measureWidth)).toBe(18);
+  });
+});
+
+describe('powerAxisSize', () => {
+  it('measures tick labels via canvas context and returns computed size', () => {
+    // Arrange — mock uPlot instance with canvas context
+    const mockMeasureText = vi.fn((text: string) => ({ width: text.length * 8 }));
+    const mockU = {
+      ctx: { font: '', measureText: mockMeasureText },
+      axes: [null, { font: ['12px Arial'] }],
+    } as unknown as import('uplot').default;
+
+    // Act
+    const result = powerAxisSize(mockU, ['5.0 kW', '10.0 kW']);
+
+    // Assert — widest = "10.0 kW" = 7 * 8 = 56px canvas, / devicePixelRatio(1) = 56, ceil + 18 = 74
+    expect(mockU.ctx.font).toBe('12px Arial');
+    expect(mockMeasureText).toHaveBeenCalled();
+    expect(result).toBeGreaterThan(18);
+  });
+
+  it('returns default when values is null', () => {
+    const mockU = {
+      ctx: { font: '', measureText: vi.fn() },
+      axes: [null, { font: ['12px Arial'] }],
+    } as unknown as import('uplot').default;
+
+    expect(powerAxisSize(mockU, null)).toBe(60);
+  });
+});
+
 describe('shouldUseBars', () => {
   it('returns false for step < 86400 (line chart)', () => {
     expect(shouldUseBars(60)).toBe(false);
@@ -751,6 +853,7 @@ describe('FR-026 bar chart rendering', () => {
     // Assert
     await waitFor(() => {
       expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBeGreaterThan(0);
     });
 
     expect(barsSpy).toHaveBeenCalled();
@@ -770,6 +873,7 @@ describe('FR-026 bar chart rendering', () => {
     // Assert
     await waitFor(() => {
       expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBeGreaterThan(0);
     });
 
     const opts = capturedUPlotOpts[0] as { axes: Array<{ values?: (u: unknown, splits: number[]) => string[] }> };
@@ -792,6 +896,7 @@ describe('FR-026 bar chart rendering', () => {
     // Assert
     await waitFor(() => {
       expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBeGreaterThan(0);
     });
 
     const opts = capturedUPlotOpts[0] as { axes: Array<{ values?: unknown }> };
@@ -809,6 +914,7 @@ describe('FR-026 bar chart rendering', () => {
     // Assert
     await waitFor(() => {
       expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBeGreaterThan(0);
     });
 
     const opts = capturedUPlotOpts[0] as { series: Array<{ paths?: unknown; scale?: string }> };
@@ -827,6 +933,7 @@ describe('FR-026 bar chart rendering', () => {
     // Assert
     await waitFor(() => {
       expect(document.querySelectorAll('.device-chart').length).toBe(2);
+      expect(capturedUPlotOpts.length).toBeGreaterThan(0);
     });
 
     expect(barsSpy).not.toHaveBeenCalled();

@@ -2,6 +2,11 @@ import Router from 'preact-router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CurrentReadings } from './components/CurrentReadings';
 import { HistoryView } from './components/HistoryView';
+import { trackPageLoad } from './telemetry';
+
+function handleRouteChange() {
+  trackPageLoad();
+}
 
 export function App() {
   return (
@@ -14,7 +19,7 @@ export function App() {
         <a href="/">Current</a>
         <a href="/history">History</a>
       </nav>
-      <Router>
+      <Router onChange={handleRouteChange}>
         <CurrentReadings path="/" />
         <HistoryView path="/history" />
       </Router>

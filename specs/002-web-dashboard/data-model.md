@@ -90,12 +90,12 @@ interface RangeReadingsResponse {
 | Preset | Start | End | Step |
 |--------|-------|-----|------|
 | Today | start of today (local) | now | 1m |
-| Last 7 days | now - 7d | now | 1h |
+| Last 7 days | now - 7d | now | 1d |
 | Last 30 days | now - 30d | now | 1d |
 | Last year | now - 365d | now | calendar month |
 | Custom | user-selected | user-selected | auto-tiered (see below) |
 
-**Step auto-selection**: Custom ranges use the same tiered resolution as presets, selected by range duration: ≤1 day → 1m (60s), ≤7 days → 1h (3600s), ≤30 days → 1d (86400s), >30 days → calendar month. No cap on custom range length.
+**Step auto-selection**: Custom ranges use the same tiered resolution as presets, selected by range duration: ≤1 day → 1m (60s), ≤6 days → 1h (3600s), ≤30 days → 1d (86400s), >30 days → calendar month. No cap on custom range length.
 
 **Aggregation notice**: When step exceeds the collection interval (1 minute), the dashboard displays a visible notice indicating the aggregation level (e.g., "Data shown at hourly resolution").
 
@@ -169,8 +169,8 @@ User opens dashboard
   → Render current readings view
 
 User selects time range (e.g., "Last 7 days")
-  → GET /api/v1/readings/range?metric=<metric>&start=<7d-ago>&end=<now>&step=3600
-  → GET /api/v1/grid?start=<7d-ago>&end=<now>&step=1h
+  → GET /api/v1/readings/range?metric=<metric>&start=<7d-ago>&end=<now>&step=86400
+  → GET /api/v1/grid?start=<7d-ago>&end=<now>&step=1d
   → Convert to uPlot data format (null for gaps → broken lines)
   → Render historical graph
   → If step > 1m, show aggregation notice

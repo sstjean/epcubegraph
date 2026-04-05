@@ -5,7 +5,7 @@ import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../api';
 import type { Device, RangeReadingsResponse, TimeSeries, TimeRangeValue } from '../types';
 import { withRetry } from '../utils/retry';
 import { groupDevicesByAlias, getDisplayName } from '../utils/devices';
-import { formatWatts, formatPercent } from '../utils/formatting';
+import { formatWatts, formatWattsAxis, formatPercent } from '../utils/formatting';
 
 interface HistoricalGraphProps {
   timeRange: TimeRangeValue;
@@ -31,6 +31,31 @@ export function getAggregationLabel(step: number): string | null {
 
 /** Threshold for switching from line to bar chart rendering (FR-026). */
 export const BAR_STEP_THRESHOLD = 86400;
+
+/** Compute Power axis width from the widest formatted tick label. */
+export function computeAxisSize(
+  values: (string | null)[] | null,
+  measureWidth: (text: string) => number,
+): number {
+  if (!values) return 60;
+  let maxWidth = 0;
+  for (const v of values) {
+    if (v != null) {
+      const w = measureWidth(v);
+      if (w > maxWidth) maxWidth = w;
+    }
+  }
+  // tick values width + tick marks (10px) + gap (8px)
+  return Math.ceil(maxWidth) + 18;
+}
+
+/** uPlot axis size callback — measures tick labels via canvas context. */
+export function powerAxisSize(u: uPlot, values: string[] | null): number {
+  const ctx = u.ctx;
+  const font = u.axes[1]?.font?.[0];
+  if (font) ctx.font = font;
+  return computeAxisSize(values, (text) => ctx.measureText(text).width / devicePixelRatio);
+}
 
 /** Returns true when charts should render power series as grouped vertical bars. */
 export function shouldUseBars(step: number): boolean {
@@ -321,9 +346,12 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
           {
             label: 'Power',
             stroke: '#a0aec0',
+            // Dynamically size axis based on widest formatted tick label.
+            size: powerAxisSize,
+            labelSize: 24,
             grid: { stroke: 'rgba(255,255,255,0.1)' },
             ticks: { stroke: 'rgba(255,255,255,0.2)' },
-            values: (_u: uPlot, splits: number[]) => splits.map(formatWatts),
+            values: (_u: uPlot, splits: number[]) => splits.map(formatWattsAxis),
           },
           {
             scale: '%',
