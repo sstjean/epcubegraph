@@ -86,6 +86,12 @@ variable "custom_domain_ttl" {
   default     = 300
 }
 
+variable "exporter_subdomain" {
+  description = "Subdomain for the exporter debug page (e.g., 'epcube-debug' → epcube-debug.devsbx.xyz). Empty string disables."
+  type        = string
+  default     = ""
+}
+
 # ── PostgreSQL ──
 
 variable "postgres_version" {

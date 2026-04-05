@@ -117,3 +117,65 @@ resource "terraform_data" "api_cert_bind" {
 
   depends_on = [time_sleep.api_cert_provisioning]
 }
+
+# ── Exporter (Container App) Custom Domain ──
+
+resource "azurerm_dns_txt_record" "exporter_verification" {
+  count               = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  name                = "asuid.${var.exporter_subdomain}"
+  zone_name           = data.azurerm_dns_zone.custom[0].name
+  resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
+  ttl                 = var.custom_domain_ttl
+
+  record {
+    value = azurerm_container_app.exporter[0].custom_domain_verification_id
+  }
+}
+
+resource "azurerm_dns_cname_record" "exporter" {
+  count               = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  name                = var.exporter_subdomain
+  zone_name           = data.azurerm_dns_zone.custom[0].name
+  resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
+  ttl                 = var.custom_domain_ttl
+  record              = azurerm_container_app.exporter[0].ingress[0].fqdn
+}
+
+resource "time_sleep" "exporter_dns_propagation" {
+  count           = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  create_duration = "30s"
+
+  depends_on = [
+    azurerm_dns_cname_record.exporter,
+    azurerm_dns_txt_record.exporter_verification,
+  ]
+}
+
+resource "azurerm_container_app_custom_domain" "exporter" {
+  count            = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  name             = "${var.exporter_subdomain}.${var.custom_domain_zone_name}"
+  container_app_id = azurerm_container_app.exporter[0].id
+
+  lifecycle {
+    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
+  }
+
+  depends_on = [time_sleep.exporter_dns_propagation]
+}
+
+resource "time_sleep" "exporter_cert_provisioning" {
+  count           = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  create_duration = "60s"
+  depends_on      = [azurerm_container_app_custom_domain.exporter]
+}
+
+resource "terraform_data" "exporter_cert_bind" {
+  count            = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+  triggers_replace = [azurerm_container_app_custom_domain.exporter[0].id]
+
+  provisioner "local-exec" {
+    command = "for i in 1 2 3 4 5; do az containerapp hostname bind --hostname ${var.exporter_subdomain}.${var.custom_domain_zone_name} --name ${azurerm_container_app.exporter[0].name} --resource-group ${azurerm_resource_group.main.name} --environment ${azurerm_container_app_environment.main.name} --validation-method CNAME && break || echo \"Attempt $i failed, retrying in 15s...\" && sleep 15; done"
+  }
+
+  depends_on = [time_sleep.exporter_cert_provisioning]
+}

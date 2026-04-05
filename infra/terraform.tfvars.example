@@ -47,6 +47,7 @@ exporter_port = 9250
 # custom_domain_zone_rg   = "devsbx-shared"
 # dashboard_subdomain     = "epcube"          # epcube.devsbx.xyz
 # api_subdomain           = "epcube-api"      # epcube-api.devsbx.xyz
+# exporter_subdomain      = "epcube-debug"    # epcube-debug.devsbx.xyz
 # custom_domain_ttl       = 300
 
 
