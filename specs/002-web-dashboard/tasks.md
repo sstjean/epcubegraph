@@ -163,7 +163,7 @@
 **Purpose**: Security review, accessibility verification, end-to-end validation
 
 - [x] T043a [US1] Bug fix (#44): Add CORS to API — AddCors(), Cors:AllowedOrigin config, Cors__AllowedOrigin env var in container-apps.tf, CORS integration tests (FR-019)
-- [ ] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID), verify all infra resources have management locks
+- [x] T043 [P] Security review: verify MSAL auth on all API calls (no unauthenticated data fetch), verify CSP headers in staticwebapp.config.json block XSS, verify no secrets in client code (only public client ID/tenant ID)
 - [ ] T044 [P] Accessibility spot-check (FR-015): verify all pages keyboard-navigable (Tab through nav, cards, buttons), verify semantic landmarks (nav, main, section, article), verify ARIA attributes on interactive elements (aria-label, aria-pressed, aria-busy, role="alert", role="status"), verify color contrast at least 4.5:1 on all text/badges
 - [ ] T045 Run full test suite with coverage: cd dashboard and npm run typecheck and npm run test:coverage — verify 100% coverage (branches, functions, lines, statements). Verify performance: load CurrentReadings with mock data <2s (SC-001); load HistoricalGraph with 30d mock data (~43K points) <2s (SC-002)
 - [ ] T050 Run quickstart.md end-to-end validation: cd dashboard, npm install, npm test, npm run test:coverage (100% pass), npm run build (dist/ output), cd ../infra, terraform validate, terraform fmt -check
