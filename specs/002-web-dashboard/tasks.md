@@ -128,11 +128,11 @@
 
 ### Historical Graph Improvements (#53)
 
-- [ ] T051 [P] [US2] Write HistoricalGraph per-device chart tests in dashboard/tests/component/HistoricalGraph.test.tsx: renders one chart per device (stacked vertically), each labeled with device name, contains Solar/Battery/Home Load/Grid series, data from different devices NOT merged into single chart (FR-021)
-- [ ] T052 [P] [US2] Write HistoricalGraph legend and formatting tests in dashboard/tests/component/HistoricalGraph.test.tsx: legend displays live values on cursor hover (time + value per series), legend shows label + color swatch when cursor outside chart (FR-022), series colors match legend labels and are consistent across charts (FR-023), Y-axis and legend values display kW with 1 decimal for >999W and whole watts for ≤999W (FR-024)
-- [ ] T053 [US2] Implement per-device charts in dashboard/src/components/HistoricalGraph.tsx: fetch data per device, render one uPlot instance per EP Cube device stacked vertically, label each with device name, keep series colors consistent across charts (FR-021, FR-023)
-- [ ] T054 [US2] Implement legend cursor interactivity and kW formatting in dashboard/src/components/HistoricalGraph.tsx: uPlot cursor plugin for live legend values on hover (FR-022), custom axis value formatter — kW with 1 decimal for >999W, whole watts for ≤999W (FR-024), apply same formatter to legend hover values
-- [ ] T055 [US2] Fix temporal gap detection in dashboard/src/components/HistoricalGraph.tsx: after merging timestamps, scan for gaps where consecutive timestamps differ by more than 2× the step interval; insert null values at gap boundaries to break the line in uPlot (FR-008). Add tests: given data with a 30-minute gap at 1-min step, chart renders broken line across the gap
+- [x] T051 [P] [US2] Write HistoricalGraph per-device chart tests in dashboard/tests/component/HistoricalGraph.test.tsx: renders one chart per device (stacked vertically), each labeled with device name, contains Solar/Battery/Home Load/Grid series, data from different devices NOT merged into single chart (FR-021)
+- [x] T052 [P] [US2] Write HistoricalGraph legend and formatting tests in dashboard/tests/component/HistoricalGraph.test.tsx: legend displays live values on cursor hover (time + value per series), legend shows label + color swatch when cursor outside chart (FR-022), series colors match legend labels and are consistent across charts (FR-023), Y-axis and legend values display kW with 1 decimal for >999W and whole watts for ≤999W (FR-024)
+- [x] T053 [US2] Implement per-device charts in dashboard/src/components/HistoricalGraph.tsx: fetch data per device, render one uPlot instance per EP Cube device stacked vertically, label each with device name, keep series colors consistent across charts (FR-021, FR-023)
+- [x] T054 [US2] Implement legend cursor interactivity and kW formatting in dashboard/src/components/HistoricalGraph.tsx: uPlot cursor plugin for live legend values on hover (FR-022), custom axis value formatter — kW with 1 decimal for >999W, whole watts for ≤999W (FR-024), apply same formatter to legend hover values
+- [x] T055 [US2] Fix temporal gap detection in dashboard/src/components/HistoricalGraph.tsx: after merging timestamps, scan for gaps where consecutive timestamps differ by more than 2× the step interval; insert null values at gap boundaries to break the line in uPlot (FR-008). Add tests: given data with a 30-minute gap at 1-min step, chart renders broken line across the gap
 
 **Checkpoint**: Dashboard shows interactive time-series charts for all five time range presets plus custom. Applies tiered resolution with calendar-month aggregation for yearly views. Aggregation notice shown when downsampled. Data gaps rendered as broken lines. Empty ranges handled. Renders within 2 seconds for 30-day data. Keyboard-navigable and accessible (FR-015). User Stories 1 AND 2 both work independently.
 
@@ -238,10 +238,10 @@ FR-020: T046 test then T047 then T048 then T049
 | 1. Setup | 4 | 4 | 0 |
 | 2. Foundational | 12 | 12 | 0 |
 | 3. US1 (P1, #33) | 24 | 24 | 0 |
-| 4. US2 (P2, #34) | 11 | 6 | 5 |
+| 4. US2 (P2, #34) | 11 | 11 | 0 |
 | 5. FR-020 | 4 | 0 | 4 |
 | 6. Polish | 5 | 1 | 4 |
-| **Total** | **60** | **47** | **13** |
+| **Total** | **60** | **52** | **8** |
 
 ---
 

@@ -236,6 +236,52 @@ describe('HistoricalGraph', () => {
     });
   });
 
+  it('each chart contains Solar, Home Load, Grid, and Battery % series (T051)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+    capturedUPlotOpts.length = 0;
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — both chart instances have all 4 series + Time
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    for (const opts of capturedUPlotOpts) {
+      const series = (opts as { series: Array<{ label?: string }> }).series;
+      const labels = series.map((s) => s.label);
+      expect(labels).toContain('Solar');
+      expect(labels).toContain('Home Load');
+      expect(labels).toContain('Grid');
+      expect(labels).toContain('Battery %');
+    }
+  });
+
+  it('series colors are consistent across all charts (FR-023)', async () => {
+    // Arrange
+    setupTwoDeviceMocks();
+    capturedUPlotOpts.length = 0;
+
+    // Act
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Assert — same stroke color for same series label across charts
+    await waitFor(() => {
+      expect(document.querySelectorAll('.device-chart').length).toBe(2);
+    });
+
+    const chart1Series = (capturedUPlotOpts[0] as { series: Array<{ label?: string; stroke?: string }> }).series;
+    const chart2Series = (capturedUPlotOpts[1] as { series: Array<{ label?: string; stroke?: string }> }).series;
+
+    // Solar, Home Load, Grid, Battery % (indices 1-4) must have matching stroke colors
+    for (let i = 1; i < chart1Series.length; i++) {
+      expect(chart1Series[i].stroke).toBe(chart2Series[i].stroke);
+      expect(chart1Series[i].stroke).toBeTruthy();
+    }
+  });
+
   it('renders accessible container with aria-label and aria-busy (FR-015)', async () => {
     // Arrange
     setupTwoDeviceMocks();
