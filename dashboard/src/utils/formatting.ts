@@ -3,16 +3,16 @@ export function formatWatts(watts: number): string {
   const abs = Math.abs(watts);
   if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(3)} MW`;
   if (abs >= 1_000) return `${(watts / 1_000).toFixed(3)} kW`;
-  return `${Math.round(watts)} W`;
+  return `${watts} W`;
 }
 
-/** 1-decimal axis labels — readable at a glance, hover shows full precision. */
+/** 1-decimal axis labels for readability. Tooltip uses formatWatts (whole W / 3-decimal kW). */
 export function formatWattsAxis(watts: number): string {
   if (watts == null || Number.isNaN(watts)) return '—';
   const abs = Math.abs(watts);
   if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(1)} MW`;
   if (abs >= 1_000) return `${(watts / 1_000).toFixed(1)} kW`;
-  return `${Math.round(watts)} W`;
+  return `${watts} W`;
 }
 
 export function formatKw(watts: number): string {

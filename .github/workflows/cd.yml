@@ -321,9 +321,6 @@ jobs:
           APPINSIGHTS_CS=$(terraform output -raw appinsights_connection_string 2>/dev/null) || APPINSIGHTS_CS=""
           echo "::add-mask::${APPINSIGHTS_CS}"
           echo "appinsights_cs=${APPINSIGHTS_CS}" >> "$GITHUB_OUTPUT"
-          APPINSIGHTS_CS=$(terraform output -raw appinsights_connection_string 2>/dev/null) || APPINSIGHTS_CS=""
-          echo "::add-mask::${APPINSIGHTS_CS}"
-          echo "appinsights_cs=${APPINSIGHTS_CS}" >> "$GITHUB_OUTPUT"
 
       # Phase 4: Build and deploy dashboard SPA to Azure Static Web Apps
       - name: Get SWA deployment token
@@ -787,9 +784,6 @@ jobs:
           echo "entra_app_client_id=$(terraform output -raw entra_app_client_id)" >> "$GITHUB_OUTPUT"
           API_CUSTOM=$(terraform output -raw api_custom_url 2>/dev/null) || API_CUSTOM=""
           echo "api_custom_url=${API_CUSTOM}" >> "$GITHUB_OUTPUT"
-          APPINSIGHTS_CS=$(terraform output -raw appinsights_connection_string 2>/dev/null) || APPINSIGHTS_CS=""
-          echo "::add-mask::${APPINSIGHTS_CS}"
-          echo "appinsights_cs=${APPINSIGHTS_CS}" >> "$GITHUB_OUTPUT"
           APPINSIGHTS_CS=$(terraform output -raw appinsights_connection_string 2>/dev/null) || APPINSIGHTS_CS=""
           echo "::add-mask::${APPINSIGHTS_CS}"
           echo "appinsights_cs=${APPINSIGHTS_CS}" >> "$GITHUB_OUTPUT"
