@@ -1,6 +1,6 @@
 # Implementation Plan: Dashboard Settings Page
 
-**Branch**: `005-emporia-vue` | **Date**: 2026-04-05 | **Spec**: [spec.md](spec.md)
+**Branch**: `006-settings-page` | **Date**: 2026-04-05 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `/specs/006-settings-page/spec.md`
 **GitHub Issue**: #81
 
@@ -39,12 +39,10 @@ Build a Settings page in the dashboard that allows runtime modification of syste
 
 ```text
 specs/006-settings-page/
+├── spec.md              # Feature specification
 ├── plan.md              # This file
-├── research.md          # Phase 0 output
-├── data-model.md        # Phase 1 output
-├── quickstart.md        # Phase 1 output
-├── contracts/           # Phase 1 output (API contract)
-└── tasks.md             # Phase 2 output
+├── tasks.md             # Task breakdown
+└── checklists/          # Requirement validation
 ```
 
 ### Source Code Changes
@@ -74,60 +72,51 @@ infra/
 
 ## Implementation Phases
 
-### Phase 1: Database Schema + API Endpoints
+Organized as vertical slices by user story — each phase delivers a testable increment across the full stack (DB → API → dashboard).
 
-Create the three PostgreSQL tables and expose them through the API. No dashboard UI yet — API-testable via curl.
+### Phase 1: Setup (Shared Infrastructure)
 
-**Tables:**
-- `settings` — key (text PK), value (jsonb), last_modified (timestamptz)
-- `panel_hierarchy` — id (serial PK), parent_device_gid (bigint), child_device_gid (bigint), unique constraint on parent+child
-- `display_name_overrides` — id (serial PK), device_gid (bigint), channel_number (text, nullable), display_name (text), unique constraint on device_gid+channel_number
+Create data models and TypeScript types shared across all user stories.
 
-**API Endpoints:**
-- `GET /api/v1/settings` — returns all settings as key-value pairs
-- `PUT /api/v1/settings/{key}` — update a single setting (validates value)
-- `GET /api/v1/settings/hierarchy` — returns panel hierarchy entries
-- `PUT /api/v1/settings/hierarchy` — replace entire hierarchy (validates no cycles)
-- `GET /api/v1/settings/display-names` — returns all display name overrides
-- `PUT /api/v1/settings/display-names/{device_gid}` — update display names for a device
-- `DELETE /api/v1/settings/display-names/{device_gid}/{channel_number}` — clear override
+- C# models in `api/src/EpCubeGraph.Api/Models/Settings.cs`
+- TypeScript types in `dashboard/src/types.ts`
 
-All endpoints require Entra ID auth with `user_impersonation` scope.
+**Deliverable:** Models and types compile. No runtime behavior yet.
 
-**Deliverable:** API integration tests pass. Tables exist. Settings can be read/written via API.
+### Phase 2: US1 — Polling Intervals (#82)
 
-### Phase 2: Exporter Integration
+Full-stack delivery of polling interval management.
 
-Modify the EP Cube exporter to read its polling interval from the `settings` table instead of using a hardcoded value. Fall back to the hardcoded default when no row exists.
+- **API**: SettingsService with `settings` table (auto-created), GET/PUT endpoints
+- **Dashboard**: SettingsPage with polling intervals section, /settings route, nav link
+- **Exporter**: EP Cube exporter reads interval from DB, falls back to 30s default
+- Vue polling input shown as disabled/"Coming in Feature 005"
 
-**Changes:**
-- `exporter.py`: On each poll cycle, query `SELECT value FROM settings WHERE key = 'epcube_poll_interval_seconds'`. If no row or error, use default (30s).
-- No Vue exporter changes yet (Vue exporter doesn't exist — that's Feature 005).
+**Deliverable:** Change EP Cube polling interval from the dashboard. Exporter picks it up on next cycle.
 
-**Deliverable:** EP Cube exporter polling interval is changeable via the database. Exporter tests cover DB-read path and fallback.
+### Phase 3: US2 — Panel Hierarchy (#83)
 
-### Phase 3: Dashboard Settings Page
+Add panel hierarchy management to the Settings page.
 
-Build the Preact Settings page with three independently-saveable sections.
+- **API**: Hierarchy methods in SettingsService, `panel_hierarchy` table (auto-created), endpoints with cycle detection
+- **Dashboard**: Hierarchy section in SettingsPage — parent-child list, add/remove, validation
 
-**Components:**
-- `SettingsPage.tsx` — main page with three collapsible/tabbed sections
-- Polling intervals section: number inputs per data source, Save button, validation
-- Panel hierarchy section: tree/list view, add/remove, Save button, cycle validation
-- Display names section: device/circuit list with editable name fields, Save per device, clear button
+**Deliverable:** Panel hierarchy configurable from the dashboard. API returns hierarchy for deduplication queries.
 
-**Integration:**
-- `App.tsx`: add `/settings` route, gear icon + "Settings" in nav
-- `api.ts`: add `fetchSettings`, `updateSetting`, `fetchHierarchy`, `updateHierarchy`, `fetchDisplayNames`, `updateDisplayName`, `clearDisplayName`
+### Phase 4: US3 — Display Names (#84)
 
-**Deliverable:** Settings page loads, displays current values, saves changes, shows success messages. All 3 sections work independently.
+Add device/circuit renaming to the Settings page.
 
-### Phase 4: Polish + Validation
+- **API**: Display name methods in SettingsService, `display_name_overrides` table (auto-created), endpoints
+- **Dashboard**: Display names section in SettingsPage — device/circuit list, edit, clear to revert
 
-- Accessibility: keyboard navigation, ARIA, focus styles on new elements
-- Touch targets: 44px minimum on all buttons/inputs
-- Error handling: API errors shown in-page, network failures handled gracefully
+**Deliverable:** Custom display names configurable from the dashboard. API responses use overrides.
+
+### Phase 5: Polish + Validation
+
+- Accessibility: keyboard navigation, ARIA, focus styles, touch targets (44px minimum)
+- Error handling: API errors shown inline per section, network failure recovery
 - Full test suite: 100% coverage on all new code
-- `terraform validate` + `terraform fmt -check` (no infra changes expected)
+- Build + validate: `npm run build`, `terraform validate`, `terraform fmt -check`
 
 **Deliverable:** All tests pass, 100% coverage, accessibility validated.

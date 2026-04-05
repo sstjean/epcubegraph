@@ -17,9 +17,8 @@
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Database schema and shared API service layer
+**Purpose**: Shared models and types
 
-- [ ] T001 Create database migration SQL for three tables: `settings` (key text PK, value jsonb, last_modified timestamptz), `panel_hierarchy` (id serial PK, parent_device_gid bigint, child_device_gid bigint, unique on parent+child), `display_name_overrides` (id serial PK, device_gid bigint, channel_number text nullable, display_name text, unique on device_gid+channel_number). Add to api/src/EpCubeGraph.Api/Services/
 - [ ] T002 [P] Create Settings models in api/src/EpCubeGraph.Api/Models/Settings.cs: SettingEntry (key, value, lastModified), PanelHierarchyEntry (id, parentDeviceGid, childDeviceGid), DisplayNameOverride (id, deviceGid, channelNumber, displayName)
 - [ ] T003 [P] Create settings types in dashboard/src/types.ts: SettingEntry, PanelHierarchyEntry, DisplayNameOverride, matching API response shapes
 
@@ -40,7 +39,7 @@
 
 - [ ] T008 [US1] Implement SettingsService in api/src/EpCubeGraph.Api/Services/SettingsService.cs: GetAllSettings, GetSetting, UpdateSetting with Npgsql. Table auto-created if not exists. Validates polling interval bounds (1-3600).
 - [ ] T009 [US1] Implement settings endpoints in api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs: GET /api/v1/settings, PUT /api/v1/settings/{key}. Wire into Program.cs with auth.
-- [ ] T010 [US1] Implement polling intervals section in dashboard/src/components/SettingsPage.tsx: number inputs for epcube_poll_interval_seconds and vue_poll_interval_seconds, independent Save button, validation (1-3600), success message on save.
+- [ ] T010 [US1] Implement polling intervals section in dashboard/src/components/SettingsPage.tsx: number inputs for epcube_poll_interval_seconds (editable) and vue_poll_interval_seconds (disabled, labeled "Coming in Feature 005"), independent Save button, validation (1-3600), success message on save.
 - [ ] T011 [US1] Add settings API functions to dashboard/src/api.ts: fetchSettings(), updateSetting(key, value)
 - [ ] T012 [US1] Add /settings route to dashboard/src/App.tsx with gear icon + "Settings" nav link
 - [ ] T013 [US1] Modify local/epcube-exporter/exporter.py: read epcube_poll_interval_seconds from settings table on each poll cycle, fallback to 30s default
@@ -98,9 +97,9 @@
 
 | Phase | Tasks | Description |
 |-------|-------|-------------|
-| 1. Setup | 3 | DB schema + models + types |
+| 1. Setup | 2 | Models + types |
 | 2. US1 Polling (#82) | 10 | Tests + API + dashboard + exporter |
 | 3. US2 Hierarchy (#83) | 7 | Tests + API + dashboard |
 | 4. US3 Display Names (#84) | 7 | Tests + API + dashboard |
 | 5. Polish | 4 | Accessibility, errors, validation |
-| **Total** | **31** | |
+| **Total** | **30** | |

@@ -1,6 +1,6 @@
 # Feature Specification: Dashboard Settings Page
 
-**Feature Branch**: `005-emporia-vue` (developed as prerequisite on the same branch)
+**Feature Branch**: `006-settings-page`
 **Created**: 2026-04-05
 **Status**: Draft
 **Input**: Dashboard Settings page for runtime configuration management. View and modify system settings without redeployment: polling intervals, panel hierarchy, device/circuit display names. Stored in PostgreSQL, exposed through API endpoints.
@@ -86,17 +86,17 @@ As a homeowner, I want to override the default device and circuit names with my 
 - **FR-005**: The Settings page MUST validate panel hierarchy changes — circular references MUST be rejected.
 - **FR-006**: The Settings page MUST display all known devices and circuits with their current display names (custom override or source default) and allow editing.
 - **FR-007**: Clearing a custom display name MUST revert to the source system's default name (e.g., Emporia app name).
-- **FR-008**: Settings MUST be stored in PostgreSQL using typed tables: `settings` for scalar key-value pairs (e.g., polling intervals), `panel_hierarchy` for parent-child panel relationships, and `display_name_overrides` for custom device/circuit names. All exposed through authenticated API endpoints (GET to read, PUT/PATCH to update).
+- **FR-008**: Settings MUST be stored in PostgreSQL using typed tables: `settings` for scalar key-value pairs (e.g., polling intervals), `panel_hierarchy` for parent-child panel relationships, and `display_name_overrides` for custom device/circuit names. All exposed through authenticated API endpoints (GET to read, PUT to update).
 - **FR-008a**: Each settings section (polling intervals, panel hierarchy, device names) MUST save independently with its own Save button. A brief success message (e.g., "Settings saved") MUST be displayed after a successful save.
 - **FR-009**: Settings changes MUST take effect on the next poll cycle without requiring exporter restart or redeployment.
 - **FR-010**: The API MUST authenticate all settings endpoints using Microsoft Entra ID bearer tokens with `user_impersonation` scope. Unauthenticated requests MUST be rejected with HTTP 401.
-- **FR-011**: The exporter(s) MUST read polling interval settings directly from PostgreSQL on each poll cycle (or cache with a short TTL) so changes take effect promptly. No API dependency — exporters already have a database connection. Both EP Cube and Emporia Vue exporters MUST be modified to read their intervals from the database.
+- **FR-011**: Exporters that exist at implementation time MUST read polling interval settings directly from PostgreSQL on each poll cycle so changes take effect promptly. No API dependency — exporters already have a database connection. The EP Cube exporter MUST be modified to read its interval from the database. The Vue exporter will be implemented in Feature 005.
 - **FR-011a**: When no settings rows exist in the database (fresh deployment), the system MUST use hardcoded fallback defaults (EP Cube: 30s, Vue: 1s). Database rows are created on first save from the Settings page.
 - **FR-011b**: The device/circuit list for the renaming feature MUST be populated from the database (devices and circuits previously discovered by the exporter during polling), not from live API calls to external systems.
 
 ### Key Entities
 
-- **Setting**: A key-value configuration entry. Attributes: key (unique), value (JSON), last_modified timestamp, modified_by.
+- **Setting**: A key-value configuration entry. Attributes: key (unique), value (JSON), last_modified timestamp.
 - **Panel Hierarchy Entry**: A parent-child relationship between two panels. Attributes: parent_device_gid, child_device_gid.
 - **Display Name Override**: A custom name for a device or circuit. Attributes: device_gid, channel_number (null for device-level), display_name.
 
