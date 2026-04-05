@@ -31,8 +31,15 @@ export function CurrentReadings() {
   const [lastRefreshed, setLastRefreshed] = useState<number>(0);
   const [view, setView] = useState<'gauges' | 'flow'>('flow');
   const [retryAttempt, setRetryAttempt] = useState(0);
+  const [, setTick] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryingRef = useRef(false);
+
+  // Tick every second so formatRelativeTime updates continuously
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const loadData = async () => {
     if (retryingRef.current) return;
