@@ -64,14 +64,4 @@ public class ApiIntegrationTests : IClassFixture<TestWebApplicationFactory>
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
-
-    [Fact]
-    public async Task Metrics_ReturnsOk_WithoutAuth()
-    {
-        var response = await _client.GetAsync("/metrics");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("process_", content); // prometheus-net exposes process metrics
-    }
 }

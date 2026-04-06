@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.Extensions.Options;
 using Microsoft.Identity.Web;
-using Prometheus;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +40,7 @@ else
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=epcubegraph;Username=epcube;Password=epcube_local";
 builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connectionString));
+builder.Services.AddSingleton<ISettingsStore>(new PostgresSettingsStore(connectionString));
 
 // CORS
 builder.Services.AddCors();
@@ -97,15 +97,9 @@ if (!string.IsNullOrEmpty(allowedOrigin))
     app.UseCors();
 }
 
-// Prometheus HTTP metrics middleware (app observability)
-app.UseHttpMetrics();
-
 // Auth middleware
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Prometheus /metrics endpoint — unauthenticated, outside /api/v1
-app.MapMetrics().AllowAnonymous();
 
 // API v1 route group — authenticated endpoints
 var v1 = app.MapGroup("/api/v1");
@@ -115,6 +109,7 @@ v1.MapHealthEndpoints();
 v1.MapReadingsEndpoints();
 v1.MapDevicesEndpoints();
 v1.MapGridEndpoints();
+v1.MapSettingsEndpoints();
 
 app.Run();
 

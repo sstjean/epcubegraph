@@ -5,6 +5,7 @@ import type {
   DeviceListResponse,
   CurrentReadingsResponse,
   RangeReadingsResponse,
+  SettingsResponse,
 } from './types';
 
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
@@ -84,3 +85,47 @@ export async function fetchGridPower(
   return response.json();
 }
 
+// ── Settings API (Feature 006) ──
+
+async function authFetchWrite(url: string, method: string, body: unknown): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (!authDisabled) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication in progress');
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody.error || errorMessage;
+    } catch {
+      // Empty or non-JSON response body
+    }
+    trackApiError(url, response.status);
+    throw new ApiError(errorMessage, response.status);
+  }
+
+  return response;
+}
+
+export async function fetchSettings(): Promise<SettingsResponse> {
+  const response = await authFetch(`${getBaseUrl()}/settings`);
+  return response.json();
+}
+
+export async function updateSetting(key: string, value: string): Promise<void> {
+  await authFetchWrite(`${getBaseUrl()}/settings/${encodeURIComponent(key)}`, 'PUT', { value });
+}

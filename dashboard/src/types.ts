@@ -51,4 +51,14 @@ export interface TimeRangeValue {
   step: number;
 }
 
+// Settings types — Feature 006
 
+export interface SettingEntry {
+  key: string;
+  value: string;
+  last_modified: string;
+}
+
+export interface SettingsResponse {
+  settings: SettingEntry[];
+}

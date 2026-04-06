@@ -262,15 +262,8 @@ print(conn.get('secretRef','') if conn else '')
       fail "Protected endpoint returned HTTP $API_NOAUTH without token (expected 401)"
     fi
 
-    # Prometheus metrics endpoint (unauthenticated)
-    API_METRICS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "https://${API_FQDN}/metrics" 2>/dev/null) || true
-    if [[ "$API_METRICS" == "200" ]]; then
-      pass "Prometheus /metrics endpoint accessible (200)"
-    elif [[ "$API_METRICS" == "000" || -z "$API_METRICS" ]]; then
-      skip "Could not reach /metrics (timeout)"
-    else
-      fail "/metrics endpoint returned HTTP $API_METRICS (expected 200)"
-    fi
+    # Prometheus metrics endpoint was removed from the API in Feature 006
+    # (prometheus-net.AspNetCore removed). Exporter /metrics is checked separately.
   fi
 fi
 

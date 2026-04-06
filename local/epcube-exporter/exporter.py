@@ -53,6 +53,7 @@ __version__ = "2.0.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
+DEFAULT_POLL_INTERVAL = POLL_INTERVAL  # Fallback when DB has no setting
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 
@@ -372,6 +373,8 @@ class EpCubeCollector:
         self._consecutive_errors = 0
         self._bat_peak = {}  # device_id → {date: str, peak: float}
         self._start_time = time.time()
+        self._poll_interval = DEFAULT_POLL_INTERVAL
+        self._next_poll_at = 0.0
         self._pg = pg_writer
 
     def _ensure_auth(self):
@@ -722,6 +725,8 @@ class EpCubeCollector:
                 "poll_count": self._poll_count,
                 "poll_errors": self._poll_errors,
                 "last_poll": self._last_poll,
+                "poll_interval": self._poll_interval,
+                "next_poll_at": self._next_poll_at,
                 "devices": len(self._devices),
                 "history": list(self._history),
             }
@@ -736,8 +741,10 @@ def _render_status_page(status, health):
     uptime_m = status["uptime_s"] // 60
     uptime_h = uptime_m // 60
     uptime_str = f"{uptime_h}h {uptime_m % 60}m {status['uptime_s'] % 60}s"
-    last_ago = int(time.time() - status["last_poll"]) if status["last_poll"] else None
-    last_str = f"{last_ago}s ago" if last_ago is not None else "never"
+    poll_interval = status.get("poll_interval", DEFAULT_POLL_INTERVAL)
+    next_poll_at = status.get("next_poll_at", 0)
+    next_in = max(0, int(next_poll_at - time.time())) if next_poll_at else None
+    next_str = f"{next_in}s" if next_in is not None else "waiting"
 
     # Build per-device tables from history
     history = status["history"]
@@ -865,7 +872,8 @@ def _render_status_page(status, health):
   <span>Polls: <b>{status["poll_count"]}</b></span>
   <span class="{'warn' if status['poll_errors'] else 'ok'}">Errors: <b>{status["poll_errors"]}</b></span>
   <span>Devices: <b>{status["devices"]}</b></span>
-  <span>Last poll: <b>{last_str}</b></span>
+  <span>Poll interval: <b>{poll_interval}s</b></span>
+  <span>Next poll in: <b id="countdown" data-next="{next_poll_at}">{next_str}</b></span>
 </div>
 {tables_html}
 <script>
@@ -876,6 +884,17 @@ function convertTimes() {{
   }});
 }}
 convertTimes();
+
+// Countdown timer — ticks every second, reads target from data-next attribute
+// so it survives innerHTML replacement from auto-refresh.
+setInterval(() => {{
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  const nextAt = parseFloat(el.dataset.next);
+  if (!nextAt) return;
+  const left = Math.max(0, Math.round(nextAt - Date.now() / 1000));
+  el.textContent = left + 's';
+}}, 1000);
 
 // Background auto-refresh: fetches new HTML and swaps body content in-place.
 // No full page reload = no focus stealing.
@@ -889,9 +908,9 @@ setInterval(async () => {{
     document.body.innerHTML = doc.body.innerHTML;
     convertTimes();
   }} catch (e) {{}}
-}}, 30000);
+}}, {poll_interval * 1000});
 </script>
-<div class="footer">Auto-refreshes every 30s &middot; Last 10 polls (~10 min) &middot;
+<div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min) &middot;
   <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
   <a href="/health" style="color:#00d4aa">/health</a>
 </div>
@@ -1170,6 +1189,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
             body = _render_status_page(status, health).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -1185,10 +1205,36 @@ class MetricsHandler(BaseHTTPRequestHandler):
 # Main
 # ---------------------------------------------------------------------------
 
-def poll_loop(collector, interval):
-    """Background thread: polls API on schedule."""
+def _read_poll_interval_from_db():
+    """Read epcube_poll_interval_seconds from settings table. Returns default on any error."""
+    if not POSTGRES_DSN:
+        return DEFAULT_POLL_INTERVAL
+    try:
+        import psycopg2
+        conn = psycopg2.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = 'epcube_poll_interval_seconds'")
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if 1 <= val <= 3600:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read poll interval from DB, using default %ds", DEFAULT_POLL_INTERVAL)
+    return DEFAULT_POLL_INTERVAL
+
+
+def poll_loop(collector):
+    """Background thread: polls API on schedule. Reads interval from DB each cycle."""
     while True:
-        time.sleep(interval)
+        current_interval = _read_poll_interval_from_db()
+        with collector._lock:
+            collector._poll_interval = current_interval
+            collector._next_poll_at = time.time() + current_interval
+        time.sleep(current_interval)
         try:
             collector.poll()
         except Exception:
@@ -1221,7 +1267,7 @@ def main():
     collector.poll()
 
     # Start background polling
-    poll_thread = threading.Thread(target=poll_loop, args=(collector, POLL_INTERVAL), daemon=True)
+    poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
     poll_thread.start()
 
     # Start HTTP server
