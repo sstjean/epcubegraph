@@ -265,4 +265,20 @@ describe('SettingsPage — Polling Intervals', () => {
       expect(comingSoon.length).toBe(3);
     });
   });
+
+  it('saves with defaults when fetch failed and values are empty', async () => {
+    // Arrange — fetch fails, values stays empty, but save uses defaults
+    mockFetchSettings.mockRejectedValue(new Error('API down'));
+    mockUpdateSetting.mockResolvedValue(undefined);
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByRole('alert')); // wait for error
+    fireEvent.click(screen.getByText('Save Polling Intervals'));
+
+    // Assert — saves the default value, not undefined
+    await waitFor(() => {
+      expect(mockUpdateSetting).toHaveBeenCalledWith('epcube_poll_interval_seconds', '30');
+    });
+  });
 });

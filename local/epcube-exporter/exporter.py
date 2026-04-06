@@ -1227,7 +1227,7 @@ def _read_poll_interval_from_db():
     return DEFAULT_POLL_INTERVAL
 
 
-def poll_loop(collector, interval):
+def poll_loop(collector):
     """Background thread: polls API on schedule. Reads interval from DB each cycle."""
     while True:
         current_interval = _read_poll_interval_from_db()
@@ -1267,7 +1267,7 @@ def main():
     collector.poll()
 
     # Start background polling
-    poll_thread = threading.Thread(target=poll_loop, args=(collector, POLL_INTERVAL), daemon=True)
+    poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
     poll_thread.start()
 
     # Start HTTP server

@@ -309,4 +309,62 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
+
+    // ── Allowlist / duplicate validation ──
+
+    [Fact]
+    public async Task UpdateSetting_UnknownKey_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("42");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/unknown_key", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("Unknown setting key", body.Error);
+    }
+
+    [Fact]
+    public async Task UpdateHierarchy_DuplicateEdges_Returns400()
+    {
+        // Arrange
+        var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
+        {
+            new(100, 200),
+            new(100, 200),
+        });
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("Duplicate edge", body.Error);
+    }
+
+    [Fact]
+    public async Task UpdateDisplayNames_DuplicateChannels_Returns400()
+    {
+        // Arrange
+        var request = new DisplayNameUpdateRequest(new List<DisplayNameInputEntry>
+        {
+            new("1", "Kitchen"),
+            new("1", "Kitchen Fridge"),
+        });
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/display-names/1000", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("Duplicate channel", body.Error);
+    }
 }

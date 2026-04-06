@@ -55,10 +55,10 @@ export function SettingsPage() {
     setError(null);
     setSuccess(null);
 
-    // Validate all editable fields
+    // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
       if (ps.disabled) continue;
-      const err = validate(values[ps.key]);
+      const err = validate(values[ps.key] ?? ps.default);
       if (err) {
         setError(`${ps.label}: ${err}`);
         return;
@@ -69,7 +69,7 @@ export function SettingsPage() {
     try {
       for (const ps of POLL_SETTINGS) {
         if (ps.disabled) continue;
-        await updateSetting(ps.key, values[ps.key]);
+        await updateSetting(ps.key, values[ps.key] ?? ps.default);
       }
       setSuccess('Polling intervals saved');
     } catch (err) {

@@ -57,13 +57,16 @@ public static class SettingsEndpoints
     private static async Task<IResult> HandleUpdateSetting(
         [FromRoute] string key, [FromBody] SettingUpdateRequest request, ISettingsStore store, CancellationToken ct)
     {
-        if (PollIntervalKeys.Contains(key))
+        if (!PollIntervalKeys.Contains(key))
         {
-            if (!int.TryParse(request.Value, out var interval) || interval < 1 || interval > 3600)
-            {
-                return Results.BadRequest(new ErrorResponse(
-                    "error", "validation", "Polling interval must be an integer between 1 and 3600 seconds"));
-            }
+            return Results.BadRequest(new ErrorResponse(
+                "error", "validation", $"Unknown setting key '{key}'. Allowed keys: {string.Join(", ", PollIntervalKeys)}"));
+        }
+
+        if (!int.TryParse(request.Value, out var interval) || interval < 1 || interval > 3600)
+        {
+            return Results.BadRequest(new ErrorResponse(
+                "error", "validation", "Polling interval must be an integer between 1 and 3600 seconds"));
         }
 
         var entry = await store.UpdateSettingAsync(key, request.Value, ct);
@@ -79,8 +82,20 @@ public static class SettingsEndpoints
     private static async Task<IResult> HandleUpdateHierarchy(
         [FromBody] PanelHierarchyRequest request, ISettingsStore store, CancellationToken ct)
     {
-        // Validate no circular references
         var edges = request.Entries;
+
+        // Validate no duplicate edges
+        var edgeSet = new HashSet<(long, long)>();
+        foreach (var e in edges)
+        {
+            if (!edgeSet.Add((e.ParentDeviceGid, e.ChildDeviceGid)))
+            {
+                return Results.BadRequest(new ErrorResponse(
+                    "error", "validation", $"Duplicate edge: {e.ParentDeviceGid} → {e.ChildDeviceGid}"));
+            }
+        }
+
+        // Validate no circular references
         if (HasCycle(edges))
         {
             return Results.BadRequest(new ErrorResponse(
@@ -100,6 +115,17 @@ public static class SettingsEndpoints
     private static async Task<IResult> HandleUpdateDisplayNames(
         [FromRoute] long deviceGid, [FromBody] DisplayNameUpdateRequest request, ISettingsStore store, CancellationToken ct)
     {
+        // Validate no duplicate channel numbers
+        var channelSet = new HashSet<string?>();
+        foreach (var o in request.Overrides)
+        {
+            if (!channelSet.Add(o.ChannelNumber))
+            {
+                return Results.BadRequest(new ErrorResponse(
+                    "error", "validation", $"Duplicate channel number: {o.ChannelNumber ?? "(device-level)"}"));
+            }
+        }
+
         var result = await store.UpdateDisplayNamesForDeviceAsync(deviceGid, request.Overrides, ct);
         return Results.Ok(new DisplayNamesResponse(result));
     }

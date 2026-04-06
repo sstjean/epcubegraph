@@ -355,13 +355,12 @@ describe('Settings API', () => {
     });
     const { updateSetting } = await import('../../src/api');
 
-    // Act & Assert
-    try {
-      await updateSetting('bad_key', 'value');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect((err as Error).message).toBe('Validation failed');
-    }
+    // Act
+    const error = await updateSetting('bad_key', 'value').catch((err: unknown) => err);
+
+    // Assert
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Validation failed');
   });
 
   it('authFetchWrite attaches bearer token when auth enabled', async () => {
@@ -397,13 +396,12 @@ describe('Settings API', () => {
     }));
     const { updateSetting } = await import('../../src/api');
 
-    // Act & Assert
-    try {
-      await updateSetting('key', 'val');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect((err as Error).message).toBe('Authentication in progress');
-    }
+    // Act
+    const error = await updateSetting('key', 'val').catch((err: unknown) => err);
+
+    // Assert
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Authentication in progress');
   });
 
   it('authFetchWrite handles non-JSON error response', async () => {
@@ -415,13 +413,12 @@ describe('Settings API', () => {
     });
     const { updateSetting } = await import('../../src/api');
 
-    // Act & Assert
-    try {
-      await updateSetting('key', 'val');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect((err as Error).message).toBe('HTTP 500');
-    }
+    // Act
+    const error = await updateSetting('key', 'val').catch((err: unknown) => err);
+
+    // Assert
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('HTTP 500');
   });
 
   it('authFetchWrite uses status message when error body has no error field', async () => {
@@ -433,12 +430,11 @@ describe('Settings API', () => {
     });
     const { updateSetting } = await import('../../src/api');
 
-    // Act & Assert
-    try {
-      await updateSetting('key', 'val');
-      expect.fail('Should have thrown');
-    } catch (err) {
-      expect((err as Error).message).toBe('HTTP 422');
-    }
+    // Act
+    const error = await updateSetting('key', 'val').catch((err: unknown) => err);
+
+    // Assert
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('HTTP 422');
   });
 });
