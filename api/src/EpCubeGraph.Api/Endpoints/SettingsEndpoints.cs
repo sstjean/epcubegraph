@@ -115,7 +115,7 @@ public static class SettingsEndpoints
     /// Detects cycles in the panel hierarchy using DFS.
     /// Returns true if any node can reach itself through the edges.
     /// </summary>
-    internal static bool HasCycle(IReadOnlyList<PanelHierarchyInputEntry> edges)
+    public static bool HasCycle(IReadOnlyList<PanelHierarchyInputEntry> edges)
     {
         var adjacency = new Dictionary<long, List<long>>();
         foreach (var e in edges)

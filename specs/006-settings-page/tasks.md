@@ -52,16 +52,16 @@
 
 ### Tests (TDD)
 
-- [ ] T014 [P] [US2] Write hierarchy service tests in api/tests: GetHierarchy returns entries, UpdateHierarchy replaces all entries, UpdateHierarchy rejects circular references (A→B→A), UpdateHierarchy rejects self-reference (A→A), DeleteHierarchy removes all entries
-- [ ] T015 [P] [US2] Write hierarchy API integration tests: GET /api/v1/settings/hierarchy returns entries, PUT /api/v1/settings/hierarchy replaces hierarchy, PUT with circular reference returns 400, all endpoints return 401 without auth
-- [ ] T016 [P] [US2] Write hierarchy section component tests in dashboard/tests/component/SettingsPage.test.tsx: renders current hierarchy as parent-child list, add new relationship, remove relationship, shows error for circular reference, saves independently with success message
+- [X] T014 [P] [US2] Write hierarchy service tests in api/tests: GetHierarchy returns entries, UpdateHierarchy replaces all entries, UpdateHierarchy rejects circular references (A→B→A), UpdateHierarchy rejects self-reference (A→A), DeleteHierarchy removes all entries
+- [X] T015 [P] [US2] Write hierarchy API integration tests: GET /api/v1/settings/hierarchy returns entries, PUT /api/v1/settings/hierarchy replaces hierarchy, PUT with circular reference returns 400, all endpoints return 401 without auth
+- [~] T016 [P] [US2] ~~Write hierarchy section component tests~~ — DEFERRED to Feature 005 (requires Vue devices for device name dropdowns)
 
 ### Implementation
 
-- [ ] T017 [US2] Implement hierarchy methods in SettingsService: GetHierarchy, UpdateHierarchy (replace-all with cycle detection), table auto-created if not exists
-- [ ] T018 [US2] Implement hierarchy endpoints: GET /api/v1/settings/hierarchy, PUT /api/v1/settings/hierarchy. Wire into Program.cs with auth.
-- [ ] T019 [US2] Implement hierarchy section in SettingsPage.tsx: list of parent→child entries, add/remove controls, cycle validation on client side, independent Save button, success message
-- [ ] T020 [US2] Add hierarchy API functions to dashboard/src/api.ts: fetchHierarchy(), updateHierarchy(entries)
+- [X] T017 [US2] Implement hierarchy methods in SettingsService: GetHierarchy, UpdateHierarchy (replace-all with cycle detection), table auto-created if not exists
+- [X] T018 [US2] Implement hierarchy endpoints: GET /api/v1/settings/hierarchy, PUT /api/v1/settings/hierarchy. Wire into Program.cs with auth.
+- [~] T019 [US2] ~~Implement hierarchy section in SettingsPage.tsx~~ — DEFERRED to Feature 005 (requires Vue devices for device name dropdowns)
+- [X] T020 [US2] Add hierarchy API functions to dashboard/src/api.ts: fetchHierarchy(), updateHierarchy(entries)
 
 ---
 
@@ -71,16 +71,16 @@
 
 ### Tests (TDD)
 
-- [ ] T021 [P] [US3] Write display name service tests in api/tests: GetDisplayNames returns overrides, UpdateDisplayName creates/updates override, DeleteDisplayName removes override and reverts to default, GetDisplayNames returns empty when no overrides
-- [ ] T022 [P] [US3] Write display name API integration tests: GET /api/v1/settings/display-names returns overrides, PUT /api/v1/settings/display-names/{device_gid} updates names, DELETE clears override, all endpoints return 401 without auth
-- [ ] T023 [P] [US3] Write display names section component tests in dashboard/tests/component/SettingsPage.test.tsx: renders device/circuit list with current names (override or default), edit name and save, clear override reverts to default, saves independently with success message
+- [~] T021 [P] [US3] ~~Write display name service tests~~ — DEFERRED to Feature 005
+- [~] T022 [P] [US3] ~~Write display name API integration tests~~ — DEFERRED to Feature 005
+- [~] T023 [P] [US3] ~~Write display names section component tests~~ — DEFERRED to Feature 005
 
 ### Implementation
 
-- [ ] T024 [US3] Implement display name methods in SettingsService: GetDisplayNames, UpdateDisplayName, DeleteDisplayName, table auto-created if not exists
-- [ ] T025 [US3] Implement display name endpoints: GET /api/v1/settings/display-names, PUT /api/v1/settings/display-names/{device_gid}, DELETE /api/v1/settings/display-names/{device_gid}/{channel_number}. Wire into Program.cs with auth.
-- [ ] T026 [US3] Implement display names section in SettingsPage.tsx: device/circuit list from DB-discovered data, editable name fields, save per device, clear button to revert, success message
-- [ ] T027 [US3] Add display name API functions to dashboard/src/api.ts: fetchDisplayNames(), updateDisplayName(deviceGid, names), clearDisplayName(deviceGid, channelNumber)
+- [~] T024 [US3] ~~Implement display name methods in SettingsService~~ — DEFERRED to Feature 005 (store already implemented)
+- [X] T025 [US3] Implement display name endpoints: GET /api/v1/settings/display-names, PUT /api/v1/settings/display-names/{device_gid}, DELETE /api/v1/settings/display-names/{device_gid}/{channel_number}. Wire into Program.cs with auth.
+- [~] T026 [US3] ~~Implement display names section in SettingsPage.tsx~~ — DEFERRED to Feature 005
+- [X] T027 [US3] Add display name API functions to dashboard/src/api.ts: fetchDisplayNames(), updateDisplayName(deviceGid, names), clearDisplayName(deviceGid, channelNumber)
 
 ---
 

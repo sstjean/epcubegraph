@@ -118,6 +118,16 @@ export function SettingsPage() {
           {saving ? 'Saving...' : 'Save Polling Intervals'}
         </button>
       </div>
+
+      <div class="settings-section">
+        <h3>Panel Hierarchy</h3>
+        <p class="settings-coming-soon">Coming in Feature 005 — requires Emporia Vue devices</p>
+      </div>
+
+      <div class="settings-section">
+        <h3>Display Names</h3>
+        <p class="settings-coming-soon">Coming in Feature 005 — requires Emporia Vue devices</p>
+      </div>
     </section>
   );
 }

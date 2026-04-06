@@ -71,7 +71,8 @@ describe('SettingsPage — Polling Intervals', () => {
     await waitFor(() => {
       const vueInput = screen.getByLabelText(/Emporia Vue Polling Interval/i) as HTMLInputElement;
       expect(vueInput.disabled).toBe(true);
-      expect(screen.getByText(/Coming in Feature 005/i)).toBeTruthy();
+      const labels = screen.getAllByText(/Coming in Feature 005/i);
+      expect(labels.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -250,6 +251,23 @@ describe('SettingsPage — Polling Intervals', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toMatch(/Failed to load settings/i);
+    });
+  });
+
+  it('renders deferred sections for hierarchy and display names', async () => {
+    // Arrange
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
+      expect(screen.getByText('Display Names')).toBeTruthy();
+      const comingSoon = screen.getAllByText(/Coming in Feature 005/i);
+      // 3 total: Vue polling + hierarchy + display names
+      expect(comingSoon.length).toBe(3);
     });
   });
 });
