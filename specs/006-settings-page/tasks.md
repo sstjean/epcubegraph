@@ -86,10 +86,10 @@
 
 ## Phase 5: Polish and Cross-Cutting Concerns
 
-- [ ] T028 [P] Accessibility: keyboard navigation on Settings page, ARIA labels on form fields, focus styles, touch targets (44px minimum on all buttons/inputs)
-- [ ] T029 [P] Error handling: API errors shown inline per section, network failure recovery
-- [ ] T030 Run full test suite: dashboard typecheck + test:coverage (100%), API dotnet test (100%), exporter pytest. Verify performance: settings page load < 500ms (SC-002)
-- [ ] T031 Run quickstart validation: npm run build, terraform validate, terraform fmt -check
+- [X] T028 [P] Accessibility: keyboard navigation on Settings page, ARIA labels on form fields, focus styles, touch targets (44px minimum on all buttons/inputs)
+- [X] T029 [P] Error handling: API errors shown inline per section, network failure recovery
+- [X] T030 Run full test suite: dashboard typecheck + test:coverage (100%), API dotnet test (100%), exporter pytest. Verify performance: settings page load < 500ms (SC-002)
+- [X] T031 Run quickstart validation: npm run build, terraform validate, terraform fmt -check
 
 ---
 

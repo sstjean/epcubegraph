@@ -722,6 +722,12 @@ section > h2 {
   padding: 0.625rem 0.75rem;
   font-size: 0.875rem;
   width: 120px;
+  min-height: 44px;
+}
+
+.settings-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-field input:disabled {
@@ -745,6 +751,12 @@ section > h2 {
   font-weight: 600;
   cursor: pointer;
   transition: opacity var(--transition);
+  min-height: 44px;
+}
+
+.settings-save:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-save:hover {
