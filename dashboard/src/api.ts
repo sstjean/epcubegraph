@@ -6,9 +6,6 @@ import type {
   CurrentReadingsResponse,
   RangeReadingsResponse,
   SettingsResponse,
-  PanelHierarchyResponse,
-  PanelHierarchyEntry,
-  DisplayNamesResponse,
 } from './types';
 
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
@@ -90,7 +87,7 @@ export async function fetchGridPower(
 
 // ── Settings API (Feature 006) ──
 
-async function authFetchWrite(url: string, method: string, body?: unknown): Promise<Response> {
+async function authFetchWrite(url: string, method: string, body: unknown): Promise<Response> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -106,7 +103,7 @@ async function authFetchWrite(url: string, method: string, body?: unknown): Prom
   const response = await fetch(url, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -131,38 +128,4 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 
 export async function updateSetting(key: string, value: string): Promise<void> {
   await authFetchWrite(`${getBaseUrl()}/settings/${encodeURIComponent(key)}`, 'PUT', { value });
-}
-
-export async function fetchHierarchy(): Promise<PanelHierarchyResponse> {
-  const response = await authFetch(`${getBaseUrl()}/settings/hierarchy`);
-  return response.json();
-}
-
-export async function updateHierarchy(entries: Omit<PanelHierarchyEntry, 'id'>[]): Promise<PanelHierarchyResponse> {
-  const response = await authFetchWrite(`${getBaseUrl()}/settings/hierarchy`, 'PUT', { entries });
-  return response.json();
-}
-
-export async function fetchDisplayNames(): Promise<DisplayNamesResponse> {
-  const response = await authFetch(`${getBaseUrl()}/settings/display-names`);
-  return response.json();
-}
-
-export async function updateDisplayNames(
-  deviceGid: number,
-  overrides: { channel_number: string | null; display_name: string }[],
-): Promise<DisplayNamesResponse> {
-  const response = await authFetchWrite(
-    `${getBaseUrl()}/settings/display-names/${deviceGid}`,
-    'PUT',
-    { overrides },
-  );
-  return response.json();
-}
-
-export async function clearDisplayName(deviceGid: number, channelNumber: string): Promise<void> {
-  await authFetchWrite(
-    `${getBaseUrl()}/settings/display-names/${deviceGid}/${encodeURIComponent(channelNumber)}`,
-    'DELETE',
-  );
 }

@@ -346,51 +346,6 @@ describe('Settings API', () => {
     );
   });
 
-  it('fetchHierarchy calls GET /settings/hierarchy', async () => {
-    // Arrange
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ entries: [] }),
-    });
-    const { fetchHierarchy } = await import('../../src/api');
-
-    // Act
-    const result = await fetchHierarchy();
-
-    // Assert
-    expect(result.entries).toEqual([]);
-  });
-
-  it('fetchDisplayNames calls GET /settings/display-names', async () => {
-    // Arrange
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ overrides: [] }),
-    });
-    const { fetchDisplayNames } = await import('../../src/api');
-
-    // Act
-    const result = await fetchDisplayNames();
-
-    // Assert
-    expect(result.overrides).toEqual([]);
-  });
-
-  it('clearDisplayName calls DELETE', async () => {
-    // Arrange
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
-    const { clearDisplayName } = await import('../../src/api');
-
-    // Act
-    await clearDisplayName(1234, '5');
-
-    // Assert
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.test/settings/display-names/1234/5',
-      expect.objectContaining({ method: 'DELETE' }),
-    );
-  });
-
   it('authFetchWrite tracks API errors on non-ok response', async () => {
     // Arrange
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -407,49 +362,6 @@ describe('Settings API', () => {
     } catch (err) {
       expect((err as Error).message).toBe('Validation failed');
     }
-  });
-
-  it('updateHierarchy calls PUT with entries', async () => {
-    // Arrange
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ entries: [{ id: 1, parent_device_gid: 100, child_device_gid: 200 }] }),
-    });
-    const { updateHierarchy } = await import('../../src/api');
-
-    // Act
-    const result = await updateHierarchy([{ parent_device_gid: 100, child_device_gid: 200 }]);
-
-    // Assert
-    expect(result.entries.length).toBe(1);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.test/settings/hierarchy',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({ entries: [{ parent_device_gid: 100, child_device_gid: 200 }] }),
-      }),
-    );
-  });
-
-  it('updateDisplayNames calls PUT with overrides', async () => {
-    // Arrange
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ overrides: [] }),
-    });
-    const { updateDisplayNames } = await import('../../src/api');
-
-    // Act
-    await updateDisplayNames(1234, [{ channel_number: '1', display_name: 'Kitchen' }]);
-
-    // Assert
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://api.test/settings/display-names/1234',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify({ overrides: [{ channel_number: '1', display_name: 'Kitchen' }] }),
-      }),
-    );
   });
 
   it('authFetchWrite attaches bearer token when auth enabled', async () => {

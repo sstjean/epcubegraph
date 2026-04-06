@@ -12,11 +12,6 @@ vi.mock('../../src/api', () => ({
   fetchDevices: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
-  fetchHierarchy: vi.fn(),
-  updateHierarchy: vi.fn(),
-  fetchDisplayNames: vi.fn(),
-  updateDisplayNames: vi.fn(),
-  clearDisplayName: vi.fn(),
 }));
 
 import { SettingsPage } from '../../src/components/SettingsPage';

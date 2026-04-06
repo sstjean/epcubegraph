@@ -783,8 +783,3 @@ section > h2 {
   border-radius: var(--radius-sm);
   margin-bottom: 1rem;
 }
-
-.settings-empty {
-  color: var(--text-muted, #888);
-  font-style: italic;
-}
