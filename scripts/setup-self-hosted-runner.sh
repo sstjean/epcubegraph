@@ -84,7 +84,6 @@ if $TEARDOWN; then
   az vm delete --name "$VM_NAME" --resource-group "$RG" --yes --force-deletion none 2>/dev/null || true
   success "VM deleted"
   az network nic delete --name "${VM_NAME}VMNic" --resource-group "$RG" 2>/dev/null || true
-  az network public-ip delete --name "${VM_NAME}PublicIP" --resource-group "$RG" 2>/dev/null || true
   az network nsg delete --name "${VM_NAME}NSG" --resource-group "$RG" 2>/dev/null || true
   az disk list --resource-group "$RG" --query "[?starts_with(name, '${VM_NAME}')].name" -o tsv | \
     xargs -I{} az disk delete --name {} --resource-group "$RG" --yes 2>/dev/null || true
@@ -312,7 +311,7 @@ CLOUD_INIT_EOF
     --generate-ssh-keys \
     --vnet-name "$VNET_NAME" \
     --subnet "$SUBNET_RUNNER" \
-    --public-ip-address "${VM_NAME}PublicIP" \
+    --public-ip-address "" \
     --nsg "${VM_NAME}NSG" \
     --assign-identity '[system]' \
     --custom-data "$CLOUD_INIT_FILE" \
