@@ -78,7 +78,7 @@ jobs:
 
   deploy-staging:
     needs: check-ci
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.destroy == 'true') }}
     environment: staging
 
@@ -103,79 +103,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # SFI-compliant: temporarily enable public network access (defaultAction
-      # remains Deny — no open access) so the runner IP whitelist can take effect.
-      # Restored to Disabled in the cleanup step.
-      - name: Detect runner IP
-        id: ip
-        run: |
-          RUNNER_IP=$(curl -sf https://api.ipify.org)
-          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
-          echo "::add-mask::${RUNNER_IP}"
-          echo "✓ Detected runner IP"
-
-      - name: Pre-warm firewall and enable public access on tfstate storage
-        run: |
-          az storage account network-rule add \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none
-          echo "✓ Runner IP pre-warmed in firewall rules"
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on Key Vault
-        run: |
-          KV_NAME="${TF_VAR_environment_name}-kv"
-          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
-            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
-            echo "✓ Key Vault public network access enabled"
-            az keyvault network-rule add \
-              --name "$KV_NAME" \
-              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none
-            echo "✓ Runner IP added to Key Vault firewall"
-          else
-            echo "Key Vault does not exist yet — skipping (first deploy)"
-          fi
-
-      # Write-based check — reads propagate before writes in Azure Storage
-      # IP rules, so a read-only check (container list) can pass while
-      # Terraform's blob lease (write) still gets 403.  Uploading a probe
-      # blob confirms the runner has actual write access. (Fixes #68)
-      - name: Wait for firewall propagation (write check)
-        run: |
-          echo "Waiting for tfstate storage write access..."
-          PROBE="__firewall-probe-$$"
-          for attempt in $(seq 1 45); do
-            if echo "probe" | az storage blob upload \
-              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-              --container-name tfstate \
-              --name "$PROBE" \
-              --auth-mode login \
-              --overwrite \
-              --file /dev/stdin \
-              --output none 2>/dev/null; then
-              az storage blob delete \
-                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-                --container-name tfstate \
-                --name "$PROBE" \
-                --auth-mode login \
-                --output none 2>/dev/null || true
-              echo "✓ tfstate storage write-accessible (attempt $attempt)"
-              exit 0
-            fi
-            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
-            sleep 15
-          done
-          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
-          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -229,7 +156,6 @@ jobs:
           echo "✓ Existing images: api=${API_IMG:-none} exporter=${EXPORTER_IMG:-none}"
 
       # Phase 1: Deploy infrastructure (preserving existing container apps)
-      # Runner IP is passed so Terraform whitelists it on Key Vault and app storage
       - name: Terraform Apply — Infrastructure
         working-directory: infra
         env:
@@ -240,8 +166,6 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Phase 2: Build and push container images
@@ -300,8 +224,6 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       - name: Capture Terraform outputs
@@ -359,34 +281,6 @@ jobs:
           app_location: dashboard/dist
           skip_app_build: true
           skip_api_build: true
-
-      # Zero-trust cleanup: remove runner IP and re-disable public network access (always runs)
-      - name: Remove runner IP from firewalls
-        if: always() && steps.ip.outputs.runner_ip
-        run: |
-          az storage account network-rule remove \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="${TF_VAR_environment_name}-kv"
-          az keyvault network-rule remove \
-            --name "$KV_NAME" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-            --output none 2>/dev/null || true
-          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
-          echo "✓ Key Vault firewalled and public access re-disabled"
-
-      - name: Restore public network access to Disabled
-        if: always()
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Disabled \
-            --output none 2>/dev/null || true
-          echo "✓ Public network access re-disabled (SFI compliance restored)"
 
   validate-staging:
     needs: deploy-staging
@@ -543,7 +437,7 @@ jobs:
 
   deploy-prod:
     needs: check-ci-prod
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment: production
 
     env:
@@ -578,76 +472,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Detect runner IP
-        id: ip
-        run: |
-          RUNNER_IP=$(curl -sf https://api.ipify.org)
-          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
-          echo "::add-mask::${RUNNER_IP}"
-          echo "✓ Detected runner IP"
-
-      - name: Pre-warm firewall and enable public access on tfstate storage
-        run: |
-          az storage account network-rule add \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none
-          echo "✓ Runner IP pre-warmed in firewall rules"
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on Key Vault
-        run: |
-          KV_NAME="epcubegraph-kv"
-          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
-            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
-            echo "✓ Key Vault public network access enabled"
-            az keyvault network-rule add \
-              --name "$KV_NAME" \
-              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none
-            echo "✓ Runner IP added to Key Vault firewall"
-          else
-            echo "Key Vault does not exist yet — skipping (first deploy)"
-          fi
-
-      # Write-based check — reads propagate before writes in Azure Storage
-      # IP rules, so a read-only check (container list) can pass while
-      # Terraform's blob lease (write) still gets 403.  Uploading a probe
-      # blob confirms the runner has actual write access. (Fixes #68)
-      - name: Wait for firewall propagation (write check)
-        run: |
-          echo "Waiting for tfstate storage write access..."
-          PROBE="__firewall-probe-$$"
-          for attempt in $(seq 1 45); do
-            if echo "probe" | az storage blob upload \
-              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-              --container-name tfstate \
-              --name "$PROBE" \
-              --auth-mode login \
-              --overwrite \
-              --file /dev/stdin \
-              --output none 2>/dev/null; then
-              az storage blob delete \
-                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-                --container-name tfstate \
-                --name "$PROBE" \
-                --auth-mode login \
-                --output none 2>/dev/null || true
-              echo "✓ tfstate storage write-accessible (attempt $attempt)"
-              exit 0
-            fi
-            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
-            sleep 15
-          done
-          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
-          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -710,8 +534,6 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
@@ -766,8 +588,6 @@ jobs:
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
 
       - name: Capture Terraform outputs
@@ -825,33 +645,6 @@ jobs:
           app_location: dashboard/dist
           skip_app_build: true
           skip_api_build: true
-
-      - name: Remove runner IP from firewalls
-        if: always() && steps.ip.outputs.runner_ip
-        run: |
-          az storage account network-rule remove \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="epcubegraph-kv"
-          az keyvault network-rule remove \
-            --name "$KV_NAME" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-            --output none 2>/dev/null || true
-          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
-          echo "✓ Key Vault firewalled and public access re-disabled"
-
-      - name: Restore public network access to Disabled
-        if: always()
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Disabled \
-            --output none 2>/dev/null || true
-          echo "✓ Public network access re-disabled (SFI compliance restored)"
 
   validate-prod:
     needs: deploy-prod
@@ -988,7 +781,7 @@ jobs:
   # ── Cleanup the merged branch's environment after successful prod deploy ──
   cleanup-branch:
     needs: validate-prod
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: github.event_name == 'workflow_run'
     environment: staging
 
@@ -1056,80 +849,6 @@ jobs:
             echo "No state file for ${{ steps.branch-env.outputs.env_name }} — nothing to clean up"
           fi
 
-      - name: Detect runner IP
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        id: ip
-        run: |
-          RUNNER_IP=$(curl -sf https://api.ipify.org)
-          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
-          echo "::add-mask::${RUNNER_IP}"
-          echo "✓ Detected runner IP"
-
-      - name: Pre-warm firewall and enable public access on tfstate storage
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          az storage account network-rule add \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none
-          echo "✓ Runner IP pre-warmed in firewall rules"
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on Key Vault
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
-          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
-            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
-            echo "✓ Key Vault public network access enabled"
-            az keyvault network-rule add \
-              --name "$KV_NAME" \
-              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none
-            echo "✓ Runner IP added to Key Vault firewall"
-          else
-            echo "Key Vault does not exist — skipping"
-          fi
-
-      # Write-based check — reads propagate before writes in Azure Storage
-      # IP rules, so a read-only check (container list) can pass while
-      # Terraform's blob lease (write) still gets 403.  Uploading a probe
-      # blob confirms the runner has actual write access. (Fixes #68)
-      - name: Wait for firewall propagation (write check)
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          echo "Waiting for tfstate storage write access..."
-          PROBE="__firewall-probe-$$"
-          for attempt in $(seq 1 45); do
-            if echo "probe" | az storage blob upload \
-              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-              --container-name tfstate \
-              --name "$PROBE" \
-              --auth-mode login \
-              --overwrite \
-              --file /dev/stdin \
-              --output none 2>/dev/null; then
-              az storage blob delete \
-                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-                --container-name tfstate \
-                --name "$PROBE" \
-                --auth-mode login \
-                --output none 2>/dev/null || true
-              echo "✓ tfstate storage write-accessible (attempt $attempt)"
-              exit 0
-            fi
-            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
-            sleep 15
-          done
-          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
-          exit 1
-
       - name: Setup Terraform
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         uses: hashicorp/setup-terraform@v4
@@ -1172,8 +891,6 @@ jobs:
           TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -1195,8 +912,6 @@ jobs:
           TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false || true
@@ -1214,36 +929,9 @@ jobs:
             --output none 2>/dev/null || true
           echo "✓ State file ${{ steps.branch-env.outputs.state_key }} deleted"
 
-      - name: Remove runner IP from firewalls
-        if: always() && steps.ip.outputs.runner_ip
-        run: |
-          az storage account network-rule remove \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="${{ steps.branch-env.outputs.env_name }}-kv"
-          az keyvault network-rule remove \
-            --name "$KV_NAME" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-            --output none 2>/dev/null || true
-          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
-          echo "✓ Key Vault firewalled and public access re-disabled"
-
-      - name: Restore public network access to Disabled
-        if: always() && steps.ip.outputs.runner_ip
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Disabled \
-            --output none 2>/dev/null || true
-          echo "✓ Public network access re-disabled (SFI compliance restored)"
-
   # Tear down: only on manual request — runs directly without requiring deploy
   destroy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: >
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.destroy == 'true'
@@ -1280,77 +968,6 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # Zero-trust: detect runner IP and whitelist on tfstate storage
-      - name: Detect runner IP
-        id: ip
-        run: |
-          RUNNER_IP=$(curl -sf https://api.ipify.org)
-          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
-          echo "::add-mask::${RUNNER_IP}"
-          echo "✓ Detected runner IP"
-
-      - name: Pre-warm firewall and enable public access on tfstate storage
-        run: |
-          az storage account network-rule add \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none
-          echo "✓ Runner IP pre-warmed in firewall rules"
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Enabled \
-            --output none
-          echo "✓ Public network access enabled (defaultAction=Deny — no open access)"
-
-      - name: Whitelist runner IP on Key Vault
-        run: |
-          KV_NAME="${{ steps.env.outputs.kv_name }}"
-          if az keyvault show --name "$KV_NAME" --query name -o tsv 2>/dev/null; then
-            az keyvault update --name "$KV_NAME" --public-network-access Enabled --output none
-            echo "✓ Key Vault public network access enabled"
-            az keyvault network-rule add \
-              --name "$KV_NAME" \
-              --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-              --output none
-            echo "✓ Runner IP added to Key Vault firewall"
-          else
-            echo "Key Vault does not exist yet — skipping"
-          fi
-
-      # Write-based check — reads propagate before writes in Azure Storage
-      # IP rules, so a read-only check (container list) can pass while
-      # Terraform's blob lease (write) still gets 403.  Uploading a probe
-      # blob confirms the runner has actual write access. (Fixes #68)
-      - name: Wait for firewall propagation (write check)
-        run: |
-          echo "Waiting for tfstate storage write access..."
-          PROBE="__firewall-probe-$$"
-          for attempt in $(seq 1 45); do
-            if echo "probe" | az storage blob upload \
-              --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-              --container-name tfstate \
-              --name "$PROBE" \
-              --auth-mode login \
-              --overwrite \
-              --file /dev/stdin \
-              --output none 2>/dev/null; then
-              az storage blob delete \
-                --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-                --container-name tfstate \
-                --name "$PROBE" \
-                --auth-mode login \
-                --output none 2>/dev/null || true
-              echo "✓ tfstate storage write-accessible (attempt $attempt)"
-              exit 0
-            fi
-            echo "Attempt $attempt/45 — write not yet allowed, waiting 15s..."
-            sleep 15
-          done
-          echo "::error::tfstate storage not write-accessible after 45 attempts (11 min)"
-          exit 1
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
@@ -1391,8 +1008,6 @@ jobs:
           TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -1414,8 +1029,6 @@ jobs:
           TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_allowed_ips: '["${{ steps.ip.outputs.runner_ip }}"]'
-          TF_VAR_keyvault_public_access: 'true'
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false
@@ -1430,30 +1043,3 @@ jobs:
             --auth-mode login \
             --output none 2>/dev/null || true
           echo "✓ State file ${{ steps.env.outputs.state_key }} deleted"
-
-      - name: Remove runner IP from firewalls
-        if: always() && steps.ip.outputs.runner_ip
-        run: |
-          az storage account network-rule remove \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}" \
-            --output none 2>/dev/null || true
-          echo "✓ Runner IP removed from tfstate firewall"
-          KV_NAME="${{ steps.env.outputs.kv_name }}"
-          az keyvault network-rule remove \
-            --name "$KV_NAME" \
-            --ip-address "${{ steps.ip.outputs.runner_ip }}/32" \
-            --output none 2>/dev/null || true
-          az keyvault update --name "$KV_NAME" --public-network-access Disabled --output none 2>/dev/null || true
-          echo "✓ Key Vault firewalled and public access re-disabled"
-
-      - name: Restore public network access to Disabled
-        if: always()
-        run: |
-          az storage account update \
-            --name "$TFSTATE_STORAGE_ACCOUNT" \
-            --resource-group "$TFSTATE_RESOURCE_GROUP" \
-            --public-network-access Disabled \
-            --output none 2>/dev/null || true
-          echo "✓ Public network access re-disabled (SFI compliance restored)"

@@ -38,10 +38,6 @@ exporter_port = 9250
 # subnet_endpoints_prefix        = ["10.0.2.0/24"]
 # subnet_postgres_prefix         = ["10.0.3.0/24"]
 
-# Firewall allowlist — deploy.sh detects your IP automatically.
-# Override only if you need additional IPs (e.g., team members):
-# allowed_ips = ["203.0.113.10", "198.51.100.20"]
-
 # ── Custom Domains (requires devsbx-common deployed first) ──
 # custom_domain_zone_name = "devsbx.xyz"
 # custom_domain_zone_rg   = "devsbx-shared"

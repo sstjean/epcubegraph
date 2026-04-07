@@ -23,9 +23,9 @@ terraform {
     }
   }
 
-  # Remote state in Azure Blob Storage.
-  # Config values loaded from backend.hcl (local) or -backend-config flags (CI/CD).
-  # See DEPLOY.md for setup and backend.hcl.example for the template.
+  # Remote state in Azure Blob Storage (centralus, private endpoint only).
+  # Config values loaded via -backend-config flags in cd.yml.
+  # Storage account access is via private endpoint from the self-hosted runner.
   backend "azurerm" {}
 }
 

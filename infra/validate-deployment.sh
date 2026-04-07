@@ -53,7 +53,7 @@ else
   cd "$SCRIPT_DIR"
   if ! terraform output resource_group_name >/dev/null 2>&1; then
     echo "ERROR: No Terraform state found and --rg not specified."
-    echo "Run ./deploy.sh first, or pass --rg <resource-group-name>."
+    echo "Pass --rg <resource-group-name> to specify the target environment."
     exit 1
   fi
   RG_NAME=$(terraform output -raw resource_group_name)

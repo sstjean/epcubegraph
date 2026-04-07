@@ -11,12 +11,11 @@ resource "azurerm_key_vault" "main" {
   rbac_authorization_enabled    = false
   soft_delete_retention_days    = var.keyvault_soft_delete_days
   purge_protection_enabled      = false
-  public_network_access_enabled = var.keyvault_public_access
+  public_network_access_enabled = false # SFI: permanently disabled — access via private endpoints only
 
   network_acls {
     default_action = "Deny"
     bypass         = "AzureServices"
-    ip_rules       = var.allowed_ips
   }
 
   # Deploying user — full secret management

@@ -42,18 +42,6 @@ variable "epcube_password" {
   default     = ""
 }
 
-variable "allowed_ips" {
-  description = "IP addresses allowed to access Key Vault and storage data plane. Populated automatically: CD pipeline detects runner IP, deploy.sh detects your public IP."
-  type        = list(string)
-  default     = []
-}
-
-variable "keyvault_public_access" {
-  description = "Enable public network access on Key Vault during deploys. Defaults to false (SFI compliance). CD pipeline passes true to allow Terraform to write secrets."
-  type        = bool
-  default     = false
-}
-
 # ── Custom Domains ──
 
 variable "custom_domain_zone_name" {
