@@ -214,7 +214,7 @@ resource "azurerm_container_app" "exporter" {
 
       env {
         name  = "AZURE_REDIRECT_URI"
-        value = "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback"
+        value = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" ? "https://${var.exporter_subdomain}.${var.custom_domain_zone_name}/.auth/callback" : "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback"
       }
     }
   }

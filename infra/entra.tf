@@ -23,7 +23,7 @@ resource "azuread_application" "api" {
 
   web {
     redirect_uris = [
-      "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
+      var.custom_domain_zone_name != "" && var.exporter_subdomain != "" ? "https://${var.exporter_subdomain}.${var.custom_domain_zone_name}/.auth/callback" : "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback",
     ]
   }
 
