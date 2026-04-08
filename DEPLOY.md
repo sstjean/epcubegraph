@@ -1,262 +1,170 @@
 # Deployment Guide
 
-**Project**: EP Cube Graph  
-**Date**: 2026-03-16
+**Project**: EP Cube Graph
+**Updated**: 2026-04-08
 
 ---
 
 ## Architecture Overview
 
-Everything runs in Azure. A single `./deploy.sh` provisions all infrastructure and deploys all services.
+All deployments run through GitHub Actions CD on a self-hosted runner VM. No local deployments to Azure.
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                       Azure Container Apps Environment               │
-│                                                                      │
-│  ┌───────────────────────────┐  ┌─────────────────────────────────┐  │
-│  │ Managed PostgreSQL        │  │ API App                         │  │
-│  │  Flexible Server          │  │  ASP.NET Core (:8080)           │  │
-│  │  (private access)         │◄─│  Entra ID auth                  │  │
-│  └──────────────│────────────┘  │  JSON REST queries ─────────────│──│─► Clients
-│                 │               └─────────────────────────────────┘  │
-│  ┌──────────────▼────────────┐                                       │
-│  │ epcube-exporter App       │    Key Vault                          │
-│  │  :9250/metrics + PG write │    (OAuth secret, credentials, DB)    │
-│  │  polls cloud API ────────────► monitoring-us.epcube.com           │
-│  └───────────────────────────┘                                       │
-│                                                                      │
-│  ACR (container images)  Log Analytics                                │
-└──────────────────────────────────────────────────────────────────────┘
+GitHub Actions (CI)              GitHub Actions (CD)
+  ubuntu-latest                    self-hosted runner (Azure VM)
+  ┌─────────────┐                 ┌──────────────────────────────┐
+  │ Build + Test │─workflow_run──►│ Bootstrap: RG + KV + PE      │
+  │ 100% coverage│                │ Main: Infra + Apps + Secrets  │
+  └─────────────┘                │ Build + Push Docker images    │
+                                  │ Deploy SWA dashboard          │
+                                  │ Validate deployment           │
+                                  └──────────────────────────────┘
+                                           │
+                                           ▼
+                                  Azure (centralus)
+                                  ┌──────────────────────────────┐
+                                  │ {env}-bootstrap-rg            │
+                                  │   Key Vault (private EP only) │
+                                  │   Runner PE                   │
+                                  │                               │
+                                  │ {env}-rg                      │
+                                  │   Container Apps (API+Exporter)│
+                                  │   PostgreSQL Flexible Server   │
+                                  │   ACR, SWA, VNet, DNS         │
+                                  └──────────────────────────────┘
 ```
 
 > **First time?** Set up your development environment first — see [DEVELOP.md](DEVELOP.md).
 
 ---
 
-## Prerequisites
+## How Deployment Works
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Terraform | 1.5+ | Azure infrastructure provisioning |
-| Azure CLI (`az`) | 2.60+ | Authentication, ACR login |
-| Docker | 24+ | Container image builds |
-| Git | 2.x | Image tagging by commit hash |
+### Two Terraform Modules
 
-You also need:
-- An Azure subscription with Owner or Contributor + User Access Administrator role
-- EP Cube cloud account credentials (monitoring-us.epcube.com)
+Terraform is split into two root modules with separate state files to solve a Key Vault private endpoint ordering dependency:
 
----
+| Module | Directory | State key | Creates |
+|--------|-----------|-----------|---------|
+| Bootstrap | `infra/bootstrap/` | `{env}-bootstrap.tfstate` | Resource group, Key Vault, runner private endpoint, DNS propagation wait |
+| Main | `infra/` | `{env}.tfstate` | Everything else: VNet, PostgreSQL, Container Apps, ACR, SWA, KV secrets, DNS, Entra ID |
 
-## Deploy
+Bootstrap runs first. Main runs after the KV is reachable via private endpoint.
 
-### 1. Configure
+### CD Pipeline Flow
 
-```bash
-cd infra
-cp terraform.tfvars.example terraform.tfvars
-```
+1. **CI** passes on `ubuntu-latest` (build, test, Docker build, Terraform validate)
+2. **CD** triggers on the self-hosted runner:
+   - Bootstrap init + apply (KV + PE)
+   - Main init + apply (infra + secrets)
+   - Docker build + push to ACR
+   - Main apply again (container apps with images)
+   - Dashboard build + deploy to SWA
+   - Deployment validation
+3. **Destroy** (manual dispatch or cleanup-branch):
+   - Main destroy first (secrets, apps)
+   - Bootstrap destroy second (KV, RG)
 
-Edit `terraform.tfvars`:
+### Branch Behavior
 
-```hcl
-environment_name = "epcubegraph"              # Prefix for all Azure resources
-location         = "centralus"                 # Azure region
-
-# EP Cube cloud account
-epcube_username  = "your-email@example.com"
-epcube_password  = "your-epcube-password"
-```
-
-All other values (Entra ID app, OAuth secret, ACR, Key Vault) are auto-generated.
-
-### 2. Deploy
-
-```bash
-./deploy.sh
-```
-
-The script will:
-1. Log you in to Azure (if needed)
-2. Run `terraform apply` to create all infrastructure
-3. Build the API and epcube-exporter Docker images
-4. Push both images to the auto-created ACR
-5. Run `terraform apply` again to deploy all container apps
-6. Print endpoints
-
-On completion, you'll see:
-
-```
-═══════════════════════════════════════════════════════════
-  EP Cube Graph — Deployment Complete
-═══════════════════════════════════════════════════════════
-
-  Endpoints:
-    PostgreSQL:       <managed-private-fqdn>
-    API:              https://<env>-api.<region>.azurecontainerapps.io
-
-  Entra ID:
-    Tenant ID:  <your-tenant-id>
-    Client ID:  <auto-generated-app-client-id>
-═══════════════════════════════════════════════════════════
-```
-
-### 3. Verify
-
-```bash
-# Show all outputs
-./deploy.sh --output
-
-# Test the API health endpoint
-cd infra
-API_FQDN=$(terraform output -raw api_fqdn)
-curl -sf "https://$API_FQDN/api/v1/health"
-```
-
-A `{"status":"healthy"}` response confirms the stack is running. Telemetry data should appear within 2 minutes (2 scrape cycles).
-
-### What Gets Created
-
-| Resource | Purpose |
-|----------|---------|
-| Resource Group | Container for all resources |
-| Container Apps Environment | Hosting platform with Log Analytics |
-| Azure Database for PostgreSQL Flexible Server | Time-series DB (private access) |
-| epcube-exporter Container App | Polls EP Cube cloud API, exposes Prometheus metrics, writes to PostgreSQL |
-| API Container App | ASP.NET Core service with Entra ID auth |
-| Azure Container Registry | Private Docker image registry |
-| Key Vault | Stores EP Cube credentials and OAuth client secret |
-| Entra ID App Registration | OAuth 2.0 with `user_impersonation` scope |
-| User-Assigned Managed Identity | ACR pull + Key Vault read access |
+| Branch | Environment | After merge |
+|--------|-------------|-------------|
+| Feature branches | Staging (`{env}-rg`) | Auto-destroyed by `cleanup-branch` job |
+| `main` | Production (`epcubegraph-rg`) | Kept running |
 
 ---
 
-## Updating
+## Initial Setup
 
-### Update the API
+### 1. Azure OIDC + Terraform State
 
-```bash
-cd infra
-./deploy.sh --api-only
-```
-
-### Update the Exporter
+Run the one-time setup script:
 
 ```bash
-cd infra
-./deploy.sh --exporter-only
+./scripts/setup-azure-cd.sh --github
 ```
 
-### Update Infrastructure
+This creates the OIDC app registration, Terraform state storage, and configures GitHub secrets.
+
+### 2. Self-Hosted Runner
 
 ```bash
-cd infra
-./deploy.sh --plan    # Preview changes
-./deploy.sh           # Apply changes
+./scripts/create-runner.sh --pat <GITHUB_PAT>
 ```
 
----
+Creates the runner VM (B2s, Ubuntu 24.04) with:
+- VNet + private endpoints for tfstate storage and Key Vault
+- No public IP, NSG denies all inbound (zero trust)
+- Azure CLI, Terraform, .NET 10, Node 22, Docker, GitHub runner agent
 
-## Deploy Script Reference
+To rebuild: `./scripts/teardown-runner.sh --pat <PAT>` then `./scripts/create-runner.sh --pat <PAT>`
 
-| Command | Description |
-|---------|-------------|
-| `./deploy.sh` | Full deploy: infrastructure + all container images |
-| `./deploy.sh --plan` | Show what Terraform would change |
-| `./deploy.sh --output` | Show deployment outputs (endpoints) |
-| `./deploy.sh --api-only` | Rebuild and redeploy only the API container |
-| `./deploy.sh --exporter-only` | Rebuild and redeploy only the epcube-exporter |
-| `./deploy.sh --validate` | Run deployment validation checks against Azure |
-| `./deploy.sh --destroy` | Tear down all Azure resources |
+### 3. GitHub Secrets
 
----
+| Secret | Value |
+|--------|-------|
+| `AZURE_CLIENT_ID` | OIDC app registration client ID |
+| `AZURE_TENANT_ID` | Entra ID tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `EPCUBE_USERNAME` | EP Cube cloud account email |
+| `EPCUBE_PASSWORD` | EP Cube cloud account password |
 
-## CI/CD Pipeline
+### 4. GitHub Environments
 
-### Overview
-
-| Workflow | Trigger | What it does |
-|----------|---------|-------------|
-| **CI** (`ci.yml`) | Push to `main` or `001-data-ingestor`, PRs to `main` | Build, test (100% coverage), Docker build, Terraform validate |
-| **CD** (`cd.yml`) | After CI passes (any branch), or manual dispatch | Deploy to Azure, validate, smoke test all services |
-
-**Branch behavior**:
-- **Feature branches**: Deploy to `staging` → validate → auto-destroy
-- **`main`**: Deploy to `production` → validate → keep running
-- **Manual dispatch**: Choose environment (staging/production), optional destroy
-
-### Prerequisites
-
-#### 1. Create Terraform Remote State Storage
-
-The CD pipeline stores Terraform state in an Azure Storage Account.
-
-```bash
-# Create resource group and storage for Terraform state
-az group create --name tfstate-rg --location centralus
-az storage account create \
-  --name tfstateepcubegraph \
-  --resource-group tfstate-rg \
-  --sku Standard_LRS \
-  --allow-blob-public-access false
-az storage container create \
-  --name tfstate \
-  --account-name tfstateepcubegraph
-```
-
-#### 2. Create OIDC App Registration for GitHub Actions
-
-GitHub Actions authenticates to Azure using OIDC (no stored credentials).
-All CD jobs use GitHub Environments (`staging` / `production`), so federated
-credentials use `environment:` subjects — no branch-ref credentials are needed.
-
-```bash
-# Create the app registration
-az ad app create --display-name "epcubegraph-github-actions"
-
-# Note the appId from the output, then create a service principal
-az ad sp create --id <appId>
-
-# Add federated credentials for GitHub Environments
-az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions-staging",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:environment:staging",
-  "audiences": ["api://AzureADTokenExchange"]
-}'
-
-az ad app federated-credential create --id <appId> --parameters '{
-  "name": "github-actions-production",
-  "issuer": "https://token.actions.githubusercontent.com",
-  "subject": "repo:sstjean/epcubegraph:environment:production",
-  "audiences": ["api://AzureADTokenExchange"]
-}'
-
-# Grant Contributor + User Access Administrator on the subscription
-az role assignment create --assignee <appId> --role Contributor --scope /subscriptions/<subscriptionId>
-az role assignment create --assignee <appId> --role "User Access Administrator" --scope /subscriptions/<subscriptionId>
-```
-
-#### 3. Configure GitHub Secrets
-
-Go to **Settings → Secrets and variables → Actions** in the GitHub repository and add:
-
-| Secret | Value | Source |
-|--------|-------|--------|
-| `AZURE_CLIENT_ID` | App registration Application (client) ID | `az ad app list --display-name epcubegraph-github-actions --query '[0].appId' -o tsv` |
-| `AZURE_TENANT_ID` | Entra ID tenant ID | `az account show --query tenantId -o tsv` |
-| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id -o tsv` |
-| `EPCUBE_USERNAME` | EP Cube cloud account email | Your monitoring-us.epcube.com login |
-| `EPCUBE_PASSWORD` | EP Cube cloud account password | Your monitoring-us.epcube.com password |
-
-#### 4. Configure GitHub Environments
-
-Go to **Settings → Environments** and create:
-
-| Environment | Protection rules |
-|-------------|-----------------|
+| Environment | Protection |
+|-------------|------------|
 | `staging` | None (auto-deploy) |
 | `production` | Required reviewers (recommended) |
+
+---
+
+## Manual Operations
+
+### Deploy Production
+
+Push to `main` — CI triggers CD automatically.
+
+Or manual dispatch:
+```bash
+gh workflow run cd.yml --ref main -f environment=production
+```
+
+### Destroy an Environment
+
+```bash
+gh workflow run cd.yml --ref main -f environment=production -f destroy=true
+```
+
+### Emergency Cleanup
+
+Deletes ALL epcubegraph Azure resources (RGs, DNS, state, KVs, Entra apps):
+
+```bash
+./scripts/scorched-earth.sh
+```
+
+### Validate Deployment
+
+```bash
+./infra/validate-deployment.sh --rg epcubegraph-rg
+```
+
+---
+
+## What Gets Created
+
+| Resource | RG | Purpose |
+|----------|----|---------|
+| Key Vault | bootstrap-rg | Stores credentials (private endpoint only) |
+| Runner PE | bootstrap-rg | CD pipeline access to KV |
+| Resource Group | main-rg | Container for app resources |
+| Container Apps Environment | main-rg | Hosting platform |
+| PostgreSQL Flexible Server | main-rg | Time-series DB (private) |
+| epcube-exporter Container App | main-rg | Polls EP Cube cloud, writes to PG |
+| API Container App | main-rg | ASP.NET Core, Entra ID auth |
+| Container Registry | main-rg | Docker images |
+| Static Web App | main-rg | Preact dashboard SPA |
+| Entra ID App Registrations | (global) | OAuth 2.0 + user_impersonation |
 
 ---
 
@@ -264,10 +172,11 @@ Go to **Settings → Environments** and create:
 
 | Symptom | Check |
 |---------|-------|
-| Terraform fails on first apply | Ensure you have Owner or Contributor + User Access Admin role on the subscription |
-| Terraform state locked | Another apply is running, or a previous one crashed — run `terraform force-unlock <ID>` |
-| epcube-exporter shows no metrics | Check Container App logs for login errors; verify `epcube_username` and `epcube_password` in `terraform.tfvars` |
-| API returns 401 | Token expired or wrong audience — re-acquire via `az account get-access-token` |
-| API returns 403 | Token missing `user_impersonation` scope — check Entra app registration |
-| API health is unhealthy or empty results persist | Check PostgreSQL and exporter container logs, then verify the API connection string and exporter `POSTGRES_DSN` wiring |
+| CD waiting for runner | `gh api repos/sstjean/epcubegraph/actions/runners` — runner should be `online` |
+| Bootstrap fails | Check `az vm run-command` on runner for connectivity issues |
+| KV secret write 403 | Runner PE DNS not propagated — bootstrap time_sleep may need increasing |
+| State locked | `az vm run-command` to break lease on the blob (see `scripts/break-state-lock.sh`) |
+| Orphaned DNS after destroy | Known issue #91 — manually delete CNAME/TXT records in `devsbx-shared` |
+| Exporter no data | Check Container App logs for login errors; verify EP Cube credentials |
+| Dashboard 404 on custom domain | SWA managed cert takes ~5 min to provision; try the default SWA URL first |
   
