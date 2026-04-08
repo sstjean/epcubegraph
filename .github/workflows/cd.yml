@@ -155,7 +155,9 @@ jobs:
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
-      # Preserve existing container app images
+      # Preserve existing container app images so the infra phase doesn't
+      # destroy them (count goes to 0 when image vars are empty).
+      - name: Preserve existing container images from state
         id: existing-images
         working-directory: infra
         env:
