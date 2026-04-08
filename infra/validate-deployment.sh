@@ -430,7 +430,7 @@ fi
 header "Key Vault"
 
 KV_NAME="${ENV_NAME}-kv"
-KV_JSON=$(az keyvault show --name "$KV_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+KV_JSON=$(az keyvault show --name "$KV_NAME" --resource-group "${ENV_NAME}-bootstrap-rg" -o json 2>/dev/null || echo "")
 
 if [[ -z "$KV_JSON" ]]; then
   fail "Key Vault '$KV_NAME' not found"
