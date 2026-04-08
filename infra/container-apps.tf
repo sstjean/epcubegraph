@@ -4,8 +4,8 @@
 
 resource "azurerm_container_app_environment" "main" {
   name                       = "${var.environment_name}-env"
-  location                   = azurerm_resource_group.main.location
-  resource_group_name        = azurerm_resource_group.main.name
+  location                   = data.azurerm_resource_group.main.location
+  resource_group_name        = data.azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   infrastructure_subnet_id   = azurerm_subnet.infrastructure.id
 
@@ -25,7 +25,7 @@ resource "azurerm_container_app" "api" {
 
   name                         = "${var.environment_name}-api"
   container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
+  resource_group_name          = data.azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption"
 
@@ -106,7 +106,7 @@ resource "azurerm_container_app" "exporter" {
 
   name                         = "${var.environment_name}-exporter"
   container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
+  resource_group_name          = data.azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption"
 

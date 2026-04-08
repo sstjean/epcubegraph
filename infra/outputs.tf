@@ -2,7 +2,7 @@
 
 output "resource_group_name" {
   description = "Name of the Azure resource group"
-  value       = azurerm_resource_group.main.name
+  value       = data.azurerm_resource_group.main.name
 }
 
 output "postgres_fqdn" {
@@ -42,7 +42,7 @@ output "entra_tenant_id" {
 
 output "key_vault_name" {
   description = "Key Vault name"
-  value       = azurerm_key_vault.main.name
+  value       = data.azurerm_key_vault.main.name
 }
 
 output "managed_identity_client_id" {

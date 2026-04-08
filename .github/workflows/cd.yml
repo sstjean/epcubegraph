@@ -114,6 +114,32 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Phase 0: Bootstrap — create RG, KV, and runner PE (separate state)
+      - name: Bootstrap Init
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=${{ needs.check-ci.outputs.state_key }}-bootstrap" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Bootstrap Apply
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ needs.check-ci.outputs.env_name }}
+        run: terraform apply -auto-approve -input=false
+
+      # Phase 1: Main infrastructure
       - name: Terraform Init
         working-directory: infra
         env:
@@ -129,10 +155,7 @@ jobs:
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
-      # Preserve existing container app images so the infra phase doesn't
-      # destroy them (count goes to 0 when image vars are empty).
-      # Reads directly from state resources (not outputs) to avoid bootstrap issues.
-      - name: Preserve existing container images from state
+      # Preserve existing container app images
         id: existing-images
         working-directory: infra
         env:
@@ -483,6 +506,32 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      # Phase 0: Bootstrap — create RG, KV, and runner PE (separate state)
+      - name: Bootstrap Init
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=epcubegraph-production-bootstrap.tfstate" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Bootstrap Apply
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: 'epcubegraph'
+        run: terraform apply -auto-approve -input=false
+
+      # Phase 1: Main infrastructure
       - name: Terraform Init
         working-directory: infra
         env:
@@ -855,6 +904,7 @@ jobs:
         with:
           terraform_wrapper: false
 
+      # Init both modules — main first (destroy order), then bootstrap
       - name: Terraform Init
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
         working-directory: infra
@@ -868,6 +918,22 @@ jobs:
             -backend-config="storage_account_name=tfstateepcubegraph" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=${{ steps.branch-env.outputs.state_key }}" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
+      - name: Bootstrap Init
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=${{ steps.branch-env.outputs.state_key }}-bootstrap" \
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
@@ -929,6 +995,28 @@ jobs:
             --output none 2>/dev/null || true
           echo "✓ State file ${{ steps.branch-env.outputs.state_key }} deleted"
 
+      # Bootstrap destroy — remove RG, KV, runner PE (reverse order)
+      - name: Bootstrap Destroy
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
+        run: terraform destroy -auto-approve -input=false
+
+      - name: Delete bootstrap state blob
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.branch-env.outputs.state_key }}-bootstrap" \
+            --auth-mode login \
+            --output none 2>/dev/null
+          echo "✓ Bootstrap state file deleted"
+
   # Tear down: only on manual request — runs directly without requiring deploy
   destroy:
     runs-on: self-hosted
@@ -989,6 +1077,21 @@ jobs:
             -backend-config="use_oidc=true" \
             -backend-config="use_azuread_auth=true"
 
+      - name: Bootstrap Init
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init -input=false \
+            -backend-config="resource_group_name=tfstate-rg" \
+            -backend-config="storage_account_name=tfstateepcubegraph" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=${{ steps.env.outputs.state_key }}-bootstrap" \
+            -backend-config="use_oidc=true" \
+            -backend-config="use_azuread_auth=true"
+
       # Re-authenticate — OIDC token may have expired during firewall propagation wait
       - name: Azure Re-Login (OIDC)
         uses: azure/login@v2
@@ -1043,3 +1146,23 @@ jobs:
             --auth-mode login \
             --output none 2>/dev/null || true
           echo "✓ State file ${{ steps.env.outputs.state_key }} deleted"
+
+      # Bootstrap destroy — remove RG, KV, runner PE (reverse order)
+      - name: Bootstrap Destroy
+        working-directory: infra/bootstrap
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
+        run: terraform destroy -auto-approve -input=false
+
+      - name: Delete bootstrap state blob
+        run: |
+          az storage blob delete \
+            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
+            --container-name tfstate \
+            --name "${{ steps.env.outputs.state_key }}-bootstrap" \
+            --auth-mode login \
+            --output none
+          echo "✓ Bootstrap state file deleted"

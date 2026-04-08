@@ -50,18 +50,24 @@ provider "azuread" {}
 data "azurerm_client_config" "current" {}
 data "azuread_client_config" "current" {}
 
-# ── Resource Group ──
+# ── Resource Group (created by infra/bootstrap/) ──
 
-resource "azurerm_resource_group" "main" {
-  name     = "${var.environment_name}-rg"
-  location = var.location
+data "azurerm_resource_group" "main" {
+  name = "${var.environment_name}-rg"
+}
+
+# ── Key Vault (created by infra/bootstrap/) ──
+
+data "azurerm_key_vault" "main" {
+  name                = "${var.environment_name}-kv"
+  resource_group_name = data.azurerm_resource_group.main.name
 }
 
 # ── Managed Identity ──
 
 resource "azurerm_user_assigned_identity" "main" {
   name                = "${var.environment_name}-identity"
-  location            = azurerm_resource_group.main.location
-  resource_group_name = azurerm_resource_group.main.name
+  location            = data.azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
 }
 
