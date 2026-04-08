@@ -1019,6 +1019,27 @@ jobs:
             --output none 2>/dev/null
           echo "✓ Bootstrap state file deleted"
 
+      # Safety net: delete orphaned DNS records from the shared zone.
+      # Terraform should handle this during destroy, but if destroy fails
+      # or state is incomplete, these records survive and block future deploys.
+      - name: Clean orphaned DNS records
+        if: steps.branch-env.outputs.skip != 'true'
+        run: |
+          ZONE="devsbx.xyz"
+          ZONE_RG="devsbx-shared"
+          for name in epcube-staging epcube-api-staging epcube-debug-staging; do
+            if az network dns record-set cname show --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" -o none 2>/dev/null; then
+              az network dns record-set cname delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
+              echo "✓ Deleted CNAME $name"
+            fi
+          done
+          for name in asuid.epcube-api-staging asuid.epcube-debug-staging; do
+            if az network dns record-set txt show --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" -o none 2>/dev/null; then
+              az network dns record-set txt delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
+              echo "✓ Deleted TXT $name"
+            fi
+          done
+
   # Tear down: only on manual request — runs directly without requiring deploy
   destroy:
     runs-on: self-hosted
@@ -1168,3 +1189,26 @@ jobs:
             --auth-mode login \
             --output none
           echo "✓ Bootstrap state file deleted"
+
+      # Safety net: delete orphaned DNS records from the shared zone.
+      # Only deletes records matching the environment being destroyed.
+      - name: Clean orphaned DNS records
+        run: |
+          ZONE="devsbx.xyz"
+          ZONE_RG="devsbx-shared"
+          ENV="${{ github.event.inputs.environment }}"
+          if [ "$ENV" = "staging" ]; then
+            PATTERN="staging"
+          else
+            PATTERN="epcube"
+          fi
+          CNAMES=$(az network dns record-set cname list --zone-name "$ZONE" --resource-group "$ZONE_RG" --query "[?contains(name, '$PATTERN')].name" -o tsv 2>/dev/null)
+          for name in $CNAMES; do
+            az network dns record-set cname delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
+            echo "✓ Deleted CNAME $name"
+          done
+          TXTS=$(az network dns record-set txt list --zone-name "$ZONE" --resource-group "$ZONE_RG" --query "[?contains(name, '$PATTERN')].name" -o tsv 2>/dev/null)
+          for name in $TXTS; do
+            az network dns record-set txt delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
+            echo "✓ Deleted TXT $name"
+          done
