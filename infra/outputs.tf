@@ -2,7 +2,7 @@
 
 output "resource_group_name" {
   description = "Name of the Azure resource group"
-  value       = data.azurerm_resource_group.main.name
+  value       = azurerm_resource_group.main.name
 }
 
 output "postgres_fqdn" {

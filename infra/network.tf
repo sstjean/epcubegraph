@@ -12,8 +12,8 @@
 
 resource "azurerm_virtual_network" "main" {
   name                = "${var.environment_name}-vnet"
-  location            = data.azurerm_resource_group.main.location
-  resource_group_name = data.azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
   address_space       = var.vnet_address_space
 }
 
@@ -22,7 +22,7 @@ resource "azurerm_virtual_network" "main" {
 # Container Apps infrastructure subnet (/23 minimum for Consumption workload profile)
 resource "azurerm_subnet" "infrastructure" {
   name                            = "infrastructure"
-  resource_group_name             = data.azurerm_resource_group.main.name
+  resource_group_name             = azurerm_resource_group.main.name
   virtual_network_name            = azurerm_virtual_network.main.name
   address_prefixes                = var.subnet_infrastructure_prefix
   default_outbound_access_enabled = false
@@ -39,7 +39,7 @@ resource "azurerm_subnet" "infrastructure" {
 # Private endpoints subnet
 resource "azurerm_subnet" "endpoints" {
   name                            = "endpoints"
-  resource_group_name             = data.azurerm_resource_group.main.name
+  resource_group_name             = azurerm_resource_group.main.name
   virtual_network_name            = azurerm_virtual_network.main.name
   address_prefixes                = var.subnet_endpoints_prefix
   default_outbound_access_enabled = false
@@ -47,7 +47,7 @@ resource "azurerm_subnet" "endpoints" {
 
 resource "azurerm_subnet" "postgres" {
   name                 = "postgres"
-  resource_group_name  = data.azurerm_resource_group.main.name
+  resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = var.subnet_postgres_prefix
 
@@ -66,8 +66,8 @@ resource "azurerm_subnet" "postgres" {
 
 resource "azurerm_private_endpoint" "keyvault" {
   name                = "${var.environment_name}-kv-pe"
-  location            = data.azurerm_resource_group.main.location
-  resource_group_name = data.azurerm_resource_group.main.name
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
   subnet_id           = azurerm_subnet.endpoints.id
 
   private_service_connection {
@@ -85,12 +85,12 @@ resource "azurerm_private_endpoint" "keyvault" {
 
 resource "azurerm_private_dns_zone" "keyvault" {
   name                = "privatelink.vaultcore.azure.net"
-  resource_group_name = data.azurerm_resource_group.main.name
+  resource_group_name = azurerm_resource_group.main.name
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "keyvault" {
   name                  = "${var.environment_name}-kv-link"
-  resource_group_name   = data.azurerm_resource_group.main.name
+  resource_group_name   = azurerm_resource_group.main.name
   private_dns_zone_name = azurerm_private_dns_zone.keyvault.name
   virtual_network_id    = azurerm_virtual_network.main.id
 }

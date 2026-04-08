@@ -53,8 +53,8 @@ data "azurerm_private_dns_zone" "runner_vault" {
 
 # ── Resource Group ──
 
-resource "azurerm_resource_group" "main" {
-  name     = "${var.environment_name}-rg"
+resource "azurerm_resource_group" "bootstrap" {
+  name     = "${var.environment_name}-bootstrap-rg"
   location = var.location
 }
 
@@ -62,8 +62,8 @@ resource "azurerm_resource_group" "main" {
 
 resource "azurerm_key_vault" "main" {
   name                          = "${var.environment_name}-kv"
-  location                      = azurerm_resource_group.main.location
-  resource_group_name           = azurerm_resource_group.main.name
+  location                      = azurerm_resource_group.bootstrap.location
+  resource_group_name           = azurerm_resource_group.bootstrap.name
   tenant_id                     = data.azurerm_client_config.current.tenant_id
   sku_name                      = "standard"
   rbac_authorization_enabled    = false
@@ -90,7 +90,7 @@ resource "azurerm_key_vault" "main" {
 resource "azurerm_private_endpoint" "keyvault_runner" {
   name                = "${var.environment_name}-kv-runner-pe"
   location            = "centralus" # Runner VNet is in centralus (tfstate-rg)
-  resource_group_name = azurerm_resource_group.main.name
+  resource_group_name = azurerm_resource_group.bootstrap.name
   subnet_id           = data.azurerm_subnet.runner_endpoints.id
 
   private_service_connection {
