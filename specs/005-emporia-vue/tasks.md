@@ -96,6 +96,30 @@
 
 ---
 
+## Phase 4a: User Story 4 — Vue Debug Page (Priority: P1)
+
+**Goal**: Separate `/vue` debug page showing per-device status and last polled readings for every circuit; navigation links between EP Cube and Vue pages
+
+**Independent Test**: Navigate to `/vue` — each device listed with status, every circuit shows channel number, name, and last watt value. Link back to EP Cube page works. EP Cube page has link to Vue page.
+
+### Tests for User Story 4
+
+- [ ] T060 [P] [US4] Add tests for `/vue` debug page endpoint in `local/epcube-exporter/test_exporter.py` — test: returns HTML with device sections, per-circuit rows (channel_num, name, watts), navigation link to `/status`
+- [ ] T061 [P] [US4] Add tests for EP Cube page navigation link in `local/epcube-exporter/test_exporter.py` — test: `/status` page HTML contains link to `/vue`
+- [ ] T062 [P] [US4] Add tests for Vue page when not configured in `local/epcube-exporter/test_exporter.py` — test: `/vue` returns page with "Vue polling not configured" message when vue_collector is None
+
+### Implementation for User Story 4
+
+- [ ] T063 [US4] Store last polled per-circuit readings in VueCollector in `local/epcube-exporter/exporter.py` — dict of `{(device_gid, channel_num): watts}` updated on each poll, accessible via `get_status()`
+- [ ] T064 [US4] Implement `_render_vue_debug_page()` in `local/epcube-exporter/exporter.py` — full HTML page showing devices with status, circuits with channel_num/name/watts ordered by channel number, navigation to `/status`
+- [ ] T065 [US4] Add navigation link to `/vue` on the EP Cube debug page in `local/epcube-exporter/exporter.py` — add link in the header/nav area of `_render_status_page()`
+- [ ] T066 [US4] Add `/vue` route to MetricsHandler.do_GET() in `local/epcube-exporter/exporter.py` — serve `_render_vue_debug_page()` with auth check; remove Vue section injection from `/status` page
+- [ ] T067 [US4] Update `_render_vue_status_section()` removal — remove the function and its injection into `/status` since Vue now has its own page
+
+**Checkpoint**: US4 complete — Vue has its own debug page with per-circuit live data, navigation between pages works
+
+---
+
 ## Phase 5: User Story 2 — Deduplicate Nested Panel Measurements (Priority: P2)
 
 **Goal**: API computes deduplicated panel totals at query time using panel_hierarchy; computes total home from top-level panels
@@ -171,6 +195,7 @@
 - **Phase 2 (Foundational)**: Depends on Phase 1 (Dockerfile/requirements)
 - **Phase 3 (US1 Ingest)**: Depends on Phase 2 (VuePostgresWriter, flexible credentials)
 - **Phase 4 (US1 Downsampling)**: Depends on Phase 3 (VueCollector writes readings)
+- **Phase 4a (US4 Debug Page)**: Depends on Phase 3 (VueCollector with per-circuit data); can run in parallel with Phase 4
 - **Phase 5 (US2 Deduplication)**: Depends on Phase 2 (schema exists); can run in parallel with US1 implementation
 - **Phase 6 (US3 API)**: Depends on Phase 2 (schema); T040-T041 (models/interface) can start in parallel with US1/US2
 - **Phase 7 (Polish)**: T053-T055 (Terraform) can run anytime; T056-T058 (validation) depend on all implementation
@@ -178,6 +203,7 @@
 ### User Story Dependencies
 
 - **US1 (P1 — Ingest)**: Depends on Phase 2 only. Can be delivered as standalone MVP.
+- **US4 (P1 — Debug Page)**: Depends on Phase 3 (VueCollector). Separate /vue page with per-circuit data.
 - **US2 (P2 — Deduplication)**: Depends on Phase 2. Can be developed in parallel with US1 since it queries existing panel_hierarchy table and Vue data tables.
 - **US3 (P3 — API)**: Models/interface (T040-T041) have no dependencies. Store implementation depends on schema (Phase 2). Endpoints depend on store.
 
