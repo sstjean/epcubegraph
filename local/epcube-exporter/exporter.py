@@ -1457,20 +1457,45 @@ class VueCollector:
     def _discover_devices(self):
         """Discover Vue devices and channels from the Emporia API."""
         try:
-            devices = self._vue.get_devices()
-            self._device_gids = [d.device_gid for d in devices]
+            raw_devices = self._vue.get_devices()
+            # PyEmVue returns multiple entries per device_gid (VUE003 hub +
+            # WAT001 CT module).  Merge them: take name/connected from the first
+            # entry with a name, merge channels from all entries.
+            merged = {}  # gid -> merged device info
+            for d in raw_devices:
+                gid = d.device_gid
+                if gid not in merged:
+                    merged[gid] = {
+                        "device": d,
+                        "channels": list(d.channels),
+                    }
+                else:
+                    # Merge: prefer named entry for device metadata
+                    if d.device_name and not merged[gid]["device"].device_name:
+                        merged[gid]["device"] = d
+                    # Add any new channels (avoid dups by channel_num)
+                    existing_nums = {ch.channel_num for ch in merged[gid]["channels"]}
+                    for ch in d.channels:
+                        if ch.channel_num not in existing_nums:
+                            merged[gid]["channels"].append(ch)
+                            existing_nums.add(ch.channel_num)
+
+            devices = list(merged.values())
+            self._device_gids = [info["device"].device_gid for info in devices]
             self._device_count = len(devices)
-            self._circuit_count = sum(len(d.channels) for d in devices)
+            self._circuit_count = sum(len(info["channels"]) for info in devices)
             self._devices_info = []
-            for d in devices:
+            for info in devices:
+                d = info["device"]
+                channels = info["channels"]
                 self._devices_info.append({
                     "device_gid": d.device_gid,
                     "name": d.device_name,
                     "connected": d.connected,
-                    "channels": len(d.channels),
+                    "channels": len(channels),
                 })
                 log.info("Vue:   Device: %s (gid=%d, channels=%d, online=%s)",
-                         d.device_name, d.device_gid, len(d.channels), d.connected)
+                         d.device_name, d.device_gid, len(channels), d.connected)
 
                 # Persist device and channel metadata
                 if self._pg_writer:
@@ -1480,7 +1505,7 @@ class VueCollector:
                         firmware=getattr(d, "firmware", None),
                         connected=d.connected,
                     )
-                    for ch in d.channels:
+                    for ch in channels:
                         self._pg_writer.upsert_channel(
                             device_gid=ch.device_gid, channel_num=ch.channel_num,
                             name=ch.name,

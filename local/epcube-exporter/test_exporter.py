@@ -2089,6 +2089,40 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         # Assert
         self.assertEqual(collector._device_count, 2)
 
+    @patch("exporter.PyEmVue")
+    def test_discover_deduplicates_same_gid(self, mock_pyemvue_cls):
+        # Arrange — PyEmVue returns two entries with same gid (VUE003 hub + WAT001 CT module)
+        mock_vue = MagicMock()
+        mock_vue.login.return_value = None
+
+        mock_hub = MagicMock()
+        mock_hub.device_gid = 480380
+        mock_hub.device_name = "Main Panel"
+        mock_hub.model = "VUE003"
+        mock_hub.firmware = "1.0"
+        mock_hub.connected = True
+        mock_hub.channels = [MagicMock(device_gid=480380, channel_num="1,2,3", name="Main",
+                                        channel_multiplier=1.0, channel_type_gid=None)]
+
+        mock_ct = MagicMock()
+        mock_ct.device_gid = 480380  # Same gid!
+        mock_ct.device_name = ""
+        mock_ct.model = "WAT001"
+        mock_ct.firmware = "1.0"
+        mock_ct.connected = False
+        mock_ct.channels = [MagicMock() for _ in range(18)]
+
+        mock_vue.get_devices.return_value = [mock_hub, mock_ct]
+        mock_vue.get_device_list_usage.return_value = {}
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert — only 1 device, not 2, but channels merged from both entries
+        self.assertEqual(collector._device_count, 1)
+        self.assertEqual(collector._circuit_count, 19)  # 1 mains + 18 CT channels
+
 
 # ---------------------------------------------------------------------------
 # T016: Vue poll interval from settings table tests
