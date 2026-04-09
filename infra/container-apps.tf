@@ -144,6 +144,18 @@ resource "azurerm_container_app" "exporter" {
     identity            = azurerm_user_assigned_identity.main.id
   }
 
+  secret {
+    name                = "emporia-username"
+    key_vault_secret_id = azurerm_key_vault_secret.emporia_username.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "emporia-password"
+    key_vault_secret_id = azurerm_key_vault_secret.emporia_password.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
   # External ingress — debug page requires JWT auth in code
   # /metrics and /health remain unauthenticated for vmagent scraping
   ingress {
@@ -190,6 +202,16 @@ resource "azurerm_container_app" "exporter" {
       env {
         name        = "POSTGRES_DSN"
         secret_name = "exporter-postgres-dsn"
+      }
+
+      env {
+        name        = "EMPORIA_USERNAME"
+        secret_name = "emporia-username"
+      }
+
+      env {
+        name        = "EMPORIA_PASSWORD"
+        secret_name = "emporia-password"
       }
 
       env {

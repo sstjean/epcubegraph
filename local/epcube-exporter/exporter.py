@@ -1003,8 +1003,12 @@ def _render_status_page(status, health):
   .val-pos {{ color: #00d4aa; }}
   .val-neg {{ color: #e74c3c; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+  .nav {{ font-size: 0.85em; margin-bottom: 0.5em; color: #666; }}
+  .nav a {{ color: #00d4aa; text-decoration: none; }}
+  .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head><body>
+<div class="nav"><a href="/vue">Emporia Vue</a> &middot; <a href="/metrics">/metrics</a> &middot; <a href="/health">/health</a></div>
 <h1>&#9889; epcube-exporter — debug status
 <span style="font-size:0.6em;background:{'#00d4aa' if health['healthy'] else '#e74c3c'};color:#fff;padding:0.2em 0.7em;border-radius:12px;margin-left:0.8em;vertical-align:middle">{'&#10003; healthy' if health['healthy'] else '&#10007; ' + ', '.join(health['checks'])}</span>
 </h1>
@@ -1052,11 +1056,7 @@ setInterval(async () => {{
   }} catch (e) {{}}
 }}, {poll_interval * 1000});
 </script>
-<div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min) &middot;
-  <a href="/vue" style="color:#00d4aa">Emporia Vue</a> &middot;
-  <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
-  <a href="/health" style="color:#00d4aa">/health</a>
-</div>
+<div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min)</div>
 </body></html>"""
 
 
@@ -1344,9 +1344,9 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 <style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
                 a { color: #00d4aa; }</style>
                 </head><body>
+                <p><a href="/vue">Emporia Vue Status</a></p>
                 <h1>epcube-exporter</h1>
                 <p>EP Cube collector: disabled</p>
-                <p><a href="/vue">Emporia Vue Status</a></p>
                 </body></html>"""
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1691,9 +1691,9 @@ def _render_vue_debug_page(vue_status):
 <style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
 a { color: #00d4aa; }</style>
 </head><body>
+<p><a href="/status">&larr; EP Cube Status</a></p>
 <h1>Emporia Vue</h1>
 <p>Vue polling is not configured. Set EMPORIA_USERNAME and EMPORIA_PASSWORD to enable.</p>
-<p><a href="/status">&larr; EP Cube Status</a></p>
 </body></html>"""
 
     last_poll = vue_status["last_poll"]
@@ -1780,8 +1780,12 @@ a { color: #00d4aa; }</style>
   .val-pos {{ color: #00d4aa; }}
   .val-neg {{ color: #e74c3c; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+  .nav {{ font-size: 0.85em; margin-bottom: 0.5em; color: #666; }}
+  .nav a {{ color: #00d4aa; text-decoration: none; }}
+  .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head><body>
+<div class="nav"><a href="/status">&larr; EP Cube Status</a> &middot; <a href="/health">/health</a></div>
 <h1>&#9889; Emporia Vue — debug status</h1>
 <div class="info">
   <span>Devices: <b>{vue_status["device_count"]}</b></span>
@@ -1830,11 +1834,7 @@ setInterval(async () => {{
   }} catch (e) {{}}
 }}, 5000);
 </script>
-<div class="footer">
-  Auto-refreshes every 5s &middot;
-  <a href="/status">EP Cube Status</a> &middot;
-  <a href="/health">/health</a>
-</div>
+<div class="footer">Auto-refreshes every 5s</div>
 </body></html>"""
 
 

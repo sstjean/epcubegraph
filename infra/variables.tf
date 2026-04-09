@@ -42,6 +42,22 @@ variable "epcube_password" {
   default     = ""
 }
 
+# ── Emporia Vue credentials ──
+
+variable "emporia_username" {
+  description = "Emporia Vue account email"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "emporia_password" {
+  description = "Emporia Vue account password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # ── Custom Domains ──
 
 variable "custom_domain_zone_name" {

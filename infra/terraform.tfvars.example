@@ -8,6 +8,10 @@ location         = "centralus"   # Azure region
 epcube_username = "your-email@example.com"
 epcube_password = "your-epcube-password"
 
+# Emporia Vue account (optional — leave empty to skip Vue polling)
+emporia_username = ""
+emporia_password = ""
+
 # ── SKUs ──
 postgres_sku = "B_Standard_B1ms" # Burstable: B_Standard_B1ms | GP: GP_Standard_D2s_v3
 acr_sku      = "Basic"           # Basic, Standard, Premium
