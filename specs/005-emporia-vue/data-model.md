@@ -182,7 +182,7 @@ A single power measurement at a point in time.
 
 - **Source**: PyEmVue `get_device_list_usage()` → `VueDeviceChannelUsage.usage`
 - **Storage**: `vue_readings` (1-second, 7-day retention) or `vue_readings_1min` (1-minute averages, indefinite)
-- **Unit**: Watts (requested directly from Emporia API in `Watts` unit — no kWh conversion)
+- **Unit**: Watts (converted from kWh at ingestion: `watts = kWh * 3,600,000` for 1S scale, `watts = kWh * 60,000` for 1MIN scale)
 - **Negative values**: Stored as-is. Negative watts represent bidirectional power flow (solar backfeed, battery discharge).
 - **Null handling**: Offline devices return `None` from the API → skip write, log warning
 

@@ -6,6 +6,7 @@
 #
 # Usage:
 #   # 1. Copy .env.example to .env and set EPCUBE_USERNAME / EPCUBE_PASSWORD
+#        and optionally EMPORIA_USERNAME / EMPORIA_PASSWORD
 #   cp .env.example .env && $EDITOR .env
 #
 #   # 2. Start everything
@@ -40,6 +41,8 @@ services:
       - EPCUBE_PORT=9250
       - EPCUBE_INTERVAL=60
       - EPCUBE_DISABLE_AUTH=true
+      - EMPORIA_USERNAME=${EMPORIA_USERNAME:-}
+      - EMPORIA_PASSWORD=${EMPORIA_PASSWORD:-}
       - POSTGRES_DSN=postgresql://epcube:epcube_local@postgres:5432/epcubegraph
     ports:
       - "9250:9250"

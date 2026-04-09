@@ -30,7 +30,7 @@ PyEmVue is the only maintained Python library for the Emporia Vue API. It wraps 
 - Returns `dict[int, VueUsageDevice]` keyed by device_gid
 - Each `VueUsageDevice` has `channels` dict keyed by channel_num string
 - Channel `"1,2,3"` = mains (three-phase total), `"1"` through `"16"` = individual circuits, `"Balance"` = calculated remainder
-- Usage value is in requested unit. Request `Watts` directly to avoid kWh-to-watts conversion and floating-point artifacts.
+- Usage value is in requested unit. Request `KilowattHours` and convert to watts: `watts = kWh * 3,600,000` for 1S scale, `watts = kWh * 60,000` for 1MIN scale.
 - **Offline devices**: `channel.usage = None` for all channels
 - **Retry behavior**: Library retries up to `max_retry_attempts` (default 5) with exponential backoff when any channel returns None
 - **For 1-second polling**: Set `max_retry_attempts=1` to avoid blocking the poll loop (spec FR-001)
@@ -38,7 +38,7 @@ PyEmVue is the only maintained Python library for the Emporia Vue API. It wraps 
 **Scales**: `1S`, `1MIN`, `15MIN`, `1H`, `1D`, `1W`, `1MON`, `1Y`
 **Units**: `KilowattHours`, `Dollars`, `AmpHours`, `Voltage`, `Watts`, etc.
 
-**Data unit decision**: Request `Watts` directly from the API (unit parameter: `"Watts"`). This eliminates the kWh-to-watts conversion entirely and avoids floating-point rounding artifacts on very small numbers.
+**Data unit decision**: PyEmVue does not support a `Watts` unit enum. Must request `KilowattHours` and convert to watts at ingestion time. For 1S scale: `watts = kWh * 3,600,000`. For 1MIN scale (rate-limit fallback): `watts = kWh * 60,000`. The conversion is a simple multiplication — floating-point precision is adequate for energy monitoring.
 
 **Rate Limiting**: No documented hard rate limits, but the spec requires automatic fallback from `1S` to `1MIN` scale if rate-limited (FR-001). Rate limiting manifests as HTTP 429 or empty/None responses.
 

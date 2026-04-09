@@ -16,7 +16,7 @@ Integrate Emporia Vue energy monitors into EpCubeGraph to provide circuit-level 
 **Target Platform**: Azure Container Apps (exporter + API), Azure Static Web Apps (dashboard)
 **Project Type**: Full-stack feature addition across exporter / API / dashboard
 **Performance Goals**: API <500ms for current readings, <2s for 30-day historical; 1-second poll interval for Vue data
-**Constraints**: Single API call per poll cycle (`get_device_list_usage`), `max_retry_attempts=1` to avoid blocking 1s loop, request Watts directly (no kWh conversion)
+**Constraints**: Single API call per poll cycle (`get_device_list_usage`), `max_retry_attempts=1` to avoid blocking 1s loop, kWh→Watts conversion at ingestion (PyEmVue has no Watts unit)
 **Scale/Scope**: ~4 Vue devices (split-phase 300A, no single device at entry), ~60 circuits, 1-second data for 7 days then downsampled to 1-minute averages. Total home = sum of top-level panel mains.
 
 ## Constitution Check

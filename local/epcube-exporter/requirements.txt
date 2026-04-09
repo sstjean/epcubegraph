@@ -1,0 +1,14 @@
+# EP Cube Graph Exporter — Python dependencies
+# Used by Dockerfile: pip install -r requirements.txt
+
+# EP Cube cloud API (AJ-Captcha puzzle solver)
+opencv-python-headless
+pycryptodome
+numpy
+PyJWT[crypto]
+
+# PostgreSQL
+psycopg2-binary
+
+# Emporia Vue cloud API
+pyemvue
