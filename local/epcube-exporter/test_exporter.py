@@ -1809,5 +1809,414 @@ class TestVuePostgresWriterReadings(unittest.TestCase):
         self.assertEqual(mock_pg.connect.call_count, 2)
 
 
+# ---------------------------------------------------------------------------
+# T013: VueCollector initialization and login tests
+# ---------------------------------------------------------------------------
+
+def _mock_pyemvue():
+    """Create a mock PyEmVue instance with devices and usage."""
+    mock_vue = MagicMock()
+
+    # Mock device with channels
+    mock_device = MagicMock()
+    mock_device.device_gid = 12345
+    mock_device.device_name = "Main Panel"
+    mock_device.model = "VUE001"
+    mock_device.firmware = "1.0"
+    mock_device.connected = True
+    mock_device.offline_since = None
+
+    mock_ch1 = MagicMock()
+    mock_ch1.device_gid = 12345
+    mock_ch1.channel_num = "1,2,3"
+    mock_ch1.name = "Main"
+    mock_ch1.channel_multiplier = 1.0
+    mock_ch1.channel_type_gid = None
+
+    mock_ch2 = MagicMock()
+    mock_ch2.device_gid = 12345
+    mock_ch2.channel_num = "1"
+    mock_ch2.name = "Kitchen"
+    mock_ch2.channel_multiplier = 1.0
+    mock_ch2.channel_type_gid = None
+
+    mock_device.channels = [mock_ch1, mock_ch2]
+    mock_vue.get_devices.return_value = [mock_device]
+
+    # Mock usage result
+    mock_usage_device = MagicMock()
+    mock_usage_device.device_gid = 12345
+    mock_usage_device.timestamp = datetime(2026, 4, 8, 12, 0, 0, tzinfo=timezone.utc)
+
+    mock_ch_usage_main = MagicMock()
+    mock_ch_usage_main.device_gid = 12345
+    mock_ch_usage_main.channel_num = "1,2,3"
+    mock_ch_usage_main.name = "Main"
+    mock_ch_usage_main.usage = 0.002347  # kWh for 1S scale → ~8449 watts
+
+    mock_ch_usage_kitchen = MagicMock()
+    mock_ch_usage_kitchen.device_gid = 12345
+    mock_ch_usage_kitchen.channel_num = "1"
+    mock_ch_usage_kitchen.name = "Kitchen"
+    mock_ch_usage_kitchen.usage = 0.000333  # kWh → ~1199 watts
+
+    mock_usage_device.channels = {"1,2,3": mock_ch_usage_main, "1": mock_ch_usage_kitchen}
+    mock_vue.get_device_list_usage.return_value = {12345: mock_usage_device}
+
+    return mock_vue
+
+
+class TestVueCollectorInit(unittest.TestCase):
+    """T013: VueCollector initialization and login tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_successful_login(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert
+        mock_vue.login.assert_called_once_with(username="user@test.com", password="password")
+        self.assertTrue(collector._authenticated)
+
+    @patch("exporter.PyEmVue")
+    def test_login_failure_sets_not_authenticated(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = MagicMock()
+        mock_vue.login.side_effect = Exception("Auth failed")
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("bad@test.com", "badpass")
+
+        # Assert
+        self.assertFalse(collector._authenticated)
+        self.assertEqual(collector._device_count, 0)
+
+    @patch("exporter.PyEmVue")
+    def test_login_discovers_devices(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert
+        mock_vue.get_devices.assert_called_once()
+        self.assertEqual(collector._device_count, 1)
+        self.assertEqual(collector._circuit_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T014: VueCollector.poll() tests
+# ---------------------------------------------------------------------------
+
+class TestVueCollectorPoll(unittest.TestCase):
+    """T014: VueCollector.poll() tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_poll_calls_get_device_list_usage(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        collector.poll()
+
+        # Assert
+        mock_vue.get_device_list_usage.assert_called_once()
+        call_kwargs = mock_vue.get_device_list_usage.call_args
+        self.assertEqual(call_kwargs[1].get("unit") or call_kwargs[0][3] if len(call_kwargs[0]) > 3 else call_kwargs[1].get("unit"), "KilowattHours")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_converts_kwh_to_watts(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act
+        collector.poll()
+
+        # Assert — readings written should be in watts
+        write_call = mock_pg.write_readings.call_args[0][0]
+        # kWh 0.002347 * 3_600_000 = 8449.2
+        main_reading = [r for r in write_call if r[1] == "1,2,3"][0]
+        self.assertAlmostEqual(main_reading[3], 0.002347 * 3_600_000, places=0)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_skips_none_channels(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # Make kitchen channel offline (None usage)
+        mock_vue.get_device_list_usage.return_value[12345].channels["1"].usage = None
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act
+        collector.poll()
+
+        # Assert — only main channel written (kitchen skipped)
+        write_call = mock_pg.write_readings.call_args[0][0]
+        self.assertEqual(len(write_call), 1)
+        self.assertEqual(write_call[0][1], "1,2,3")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_continues_on_device_error(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # Add a second device that errors
+        mock_dev2 = MagicMock()
+        mock_dev2.device_gid = 99999
+        mock_dev2.device_name = "Broken"
+        mock_dev2.model = "VUE001"
+        mock_dev2.firmware = "1.0"
+        mock_dev2.connected = True
+        mock_dev2.channels = []
+        mock_vue.get_devices.return_value.append(mock_dev2)
+        # Usage for device 99999 raises an error
+        original_usage = mock_vue.get_device_list_usage.return_value.copy()
+        mock_bad_device = MagicMock()
+        mock_bad_device.channels = {}
+        # Accessing channels raises
+        type(mock_bad_device).channels = property(lambda s: (_ for _ in ()).throw(Exception("Device error")))
+        original_usage[99999] = mock_bad_device
+        mock_vue.get_device_list_usage.return_value = original_usage
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act — should not raise
+        collector.poll()
+
+        # Assert — readings from working device still written
+        self.assertTrue(mock_pg.write_readings.called)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_updates_last_poll_time(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        before = time.time()
+        collector.poll()
+
+        # Assert
+        self.assertGreaterEqual(collector._last_poll, before)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_when_not_authenticated_retries_login(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = MagicMock()
+        mock_vue.login.side_effect = [Exception("First fail"), None]
+        mock_vue.get_devices.return_value = []
+        mock_vue.get_device_list_usage.return_value = {}
+        mock_pyemvue_cls.return_value = mock_vue
+
+        collector = exporter.VueCollector("user@test.com", "password")
+        self.assertFalse(collector._authenticated)
+
+        # Act — poll should retry login
+        mock_vue.login.side_effect = None  # Now login succeeds
+        collector.poll()
+
+        # Assert — login called again
+        self.assertGreaterEqual(mock_vue.login.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T015: Device/channel discovery refresh tests
+# ---------------------------------------------------------------------------
+
+class TestVueDeviceDiscovery(unittest.TestCase):
+    """T015: Device/channel discovery refresh tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_discover_upserts_devices_to_postgres(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Assert — upsert_device called during init
+        mock_pg.upsert_device.assert_called_once_with(
+            device_gid=12345, device_name="Main Panel",
+            model="VUE001", firmware="1.0", connected=True,
+        )
+
+    @patch("exporter.PyEmVue")
+    def test_discover_upserts_channels_to_postgres(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Assert — upsert_channel called for each channel
+        self.assertEqual(mock_pg.upsert_channel.call_count, 2)
+
+    @patch("exporter.PyEmVue")
+    def test_refresh_updates_device_list(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        self.assertEqual(collector._device_count, 1)
+
+        # Add a new device
+        mock_dev2 = MagicMock()
+        mock_dev2.device_gid = 23456
+        mock_dev2.device_name = "Workshop"
+        mock_dev2.model = "VUE002"
+        mock_dev2.firmware = "2.0"
+        mock_dev2.connected = True
+        mock_dev2.channels = []
+        mock_vue.get_devices.return_value.append(mock_dev2)
+
+        # Act
+        collector._discover_devices()
+
+        # Assert
+        self.assertEqual(collector._device_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T016: Vue poll interval from settings table tests
+# ---------------------------------------------------------------------------
+
+class TestVuePollInterval(unittest.TestCase):
+    """T016: Vue poll interval reading from settings table tests."""
+
+    def test_default_interval_is_1_second(self):
+        # Assert
+        self.assertEqual(exporter.DEFAULT_VUE_POLL_INTERVAL, 1)
+
+    @patch("exporter._read_vue_poll_interval_from_db", return_value=5)
+    @patch("exporter.PyEmVue")
+    def test_vue_poll_loop_reads_interval(self, mock_pyemvue_cls, mock_read_interval):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Simulate one iteration of vue_poll_loop
+        collector._poll_interval = mock_read_interval.return_value
+
+        # Assert
+        self.assertEqual(collector._poll_interval, 5)
+
+
+# ---------------------------------------------------------------------------
+# T017: Rate limit fallback tests
+# ---------------------------------------------------------------------------
+
+class TestVueRateLimitFallback(unittest.TestCase):
+    """T017: Rate limit fallback (1S → 1MIN) tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_degrades_to_1min_on_rate_limit(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # All channels return None (rate limited)
+        for ch in mock_vue.get_device_list_usage.return_value[12345].channels.values():
+            ch.usage = None
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        collector.poll()
+
+        # Assert — scale degraded
+        self.assertEqual(collector._current_scale, "1MIN")
+
+    @patch("exporter.PyEmVue")
+    def test_recovers_to_1s_after_successful_polls(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._current_scale = "1MIN"
+        collector._recovery_count = collector.RECOVERY_THRESHOLD - 1
+
+        # Act
+        collector.poll()
+
+        # Assert — recovered to 1S
+        self.assertEqual(collector._current_scale, "1S")
+
+    @patch("exporter.PyEmVue")
+    def test_kwh_conversion_adjusts_for_1min_scale(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._current_scale = "1MIN"
+        mock_pg = MagicMock()
+        collector._pg_writer = mock_pg
+
+        # Act
+        collector.poll()
+
+        # Assert — conversion uses 60,000 not 3,600,000
+        write_call = mock_pg.write_readings.call_args[0][0]
+        main_reading = [r for r in write_call if r[1] == "1,2,3"][0]
+        self.assertAlmostEqual(main_reading[3], 0.002347 * 60_000, places=0)
+
+
+# ---------------------------------------------------------------------------
+# T018: Vue debug page status section tests
+# ---------------------------------------------------------------------------
+
+class TestVueDebugPage(unittest.TestCase):
+    """T018: Vue debug page status section tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_get_vue_status(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+
+        # Act
+        status = collector.get_status()
+
+        # Assert
+        self.assertIn("device_count", status)
+        self.assertIn("circuit_count", status)
+        self.assertIn("last_poll", status)
+        self.assertIn("current_scale", status)
+        self.assertEqual(status["device_count"], 1)
+        self.assertEqual(status["circuit_count"], 2)
+
+    @patch("exporter.PyEmVue")
+    def test_render_vue_status_section(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_status_section(vue_status)
+
+        # Assert
+        self.assertIn("Emporia Vue", html)
+        self.assertIn("1", html)  # device count
+        self.assertIn("2", html)  # circuit count
+        self.assertIn("1S", html)  # scale
+
+
 if __name__ == "__main__":
     unittest.main()
