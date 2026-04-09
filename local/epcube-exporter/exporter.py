@@ -1053,6 +1053,7 @@ setInterval(async () => {{
 }}, {poll_interval * 1000});
 </script>
 <div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min) &middot;
+  <a href="/vue" style="color:#00d4aa">Emporia Vue</a> &middot;
   <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
   <a href="/health" style="color:#00d4aa">/health</a>
 </div>
@@ -1333,29 +1334,31 @@ class MetricsHandler(BaseHTTPRequestHandler):
         elif self.path == "/" or self.path == "/status":
             if not self._check_auth():
                 return
-            # Build page content
-            vue_section = ""
-            if self.vue_collector:
-                vue_status = self.vue_collector.get_status()
-                vue_section = _render_vue_status_section(vue_status)
-
             if self.collector:
                 status = self.collector.get_status()
                 health = self.collector.get_health()
-                page_html = _render_status_page(status, health)
-                # Inject Vue section before closing </body>
-                if vue_section:
-                    page_html = page_html.replace("</body>", vue_section + "</body>")
-                body = page_html.encode()
-            elif self.vue_collector:
-                # Vue only (no EP Cube collector)
-                body = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-                <title>epcube-exporter status</title></head><body>
+                body = _render_status_page(status, health).encode()
+            else:
+                body = b"""<!DOCTYPE html><html><head><meta charset="utf-8">
+                <title>epcube-exporter status</title>
+                <style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
+                a { color: #00d4aa; }</style>
+                </head><body>
                 <h1>epcube-exporter</h1>
                 <p>EP Cube collector: disabled</p>
-                {vue_section}</body></html>""".encode()
-            else:
-                body = b"<html><body><p>No collectors configured</p></body></html>"
+                <p><a href="/vue">Emporia Vue Status</a></p>
+                </body></html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/vue":
+            if not self._check_auth():
+                return
+            vue_status = self.vue_collector.get_status() if self.vue_collector else None
+            body = _render_vue_debug_page(vue_status).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -1499,6 +1502,8 @@ class VueCollector:
         self._next_poll_at = 0.0
         self._last_device_refresh = 0.0
         self._start_time = time.time()
+        self._last_readings = {}  # {(device_gid, channel_num): watts}
+        self._channel_names = {}  # {(device_gid, channel_num): name}
 
         self._login()
 
@@ -1558,6 +1563,8 @@ class VueCollector:
                          d.device_name, d.device_gid, len(channels), d.connected)
 
                 # Persist device and channel metadata
+                for ch in channels:
+                    self._channel_names[(ch.device_gid, ch.channel_num)] = ch.name or ""
                 if self._pg_writer:
                     self._pg_writer.upsert_device(
                         device_gid=d.device_gid, device_name=d.device_name,
@@ -1621,6 +1628,7 @@ class VueCollector:
                         all_none = False
                         watts = ch_usage.usage * multiplier
                         readings.append((device_gid, ch_num, ts, watts))
+                        self._last_readings[(device_gid, ch_num)] = watts
                 except Exception:
                     log.exception("Vue: error processing device %d", device_gid)
                     with self._lock:
@@ -1670,17 +1678,28 @@ class VueCollector:
                 "authenticated": self._authenticated,
                 "devices": list(self._devices_info),
                 "uptime_s": int(time.time() - self._start_time),
+                "last_readings": dict(self._last_readings),
+                "channel_names": dict(self._channel_names),
             }
 
 
-def _render_vue_status_section(vue_status):
-    """Render HTML section for Vue collector status on the debug page."""
+def _render_vue_debug_page(vue_status):
+    """Render a full HTML debug page for Vue collector status with per-circuit data."""
     if not vue_status:
-        return ""
+        return """<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Emporia Vue — not configured</title>
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
+a { color: #00d4aa; }</style>
+</head><body>
+<h1>Emporia Vue</h1>
+<p>Vue polling is not configured. Set EMPORIA_USERNAME and EMPORIA_PASSWORD to enable.</p>
+<p><a href="/status">&larr; EP Cube Status</a></p>
+</body></html>"""
 
     last_poll = vue_status["last_poll"]
     if last_poll > 0:
-        last_poll_str = datetime.fromtimestamp(last_poll, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        last_poll_ts = last_poll * 1000  # JS timestamp in ms
+        last_poll_str = f'<span class="localtime" data-ts="{last_poll_ts}">loading...</span>'
         ago = int(time.time() - last_poll)
         last_poll_str += f" ({ago}s ago)"
     else:
@@ -1690,32 +1709,133 @@ def _render_vue_status_section(vue_status):
     next_in = max(0, int(next_poll_at - time.time())) if next_poll_at else None
     next_str = f"{next_in}s" if next_in is not None else "waiting"
 
+    # Build per-device sections with circuit tables
+    readings = vue_status.get("last_readings", {})
+    channel_names = vue_status.get("channel_names", {})
     devices_html = ""
-    for d in vue_status.get("devices", []):
-        status_cls = "val-pos" if d.get("connected") else "val-neg"
-        status_txt = "online" if d.get("connected") else "offline"
-        devices_html += (
-            f'<tr><td>{d["device_gid"]}</td><td>{d["name"]}</td>'
-            f'<td class="{status_cls}">{status_txt}</td>'
-            f'<td>{d["channels"]}</td></tr>'
-        )
 
-    return f"""
-    <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #334155">
-    <h2>Emporia Vue</h2>
-    <table>
-    <tr><td>Status</td><td>{"authenticated" if vue_status["authenticated"] else "not authenticated"}</td></tr>
-    <tr><td>Devices</td><td>{vue_status["device_count"]}</td></tr>
-    <tr><td>Circuits</td><td>{vue_status["circuit_count"]}</td></tr>
-    <tr><td>Scale</td><td>{vue_status["current_scale"]}</td></tr>
-    <tr><td>Poll interval</td><td>{vue_status["poll_interval"]}s</td></tr>
-    <tr><td>Last poll</td><td>{last_poll_str}</td></tr>
-    <tr><td>Next poll</td><td>{next_str}</td></tr>
-    <tr><td>Errors</td><td>{vue_status["poll_errors"]} total, {vue_status["consecutive_errors"]} consecutive</td></tr>
-    </table>
-    {"<h3>Devices</h3><table><tr><th>GID</th><th>Name</th><th>Status</th><th>Channels</th></tr>" + devices_html + "</table>" if devices_html else ""}
-    </div>
-    """
+    for dev in vue_status.get("devices", []):
+        gid = dev["device_gid"]
+        status_cls = "val-pos" if dev.get("connected") else "val-neg"
+        status_txt = "online" if dev.get("connected") else "offline"
+
+        # Gather circuits for this device, sorted by channel_num
+        circuits = []
+        for (d_gid, ch_num), watts in readings.items():
+            if d_gid == gid:
+                name = channel_names.get((d_gid, ch_num), "")
+                circuits.append((ch_num, name, watts))
+
+        # Sort: mains first, then numeric channels, then text channels
+        def _sort_key(c):
+            ch = c[0]
+            if ch == "1,2,3":
+                return (0, "")
+            if ch == "Balance":
+                return (2, "")
+            try:
+                return (1, int(ch))
+            except ValueError:
+                return (1, 999)
+        circuits.sort(key=_sort_key)
+
+        rows = ""
+        for ch_num, name, watts in circuits:
+            display_name = name if name else ch_num
+            if watts >= 1000:
+                watts_str = f"{watts / 1000:.1f} kW"
+            else:
+                watts_str = f"{watts:.0f} W"
+            row_cls = ' class="val-pos"' if watts > 0 else ""
+            rows += f"<tr><td>{ch_num}</td><td>{display_name}</td><td style='text-align:right'{row_cls}>{watts_str}</td></tr>\n"
+
+        if not rows:
+            rows = '<tr><td colspan="3" style="color:#888">No readings yet</td></tr>'
+
+        devices_html += f"""
+        <div style="margin-bottom:1.5em">
+        <h3>{dev['name']} <span class="badge {status_cls}">{status_txt}</span>
+            <span class="badge" style="color:#888">GID: {gid}</span></h3>
+        <table>
+        <tr><th>Channel</th><th>Circuit</th><th style="text-align:right">Power</th></tr>
+        {rows}
+        </table>
+        </div>
+        """
+
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Emporia Vue — debug status</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }}
+  h1 {{ color: #00d4aa; font-size: 1.3em; }}
+  h3 {{ color: #e0e0e0; margin-bottom: 0.3em; }}
+  a {{ color: #00d4aa; }}
+  .info {{ display: flex; gap: 2em; margin-bottom: 1.5em; font-size: 0.9em; flex-wrap: wrap; }}
+  .info span {{ background: #16213e; padding: 0.4em 0.8em; border-radius: 4px; }}
+  .badge {{ font-size: 0.75em; background: #16213e; padding: 0.2em 0.6em; border-radius: 4px; margin-left: 0.5em; vertical-align: middle; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 0.85em; margin-bottom: 0.5em; }}
+  th, td {{ padding: 0.4em 0.8em; border: 1px solid #2a2a4a; }}
+  th {{ background: #16213e; text-align: left; }}
+  tr:hover {{ background: #16213e; }}
+  .val-pos {{ color: #00d4aa; }}
+  .val-neg {{ color: #e74c3c; }}
+  .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+</style>
+</head><body>
+<h1>&#9889; Emporia Vue — debug status</h1>
+<div class="info">
+  <span>Devices: <b>{vue_status["device_count"]}</b></span>
+  <span>Circuits: <b>{vue_status["circuit_count"]}</b></span>
+  <span>Scale: <b>{vue_status["current_scale"]}</b></span>
+  <span>Poll interval: <b>{vue_status["poll_interval"]}s</b></span>
+  <span>Last poll: <b>{last_poll_str}</b></span>
+  <span>Next poll in: <b id="countdown" data-next="{next_poll_at}">{next_str}</b></span>
+  <span>Errors: <b>{vue_status["poll_errors"]}</b> total, <b>{vue_status["consecutive_errors"]}</b> consecutive</span>
+</div>
+{devices_html}
+<script>
+// Convert timestamps to local time
+document.querySelectorAll('.localtime').forEach(el => {{
+  const ts = parseFloat(el.dataset.ts);
+  if (!ts) return;
+  const d = new Date(ts);
+  el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true}});
+}});
+
+// Countdown timer
+setInterval(() => {{
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  const nextAt = parseFloat(el.dataset.next);
+  if (!nextAt) return;
+  const left = Math.max(0, Math.round(nextAt - Date.now() / 1000));
+  el.textContent = left + 's';
+}}, 1000);
+
+// Auto-refresh every 5 seconds (Vue polls at 1s, page refreshes at 5s)
+setInterval(async () => {{
+  try {{
+    const resp = await fetch(location.href);
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.body.innerHTML = doc.body.innerHTML;
+    document.querySelectorAll('.localtime').forEach(el => {{
+      const ts = parseFloat(el.dataset.ts);
+      if (!ts) return;
+      const d = new Date(ts);
+      el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true}});
+    }});
+  }} catch (e) {{}}
+}}, 5000);
+</script>
+<div class="footer">
+  Auto-refreshes every 5s &middot;
+  <a href="/status">EP Cube Status</a> &middot;
+  <a href="/health">/health</a>
+</div>
+</body></html>"""
 
 
 def vue_poll_loop(collector):

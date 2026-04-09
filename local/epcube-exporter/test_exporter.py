@@ -2234,7 +2234,7 @@ class TestVueDebugPage(unittest.TestCase):
         self.assertEqual(status["circuit_count"], 2)
 
     @patch("exporter.PyEmVue")
-    def test_render_vue_status_section(self, mock_pyemvue_cls):
+    def test_render_vue_debug_page(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
@@ -2243,7 +2243,7 @@ class TestVueDebugPage(unittest.TestCase):
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_status_section(vue_status)
+        html = exporter._render_vue_debug_page(vue_status)
 
         # Assert
         self.assertIn("Emporia Vue", html)
@@ -2424,6 +2424,179 @@ class TestDownsamplingLoop(unittest.TestCase):
         # Assert
         self.assertGreaterEqual(mock_downsample.call_count, 1)
         self.assertGreaterEqual(mock_cleanup.call_count, 1)
+
+
+# ---------------------------------------------------------------------------
+# T060: /vue debug page endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestVueDebugPageEndpoint(unittest.TestCase):
+    """T060: Tests for the /vue debug page showing per-circuit data."""
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_device_sections(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 8450.5,
+            (12345, "1"): 1200.0,
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — page contains device section
+        self.assertIn("Main Panel", html)
+        self.assertIn("12345", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_per_circuit_readings(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 8450.5,
+            (12345, "1"): 1200.0,
+        }
+        collector._channel_names = {
+            (12345, "1,2,3"): "Main",
+            (12345, "1"): "Kitchen",
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — per-circuit rows with name and watts
+        self.assertIn("Kitchen", html)
+        self.assertIn("1.2 kW", html)  # 1200W formatted as kW
+        self.assertIn("8.5 kW", html)  # 8450W formatted as kW
+        self.assertIn("1,2,3", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_zero_watt_circuits(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 0.0,
+        }
+        collector._channel_names = {
+            (12345, "1,2,3"): "Main",
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — 0W circuit still shown
+        self.assertIn("Main", html)
+        self.assertIn("0", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_has_nav_link_to_status(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — navigation link to EP Cube page
+        self.assertIn("/status", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_local_time_timestamps(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — uses JS client-side time conversion
+        self.assertIn("toLocaleTimeString", html)
+
+    def test_vue_page_not_configured(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("not configured", html.lower())
+        self.assertIn("/status", html)
+
+
+# ---------------------------------------------------------------------------
+# T061: EP Cube page navigation link tests
+# ---------------------------------------------------------------------------
+
+class TestEpCubePageNavLink(unittest.TestCase):
+    """T061: Tests that EP Cube /status page has nav link to /vue."""
+
+    def test_status_page_has_vue_link(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert
+        self.assertIn("/vue", html)
+
+    def test_status_page_does_not_contain_vue_circuit_data(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert — no Vue circuit data (nav link is OK, circuit tables are not)
+        self.assertNotIn("vue_readings", html)
+        self.assertNotIn("Vue:   Device", html)
+
+
+# ---------------------------------------------------------------------------
+# T062: /vue page when not configured tests
+# ---------------------------------------------------------------------------
+
+class TestVuePageNotConfigured(unittest.TestCase):
+    """T062: Tests for /vue when vue_collector is None."""
+
+    def test_render_shows_not_configured_message(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("not configured", html.lower())
+
+    def test_render_has_nav_back_to_status(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("/status", html)
 
 
 if __name__ == "__main__":
