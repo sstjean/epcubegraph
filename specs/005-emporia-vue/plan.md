@@ -5,7 +5,7 @@
 
 ## Summary
 
-Integrate 4 Emporia Vue energy monitors into EpCubeGraph to provide circuit-level power visibility. The exporter gains a second polling loop (PyEmVue → PostgreSQL), the API gains Vue-specific endpoints with query-time deduplication via the existing panel hierarchy, and the dashboard gains at least one Vue visualization. Data is stored as raw watts in a new `vue_readings` table alongside a `vue_devices` table, using the same PostgreSQL instance and patterns as EP Cube telemetry.
+Integrate Emporia Vue energy monitors into EpCubeGraph to provide circuit-level power visibility across a split-phase 300A service. The exporter gains a second polling loop (PyEmVue → PostgreSQL, requesting Watts directly), the API gains Vue-specific endpoints with query-time deduplication and smart auto-resolution (8 tiers targeting ~2K points per channel). Dashboard visualization is handled by Feature 007. Data is stored as raw watts in new `vue_readings` and `vue_channels` tables alongside `vue_devices`, using the same PostgreSQL instance. Credentials are flexible — the exporter runs whichever collector(s) have credentials configured.
 
 ## Technical Context
 
@@ -16,8 +16,8 @@ Integrate 4 Emporia Vue energy monitors into EpCubeGraph to provide circuit-leve
 **Target Platform**: Azure Container Apps (exporter + API), Azure Static Web Apps (dashboard)
 **Project Type**: Full-stack feature addition across exporter / API / dashboard
 **Performance Goals**: API <500ms for current readings, <2s for 30-day historical; 1-second poll interval for Vue data
-**Constraints**: Single API call per poll cycle (`get_device_list_usage`), no retries to avoid blocking the 1s loop
-**Scale/Scope**: ~4 Vue devices, ~60 circuits, 1-second data for 7 days then downsampled to 1-minute averages
+**Constraints**: Single API call per poll cycle (`get_device_list_usage`), `max_retry_attempts=1` to avoid blocking 1s loop, request Watts directly (no kWh conversion)
+**Scale/Scope**: ~4 Vue devices (split-phase 300A, no single device at entry), ~60 circuits, 1-second data for 7 days then downsampled to 1-minute averages. Total home = sum of top-level panel mains.
 
 ## Constitution Check
 
@@ -26,7 +26,7 @@ Integrate 4 Emporia Vue energy monitors into EpCubeGraph to provide circuit-leve
 | Principle | Status | Post-Design | Notes |
 |-----------|--------|-------------|-------|
 | Simplicity | ✅ PASS | ✅ PASS | Extends existing exporter/API/dashboard — no new services. 4 new tables follow existing patterns. |
-| YAGNI | ✅ PASS | ✅ PASS | Vue-specific retention/downsampling per spec. No TimescaleDB, no pg_cron, no abstractions beyond need. |
+| YAGNI | ✅ PASS | ✅ PASS | Vue-specific retention/downsampling. No TimescaleDB, no pg_cron, no 1-hour aggregation tier (anticipated optimization deferred). |
 | TDD (100% coverage) | ✅ PASS | ✅ PASS | All new code requires tests first; CI gate enforced |
 | Branching (`005-emporia-vue`) | ✅ PASS | ✅ PASS | Branch exists |
 | CI Gate | ✅ PASS | ✅ PASS | Existing pipeline covers all components |
@@ -82,23 +82,11 @@ api/tests/EpCubeGraph.Api.Tests/
 └── Integration/
     └── VueStoreTests.cs      # New — Vue store integration tests (Testcontainers)
 
-dashboard/src/
-├── components/
-│   └── VuePanel.tsx          # New — Vue circuit visualization component
-├── api.ts                    # Extend with Vue API calls
-└── types.ts                  # Extend with Vue types
-
-dashboard/tests/
-├── component/
-│   └── VuePanel.test.tsx     # New — Vue component tests
-└── unit/
-    └── vue-api.test.ts       # New — Vue API function tests
-
 infra/
 └── container-apps.tf         # Add Vue env vars to exporter container
 ```
 
-**Structure Decision**: This feature extends all three existing components (exporter, API, dashboard) in their established locations. No new top-level directories or services. The Vue exporter shares the existing epcube-exporter process per the spec's deferral to planning (single container, second thread).
+**Structure Decision**: This feature extends the exporter and API in their established locations. No new top-level directories or services. The Vue exporter shares the existing epcube-exporter process (single container, second thread). Dashboard visualization is handled by Feature 007 (Dashboard Vue Circuit Display). Credentials are flexible — either or both collector credential sets may be provided.
 
 ## Complexity Tracking
 

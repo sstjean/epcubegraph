@@ -6,9 +6,8 @@
 
 - Docker and Docker Compose installed
 - .NET 10 SDK installed
-- Node.js 22+ installed
 - Emporia Vue account with username/password
-- EP Cube cloud account (existing, for the epcube-exporter)
+- EP Cube cloud account (existing, for the epcube-exporter) — optional if only running Vue
 
 ## Environment Setup
 
@@ -21,6 +20,8 @@ cd local
 EMPORIA_USERNAME=your-emporia-email@example.com
 EMPORIA_PASSWORD=your-emporia-password
 ```
+
+**Note**: Either credential set is sufficient — the exporter runs whichever collector has credentials configured. If only Vue creds are set, only the Vue collector starts (and vice versa).
 
 ### 2. Start the Local Stack
 
@@ -62,29 +63,16 @@ curl http://localhost:5062/api/v1/vue/devices/12345/readings/current | jq
 
 # Panel total (raw + deduplicated)
 curl http://localhost:5062/api/v1/vue/panels/12345/total | jq
+
+# Total home (sum of top-level panels)
+curl http://localhost:5062/api/v1/vue/home/total | jq
 ```
-
-### 5. Run the Dashboard
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-Dashboard at `http://localhost:5173` — Vue circuit data should appear automatically.
 
 ## Running Tests
 
 ```bash
 # All API tests (xUnit + Testcontainers — requires Docker)
 cd api && dotnet test EpCubeGraph.sln
-
-# All dashboard tests
-cd dashboard && npm run test:coverage
-
-# Dashboard type check (vitest doesn't catch type errors)
-cd dashboard && npm run typecheck
 
 # Exporter tests
 cd local/epcube-exporter && python -m pytest test_exporter.py -v
@@ -98,7 +86,7 @@ cd local/epcube-exporter && python -m pytest test_exporter.py -v
 | PostgreSQL | `localhost:5432` (user: `epcube`, pass: `epcube_local`, db: `epcubegraph`) |
 | API health | http://localhost:5062/api/v1/health |
 | API Vue devices | http://localhost:5062/api/v1/vue/devices |
-| Dashboard | http://localhost:5173 |
+| API total home | http://localhost:5062/api/v1/vue/home/total |
 
 ## Docker Compose Changes
 
@@ -146,5 +134,6 @@ env {
 ## Troubleshooting
 
 - **No Vue data in PostgreSQL**: Check exporter logs (`docker logs local-epcube-exporter-1`). Look for Vue authentication errors. Verify `EMPORIA_USERNAME` and `EMPORIA_PASSWORD` are set correctly.
+- **Only one collector running**: This is expected if only one credential set is configured. Check logs for "Vue credentials not configured, skipping" or similar warning.
 - **Rate limiting**: If the debug page shows Vue scale degraded to `1MIN`, the Emporia API is rate-limiting. This is automatic recovery — will try `1S` again after successful polls.
 - **Offline device**: Expect `None` readings for offline devices — check the debug page for per-device status.

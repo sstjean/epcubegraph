@@ -113,7 +113,7 @@ Returns time-series power readings for each channel on a specific device over a 
 |-----------|------|----------|---------|-------|
 | `start` | ISO 8601 | Yes | — | Range start (inclusive) |
 | `end` | ISO 8601 | Yes | — | Range end (exclusive) |
-| `step` | string | No | auto | Bucketing step (e.g., `1s`, `1m`, `5m`, `1h`). Auto-selects based on range: <7d → raw 1s, ≥7d → 1min |
+| `step` | string | No | auto | Bucketing step (e.g., `1s`, `1m`, `5m`, `1h`). Auto-resolution picks step to target ~2,000 points per channel: ≤30min→1s, 30min–2hr→5s, 2–8hr→15s, 8–24hr→1m, 1–7d→5m, 7–30d→15m, 30–90d→1h, >90d→4h |
 | `channels` | string | No | all | Comma-separated channel_nums to include (e.g., `1,2,3,4,5`) |
 
 #### Response
@@ -140,7 +140,8 @@ Returns time-series power readings for each channel on a specific device over a 
 **Notes**:
 - For ranges within 7 days, queries `vue_readings` (1-second data, aggregated to `step`)
 - For ranges beyond 7 days, queries `vue_readings_1min` (pre-aggregated)
-- `step=auto` selects the finest available resolution for the requested range
+- `step=auto` uses smart resolution tiers targeting ~2,000 points per channel (see step parameter docs)
+- User can override with an explicit `step` value
 
 ---
 
@@ -187,7 +188,7 @@ Returns the current raw and deduplicated power total for a panel.
 ```
 
 **Notes**:
-- `raw_total_watts` = mains channel (`1,2,3`) latest value
+- `raw_total_watts` = mains channel (`1,2,3`) latest value (split-phase total)
 - `deduplicated_total_watts` = `raw_total_watts - SUM(child.raw_total_watts)` for all direct children in `panel_hierarchy`
 - If no children exist, `deduplicated_total_watts == raw_total_watts`
 - `children` array shows each direct child with its raw total
@@ -232,6 +233,66 @@ Returns time-series raw and deduplicated panel totals over a time range.
 }
 ```
 
+### `GET /api/v1/vue/home/total`
+
+Returns the current total home power consumption — the sum of all top-level panel mains (panels with no parent in the hierarchy).
+
+#### Response
+
+```json
+{
+  "timestamp": 1712592000,
+  "total_watts": 11670.5,
+  "panels": [
+    {
+      "device_gid": 12345,
+      "display_name": "Main Panel",
+      "raw_total_watts": 8450.5
+    },
+    {
+      "device_gid": 34567,
+      "display_name": "Subpanel 2",
+      "raw_total_watts": 3220.0
+    }
+  ]
+}
+```
+
+**Notes**:
+- `total_watts` = sum of mains (`1,2,3`) for all panels with no parent in `panel_hierarchy`
+- `panels` array lists each top-level panel with its raw total
+- Accounts for split-phase or multi-leg services where no single device monitors the full entry
+
+---
+
+### `GET /api/v1/vue/home/total/range`
+
+Returns time-series total home power consumption.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Notes |
+|-----------|------|----------|---------|-------|
+| `start` | ISO 8601 | Yes | — | Range start (inclusive) |
+| `end` | ISO 8601 | Yes | — | Range end (exclusive) |
+| `step` | string | No | auto | Bucketing step (same auto-resolution tiers as device range) |
+
+#### Response
+
+```json
+{
+  "start": "2026-04-01T00:00:00Z",
+  "end": "2026-04-02T00:00:00Z",
+  "step": "1m",
+  "total": [
+    { "timestamp": 1712592000, "value": 11670.5 },
+    { "timestamp": 1712592060, "value": 11640.0 }
+  ]
+}
+```
+
+---
+
 ## Updated Endpoint Summary
 
 | Endpoint | Auth | Purpose |
@@ -254,6 +315,8 @@ Returns time-series raw and deduplicated panel totals over a time range.
 | **`GET /vue/devices/{deviceGid}/readings/range`** | **Yes** | **Time-series per channel** |
 | **`GET /vue/panels/{deviceGid}/total`** | **Yes** | **Raw + deduplicated panel total (current)** |
 | **`GET /vue/panels/{deviceGid}/total/range`** | **Yes** | **Raw + deduplicated panel total (time-series)** |
+| **`GET /vue/home/total`** | **Yes** | **Total home power (sum of top-level panels)** |
+| **`GET /vue/home/total/range`** | **Yes** | **Total home power time-series** |
 
 ## Response Types
 
@@ -270,6 +333,8 @@ VueRangeReadingsResponse { device_gid: long, start: string, end: string, step: s
 PanelChild { device_gid: long, display_name: string, raw_total_watts: double }
 PanelTotalResponse { device_gid: long, display_name: string, timestamp: long, raw_total_watts: double, deduplicated_total_watts: double, children: PanelChild[] }
 PanelTotalRangeResponse { device_gid: long, display_name: string, start: string, end: string, step: string, raw_total: TimeSeriesPoint[], deduplicated_total: TimeSeriesPoint[] }
+HomeTotalResponse { timestamp: long, total_watts: double, panels: PanelChild[] }
+HomeTotalRangeResponse { start: string, end: string, step: string, total: TimeSeriesPoint[] }
 ```
 
 ### Reused Types (from existing API)

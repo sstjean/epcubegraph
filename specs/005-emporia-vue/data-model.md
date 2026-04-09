@@ -162,10 +162,11 @@ An individual circuit breaker monitored by a Vue device.
 - **Source**: PyEmVue `VueDeviceChannel` + `VueDeviceChannelUsage`
 - **Identity**: `(device_gid, channel_num)` — channel_num is a string like `"1,2,3"`, `"4"`, or `"Balance"`
 - **Special channels**:
-  - `"1,2,3"` = mains (total panel power)
-  - `"Balance"` = calculated remainder (total minus monitored circuits)
-  - Numeric strings = individual circuit breakers
-- **Display name**: Falls through: `display_name_overrides` → `vue_channels.name` → `"Channel {channel_num}"`
+  - `"1,2,3"` = mains (split-phase panel total, not three-phase despite the naming)
+  - `"1"`, `"2"` = individual hot legs (real measurements, not redundant)
+  - `"Balance"` = calculated remainder (total minus monitored circuits) — displayed as "Unmonitored loads" on the dashboard
+  - Other numeric strings = individual circuit breakers
+- **Display name**: Falls through: `display_name_overrides` → `vue_channels.name` → `"Channel {channel_num}"`. For Balance channel, default display name is "Unmonitored loads".
 
 ### Panel Hierarchy (existing)
 Defines parent-child relationships between panels for deduplication.
@@ -173,13 +174,16 @@ Defines parent-child relationships between panels for deduplication.
 - **Table**: `panel_hierarchy` (already exists from Feature 006)
 - **Key**: `(parent_device_gid, child_device_gid)` — both reference `vue_devices.device_gid`
 - **Usage**: At query time, subtract child mains (`1,2,3`) from parent mains to get deduplicated total
+- **Total home**: Sum of all top-level panel mains (panels with no parent). Accounts for split-phase services where no single device monitors the full entry.
+- **Current topology**: 300A split-phase → Leg 1 (Device 1, with children Device 2 + Device 4) + Leg 2 (Device 3, independent)
 
 ### Reading
 A single power measurement at a point in time.
 
 - **Source**: PyEmVue `get_device_list_usage()` → `VueDeviceChannelUsage.usage`
 - **Storage**: `vue_readings` (1-second, 7-day retention) or `vue_readings_1min` (1-minute averages, indefinite)
-- **Unit**: Watts (converted from kWh at ingestion)
+- **Unit**: Watts (requested directly from Emporia API in `Watts` unit — no kWh conversion)
+- **Negative values**: Stored as-is. Negative watts represent bidirectional power flow (solar backfeed, battery discharge).
 - **Null handling**: Offline devices return `None` from the API → skip write, log warning
 
 ## Data Volume Estimates

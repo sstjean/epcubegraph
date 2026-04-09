@@ -30,21 +30,15 @@ PyEmVue is the only maintained Python library for the Emporia Vue API. It wraps 
 - Returns `dict[int, VueUsageDevice]` keyed by device_gid
 - Each `VueUsageDevice` has `channels` dict keyed by channel_num string
 - Channel `"1,2,3"` = mains (three-phase total), `"1"` through `"16"` = individual circuits, `"Balance"` = calculated remainder
-- Usage value is in requested unit (KilowattHours for `1S` scale → convert to watts: `kWh / (1/3600) * 1000`)
+- Usage value is in requested unit. Request `Watts` directly to avoid kWh-to-watts conversion and floating-point artifacts.
 - **Offline devices**: `channel.usage = None` for all channels
 - **Retry behavior**: Library retries up to `max_retry_attempts` (default 5) with exponential backoff when any channel returns None
 - **For 1-second polling**: Set `max_retry_attempts=1` to avoid blocking the poll loop (spec FR-001)
 
 **Scales**: `1S`, `1MIN`, `15MIN`, `1H`, `1D`, `1W`, `1MON`, `1Y`
-**Units**: `KilowattHours`, `Dollars`, `AmpHours`, `Voltage`, etc.
+**Units**: `KilowattHours`, `Dollars`, `AmpHours`, `Voltage`, `Watts`, etc.
 
-**kWh to Watts conversion** (spec FR-003):
-```python
-# Scale 1S means the kWh value represents 1 second of energy
-# watts = kWh / scale_hours * 1000
-# For 1S: scale_hours = 1/3600
-watts = usage_kwh * 3600 * 1000  # = usage_kwh * 3_600_000
-```
+**Data unit decision**: Request `Watts` directly from the API (unit parameter: `"Watts"`). This eliminates the kWh-to-watts conversion entirely and avoids floating-point rounding artifacts on very small numbers.
 
 **Rate Limiting**: No documented hard rate limits, but the spec requires automatic fallback from `1S` to `1MIN` scale if rate-limited (FR-001). Rate limiting manifests as HTTP 429 or empty/None responses.
 
@@ -76,7 +70,8 @@ Adding a second daemon thread for Vue polling follows the same proven pattern. T
 **Risks and mitigations**:
 - **GIL contention**: PyEmVue makes HTTP calls (I/O-bound), which release the GIL. No CPU-bound contention expected.
 - **Thread crash isolation**: If the Vue thread crashes, EP Cube continues (daemon threads are independent). The poll loop has a `try/except` that logs and continues.
-- **Startup order**: Vue login can fail independently of EP Cube login. Vue thread should start even if EP Cube is not configured (and vice versa for future flexibility).
+- **Startup order**: Vue login can fail independently of EP Cube login. Vue thread starts only if Vue credentials are configured; EP Cube thread starts only if EP Cube credentials are configured. If neither is present, exit with error.
+- **Auth failure**: On login failure, retry on next poll cycle (1s later). Log error, show on debug page. No immediate retries.
 
 ### Alternatives Considered
 - **Separate container**: More isolation but doubles the deployment surface (two Dockerfiles, two Container App revisions, two sets of env vars). Overkill for a threaded Python process that handles I/O-bound work.
@@ -123,8 +118,11 @@ The spec requires 1-second data retained for 7 days, then downsampled to 1-minut
 **Option 2: Application-level periodic job (exporter)** ✅
 - The exporter already runs 24/7 in the container
 - Add a third daemon thread that runs once per hour:
-  1. INSERT INTO `vue_readings_1min` SELECT avg(value) FROM `vue_readings` GROUP BY device_gid, channel_num, minute
+  1. INSERT INTO `vue_readings_1min` SELECT avg(value) FROM `vue_readings` GROUP BY device_gid, channel_num, minute (for the last complete hour)
   2. DELETE FROM `vue_readings` WHERE timestamp < NOW() - INTERVAL '7 days'
+- Downsampling runs continuously (every hour, aggregates the last complete hour). Raw and 1-minute data coexist during the 7-day window.
+- API auto-selects resolution: raw data for ranges within 7 days, 1-minute data for older ranges, seamlessly joined across the boundary.
+- Only 1-minute pre-aggregation tier. A 1-hour tier is an anticipated optimization to add when query performance warrants it (YAGNI).
 - Easy to test: mock the PostgresWriter, verify SQL
 - Works identically in local Docker and Azure
 - No Terraform changes
@@ -223,8 +221,70 @@ Per FR-001: "If the Emporia API rate-limits requests, the exporter MUST automati
 - Detect rate limiting: HTTP 429 from the API, or all channels returning None after max_retry_attempts
 - On rate limit: switch scale from `1S` to `1MIN`, log the event
 - After N successful polls at `1MIN`, attempt to return to `1S`
-- The scale change only affects the `get_device_list_usage` call parameter; the kWh→watts conversion adjusts for the new scale automatically (`1MIN` scale_hours = 1/60)
+- The scale change only affects the `get_device_list_usage` call parameter; data is already requested in Watts directly so no conversion adjustment needed
 
 ### Alternatives Considered
 - **Fixed `1MIN` scale always**: Loses 1-second granularity unnecessarily
 - **Exponential backoff on poll interval**: Doesn't address the API's preferred granularity; just delays requests
+
+---
+
+## R8: Smart Auto-Resolution for Range Queries
+
+### Decision: 8-tier auto-resolution targeting ~2,000 points per channel
+
+### Rationale
+Returning raw 1-second data for anything beyond 30 minutes produces millions of data points per channel — too many for dashboard charting (uPlot) to render usefully. Smart auto-resolution picks a step based on range width to keep response sizes reasonable.
+
+**Tiers** (hardcoded, not configurable):
+
+| Range | Auto Step | Data Source |
+|-------|-----------|-------------|
+| ≤ 30 min | 1s (raw) | `vue_readings` |
+| 30 min – 2 hr | 5s | `vue_readings` (aggregated) |
+| 2 hr – 8 hr | 15s | `vue_readings` (aggregated) |
+| 8 hr – 1 day | 1m | `vue_readings_1min` when available, else `vue_readings` aggregated |
+| 1 – 7 days | 5m | `vue_readings_1min` (aggregated) |
+| 7 – 30 days | 15m | `vue_readings_1min` (aggregated) |
+| 30 – 90 days | 1h | `vue_readings_1min` (aggregated) |
+| > 90 days | 4h | `vue_readings_1min` (aggregated) |
+
+User can override with an explicit `step` parameter. Only 1-minute pre-aggregation tier; a 1-hour tier is an anticipated optimization to add when query performance warrants it (YAGNI — 1-year of 1-minute data is ~33.6M rows; index scans handle this).
+
+### Alternatives Considered
+- **Two-tier (raw vs. 1min)**: Too coarse — either floods the client or loses granularity
+- **Configurable tiers**: YAGNI — the tiers are math, not policy
+
+---
+
+## R9: Device/Channel Discovery Refresh
+
+### Decision: Periodic refresh of device and channel lists, configurable via Settings page (default: 30 minutes)
+
+### Rationale
+Device and channel changes are rare (only when physical breakers change or Emporia app is reconfigured). Calling `get_devices()` every second would be wasteful. Refreshing every 30 minutes balances discovery speed vs. API load.
+
+On upsert, if the Emporia app name has changed and the user has a `display_name_overrides` entry for that device/channel, the system flags the conflict on the Settings page (showing old vs. new Emporia name) so the user can review.
+
+### Alternatives Considered
+- **Startup only**: Would require exporter restart to discover new circuits. Unacceptable for a 24/7 container.
+- **Fixed interval**: Works but not user-tunable. Configurable costs almost nothing.
+
+---
+
+## R10: Split-Phase Topology and Total Home
+
+### Decision: Compute "total home" as the sum of all top-level panel mains (panels with no parent in `panel_hierarchy`)
+
+### Rationale
+The house has 300A split-phase service with no single Vue device at the entry point. The service immediately splits into two 150A legs:
+- Leg 1 → Device 1 (Main Panel), with children Device 2 (Subpanel 1) and Device 4 (Workshop)
+- Leg 2 → Device 3 (Subpanel 2), independent (no parent)
+
+Total home consumption = Device 1 mains + Device 3 mains. The API computes this dynamically from the hierarchy — any panel without a parent is a "top-level" panel.
+
+The mains channel `"1,2,3"` represents the split-phase total (not three-phase). Individual channels `"1"` and `"2"` are the two hot legs — real measurements, not redundant. All channels are stored and returned by the API; the dashboard decides what to display.
+
+### Alternatives Considered
+- **Virtual root node in hierarchy**: Adds artificial complexity. Sum-of-top-level is computed, not stored.
+- **Hardcoded device list**: Breaks when devices are added/removed.
