@@ -29,6 +29,12 @@ resource "azurerm_container_app" "api" {
   revision_mode                = "Single"
   workload_profile_name        = "Consumption"
 
+  # Ensure the managed identity can read KV secrets and pull images before provisioning
+  depends_on = [
+    azurerm_key_vault_access_policy.runtime,
+    azurerm_role_assignment.acr_pull,
+  ]
+
   identity {
     type         = "UserAssigned"
     identity_ids = [azurerm_user_assigned_identity.main.id]
@@ -109,6 +115,12 @@ resource "azurerm_container_app" "exporter" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption"
+
+  # Ensure the managed identity can read KV secrets and pull images before provisioning
+  depends_on = [
+    azurerm_key_vault_access_policy.runtime,
+    azurerm_role_assignment.acr_pull,
+  ]
 
   identity {
     type         = "UserAssigned"
