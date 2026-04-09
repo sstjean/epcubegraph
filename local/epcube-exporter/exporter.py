@@ -186,6 +186,148 @@ class PostgresWriter:
         if self._conn and not self._conn.closed:
             self._conn.close()
 
+
+# ---------------------------------------------------------------------------
+# Vue PostgreSQL writer
+# ---------------------------------------------------------------------------
+
+_VUE_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS vue_devices (
+    device_gid BIGINT PRIMARY KEY,
+    device_name TEXT,
+    model TEXT,
+    firmware TEXT,
+    connected BOOLEAN DEFAULT TRUE,
+    last_seen TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vue_channels (
+    id SERIAL PRIMARY KEY,
+    device_gid BIGINT NOT NULL REFERENCES vue_devices(device_gid),
+    channel_num TEXT NOT NULL,
+    name TEXT,
+    channel_multiplier DOUBLE PRECISION,
+    channel_type TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_gid, channel_num)
+);
+
+CREATE TABLE IF NOT EXISTS vue_readings (
+    device_gid BIGINT NOT NULL,
+    channel_num TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    UNIQUE (device_gid, channel_num, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_device_channel_time
+    ON vue_readings (device_gid, channel_num, timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_time
+    ON vue_readings (timestamp);
+
+CREATE TABLE IF NOT EXISTS vue_readings_1min (
+    device_gid BIGINT NOT NULL,
+    channel_num TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    sample_count INTEGER NOT NULL,
+    UNIQUE (device_gid, channel_num, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_1min_device_channel_time
+    ON vue_readings_1min (device_gid, channel_num, timestamp DESC);
+"""
+
+
+class VuePostgresWriter:
+    """Writes Vue energy readings and device info to PostgreSQL."""
+
+    def __init__(self, dsn):
+        self._dsn = dsn
+        self._conn = None
+        self._ensure_schema()
+
+    def _get_conn(self):
+        """Get or re-establish the database connection."""
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(self._dsn)
+            self._conn.autocommit = False
+        return self._conn
+
+    def _ensure_schema(self):
+        """Create Vue tables and indexes if they don't exist."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_VUE_SCHEMA_SQL)
+        conn.commit()
+        log.info("Vue PostgreSQL schema verified")
+
+    def upsert_device(self, device_gid, device_name=None, model=None,
+                      firmware=None, connected=True):
+        """Insert or update a Vue device record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO vue_devices (device_gid, device_name, model, firmware, connected, last_seen)
+                   VALUES (%s, %s, %s, %s, %s, NOW())
+                   ON CONFLICT (device_gid) DO UPDATE SET
+                       device_name = EXCLUDED.device_name,
+                       model = EXCLUDED.model,
+                       firmware = EXCLUDED.firmware,
+                       connected = EXCLUDED.connected,
+                       last_seen = NOW(),
+                       updated_at = NOW()""",
+                (device_gid, device_name, model, firmware, connected),
+            )
+        conn.commit()
+
+    def upsert_channel(self, device_gid, channel_num, name=None,
+                       channel_multiplier=None, channel_type=None):
+        """Insert or update a Vue channel record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO vue_channels (device_gid, channel_num, name, channel_multiplier, channel_type)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (device_gid, channel_num) DO UPDATE SET
+                       name = EXCLUDED.name,
+                       channel_multiplier = EXCLUDED.channel_multiplier,
+                       channel_type = EXCLUDED.channel_type,
+                       updated_at = NOW()""",
+                (device_gid, channel_num, name, channel_multiplier, channel_type),
+            )
+        conn.commit()
+
+    def write_readings(self, readings):
+        """Batch-insert Vue readings. Each reading is (device_gid, channel_num, timestamp, value).
+
+        Uses ON CONFLICT to deduplicate (same device + channel + timestamp).
+        """
+        if not readings:
+            return
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO vue_readings (device_gid, channel_num, timestamp, value)
+                   VALUES %s
+                   ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
+                       value = EXCLUDED.value""",
+                readings,
+                template="(%s, %s, %s, %s)",
+            )
+        conn.commit()
+
+    def close(self):
+        """Close the database connection."""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Cloud API helpers
 # ---------------------------------------------------------------------------
@@ -1202,6 +1344,35 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
+# Vue collector (stub — full implementation in Phase 3/US1)
+# ---------------------------------------------------------------------------
+
+class VueCollector:
+    """Collects power data from Emporia Vue devices via PyEmVue."""
+
+    def __init__(self, username, password, pg_writer=None):
+        self._username = username
+        self._password = password
+        self._pg_writer = pg_writer
+        self._lock = threading.Lock()
+        self._last_poll = 0.0
+        self._poll_errors = 0
+        self._consecutive_errors = 0
+        self._device_count = 0
+        self._circuit_count = 0
+        log.info("VueCollector initialized (polling not yet implemented)")
+
+
+def vue_poll_loop(collector):
+    """Background thread: polls Vue API on schedule (stub — full implementation in Phase 3/US1)."""
+    log.info("Vue poll loop started (polling not yet implemented)")
+    while True:
+        time.sleep(1)
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1245,33 +1416,51 @@ def poll_loop(collector):
 
 
 def main():
-    username = os.environ.get("EPCUBE_USERNAME")
-    password = os.environ.get("EPCUBE_PASSWORD")
+    epcube_username = os.environ.get("EPCUBE_USERNAME")
+    epcube_password = os.environ.get("EPCUBE_PASSWORD")
+    emporia_username = os.environ.get("EMPORIA_USERNAME")
+    emporia_password = os.environ.get("EMPORIA_PASSWORD")
 
-    if not username or not password:
-        log.error("EPCUBE_USERNAME and EPCUBE_PASSWORD environment variables required")
+    has_epcube = bool(epcube_username and epcube_password)
+    has_emporia = bool(emporia_username and emporia_password)
+
+    if not has_epcube and not has_emporia:
+        log.error("At least one credential set required: EPCUBE_USERNAME/PASSWORD or EMPORIA_USERNAME/PASSWORD")
         sys.exit(1)
 
     # Initialize Postgres writer if configured
     pg_writer = None
+    vue_pg_writer = None
     if POSTGRES_DSN:
         if psycopg2 is None:
             log.error("POSTGRES_DSN is set but psycopg2 is not installed")
             sys.exit(1)
         pg_writer = PostgresWriter(POSTGRES_DSN)
+        vue_pg_writer = VuePostgresWriter(POSTGRES_DSN)
         log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
 
-    collector = EpCubeCollector(username, password, pg_writer=pg_writer)
+    # Start EP Cube collector if credentials are configured
+    collector = None
+    if has_epcube:
+        collector = EpCubeCollector(epcube_username, epcube_password, pg_writer=pg_writer)
+        collector.poll()
+        poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
+        poll_thread.start()
+    else:
+        log.warning("EPCUBE_USERNAME/PASSWORD not set — EP Cube collector disabled")
 
-    # Initial poll (blocks until first data is available)
-    collector.poll()
-
-    # Start background polling
-    poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
-    poll_thread.start()
+    # Start Vue collector if credentials are configured
+    vue_collector = None
+    if has_emporia:
+        vue_collector = VueCollector(emporia_username, emporia_password, pg_writer=vue_pg_writer)
+        vue_poll_thread = threading.Thread(target=vue_poll_loop, args=(vue_collector,), daemon=True)
+        vue_poll_thread.start()
+    else:
+        log.warning("EMPORIA_USERNAME/PASSWORD not set — Vue collector disabled")
 
     # Start HTTP server
     MetricsHandler.collector = collector
+    MetricsHandler.vue_collector = vue_collector
     server = HTTPServer(("0.0.0.0", METRICS_PORT), MetricsHandler)
     log.info("Serving metrics on :%d/metrics (poll interval: %ds)", METRICS_PORT, POLL_INTERVAL)
     if DISABLE_AUTH:

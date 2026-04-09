@@ -2,6 +2,7 @@
 import base64
 import collections
 import json
+import os
 import threading
 import time
 import unittest
@@ -1474,6 +1475,338 @@ class TestPollWithPostgres(unittest.TestCase):
 
         # Prometheus metrics should still be generated
         self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+
+
+# ---------------------------------------------------------------------------
+# T005: Flexible credential startup tests
+# ---------------------------------------------------------------------------
+
+class TestFlexibleCredentialStartup(unittest.TestCase):
+    """Tests that main() starts collectors based on which credentials are configured."""
+
+    @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p",
+                              "EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_both_credentials_starts_both(self):
+        # Arrange
+        with patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch.object(exporter, "VueCollector") as mock_vue, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_epc_inst = MagicMock()
+            mock_epc.return_value = mock_epc_inst
+            mock_vue_inst = MagicMock()
+            mock_vue.return_value = mock_vue_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_epc.assert_called_once()
+            mock_vue.assert_called_once()
+
+    @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_only_epcube_credentials_starts_epcube_only(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EMPORIA_USERNAME", None)
+        env.pop("EMPORIA_PASSWORD", None)
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_epc_inst = MagicMock()
+            mock_epc.return_value = mock_epc_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_epc.assert_called_once()
+            # VueCollector should not be instantiated
+            self.assertFalse(hasattr(exporter, '_vue_collector_started'))
+
+    @patch.dict(os.environ, {"EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_only_vue_credentials_starts_vue_only(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EPCUBE_USERNAME", None)
+        env.pop("EPCUBE_PASSWORD", None)
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "VueCollector") as mock_vue, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_vue_inst = MagicMock()
+            mock_vue.return_value = mock_vue_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_vue.assert_called_once()
+
+    def test_no_credentials_exits_with_error(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EPCUBE_USERNAME", None)
+        env.pop("EPCUBE_PASSWORD", None)
+        env.pop("EMPORIA_USERNAME", None)
+        env.pop("EMPORIA_PASSWORD", None)
+
+        # Act & Assert
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "POSTGRES_DSN", ""), \
+             self.assertRaises(SystemExit) as ctx:
+            exporter.main()
+        self.assertEqual(ctx.exception.code, 1)
+
+
+# ---------------------------------------------------------------------------
+# T007: Vue schema creation tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterSchema(unittest.TestCase):
+    """Tests for VuePostgresWriter schema creation."""
+
+    def _make_mock_psycopg2(self):
+        """Create a mock psycopg2 module with connection and cursor."""
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_vue_schema(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        # Act
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+
+        # Assert
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_devices", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_channels", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings_1min", call_args)
+        self.assertIn("idx_vue_readings_device_channel_time", call_args)
+        self.assertIn("idx_vue_readings_time", call_args)
+        self.assertIn("idx_vue_readings_1min_device_channel_time", call_args)
+        mock_conn.commit.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# T009: Vue upsert device/channel tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterUpsert(unittest.TestCase):
+    """Tests for VuePostgresWriter upsert_device and upsert_channel."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_device(
+            device_gid=12345, device_name="Main Panel",
+            model="VUE001", firmware="1.0.0", connected=True,
+        )
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_devices", sql)
+        self.assertIn("ON CONFLICT (device_gid)", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[0], 12345)
+        self.assertEqual(params[1], "Main Panel")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device_updates_on_conflict(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act — call twice with different name
+        writer.upsert_device(device_gid=12345, device_name="Old Name")
+        writer.upsert_device(device_gid=12345, device_name="New Name")
+
+        # Assert — two upsert calls, second has new name
+        self.assertEqual(mock_cursor.execute.call_count, 2)
+        second_params = mock_cursor.execute.call_args_list[1][0][1]
+        self.assertEqual(second_params[1], "New Name")
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_channel(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_channel(
+            device_gid=12345, channel_num="1,2,3", name="Main",
+            channel_multiplier=1.0, channel_type="Main",
+        )
+
+        # Assert
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_channels", sql)
+        self.assertIn("ON CONFLICT (device_gid, channel_num)", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[0], 12345)
+        self.assertEqual(params[1], "1,2,3")
+        self.assertEqual(params[2], "Main")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_channel_balance(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_channel(
+            device_gid=12345, channel_num="Balance", name="Balance",
+        )
+
+        # Assert
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[1], "Balance")
+        self.assertEqual(params[2], "Balance")
+
+
+# ---------------------------------------------------------------------------
+# T011: Vue write_readings tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterReadings(unittest.TestCase):
+    """Tests for VuePostgresWriter.write_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_batch(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        now = datetime.now(timezone.utc)
+        readings = [
+            (12345, "1,2,3", now, 8450.5),
+            (12345, "1", now, 4200.0),
+            (12345, "Balance", now, 1200.0),
+        ]
+
+        # Act
+        writer.write_readings(readings)
+
+        # Assert
+        mock_pg.extras.execute_values.assert_called_once()
+        call_args = mock_pg.extras.execute_values.call_args
+        sql = call_args[0][1]
+        self.assertIn("INSERT INTO vue_readings", sql)
+        self.assertIn("ON CONFLICT", sql)
+        self.assertEqual(call_args[0][2], readings)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_empty_readings_is_noop(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn.reset_mock()
+
+        # Act
+        writer.write_readings([])
+
+        # Assert
+        mock_conn.commit.assert_not_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_with_negative_values(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        now = datetime.now(timezone.utc)
+        readings = [
+            (12345, "4", now, -150.0),  # solar backfeed
+        ]
+
+        # Act
+        writer.write_readings(readings)
+
+        # Assert — negative value passed through unchanged
+        passed_readings = mock_pg.extras.execute_values.call_args[0][2]
+        self.assertEqual(passed_readings[0][3], -150.0)
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_reconnects_on_closed(self, mock_pg):
+        # Arrange
+        mock_conn1, _ = self._make_mock_psycopg2()
+        mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
+        mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn1.closed = True
+
+        now = datetime.now(timezone.utc)
+
+        # Act
+        writer.write_readings([(12345, "1,2,3", now, 1000.0)])
+
+        # Assert — reconnected
+        self.assertEqual(mock_pg.connect.call_count, 2)
 
 
 if __name__ == "__main__":
