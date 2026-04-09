@@ -2252,5 +2252,179 @@ class TestVueDebugPage(unittest.TestCase):
         self.assertIn("1S", html)  # scale
 
 
+# ---------------------------------------------------------------------------
+# T027: Downsampling job tests
+# ---------------------------------------------------------------------------
+
+class TestDownsampling(unittest.TestCase):
+    """T027: Tests for downsample_vue_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_executes_insert_select(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        exporter.downsample_vue_readings(writer)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_readings_1min", sql)
+        self.assertIn("vue_readings", sql)
+        self.assertIn("avg", sql.lower())
+        self.assertIn("count", sql.lower())
+        self.assertIn("date_trunc", sql.lower())
+        self.assertIn("ON CONFLICT", sql)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_uses_last_complete_hour(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        exporter.downsample_vue_readings(writer)
+
+        # Assert — SQL references hour boundary
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("date_trunc('hour'", sql.lower())
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_handles_empty_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act — should not raise even with no data
+        exporter.downsample_vue_readings(writer)
+
+        # Assert — still executes (INSERT does nothing when SELECT returns empty)
+        mock_cursor.execute.assert_called_once()
+        mock_conn.commit.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# T028: Raw data retention cleanup tests
+# ---------------------------------------------------------------------------
+
+class TestRetentionCleanup(unittest.TestCase):
+    """T028: Tests for cleanup_old_vue_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_deletes_old_readings(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        mock_cursor.rowcount = 100
+
+        # Act
+        deleted = exporter.cleanup_old_vue_readings(writer)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("DELETE FROM vue_readings", sql)
+        self.assertIn("7 days", sql.lower().replace("'", ""))
+        self.assertNotIn("vue_readings_1min", sql)
+        mock_conn.commit.assert_called()
+        self.assertEqual(deleted, 100)
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_does_not_touch_1min_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_cursor.rowcount = 0
+
+        # Act
+        exporter.cleanup_old_vue_readings(writer)
+
+        # Assert — only one DELETE, and it's not against vue_readings_1min
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertNotIn("vue_readings_1min", sql)
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_returns_zero_when_nothing_to_delete(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_cursor.rowcount = 0
+
+        # Act
+        deleted = exporter.cleanup_old_vue_readings(writer)
+
+        # Assert
+        self.assertEqual(deleted, 0)
+
+
+# ---------------------------------------------------------------------------
+# Downsampling loop test
+# ---------------------------------------------------------------------------
+
+class TestDownsamplingLoop(unittest.TestCase):
+    """Test for downsampling_loop thread function."""
+
+    @patch.object(exporter, "cleanup_old_vue_readings", return_value=0)
+    @patch.object(exporter, "downsample_vue_readings")
+    def test_loop_calls_both_functions(self, mock_downsample, mock_cleanup):
+        # Arrange
+        mock_writer = MagicMock()
+        call_count = {"n": 0}
+
+        def side_effect(w):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise KeyboardInterrupt  # break out of loop
+
+        mock_downsample.side_effect = side_effect
+
+        # Act
+        try:
+            exporter.downsampling_loop(mock_writer, interval_seconds=0)
+        except KeyboardInterrupt:
+            pass
+
+        # Assert
+        self.assertGreaterEqual(mock_downsample.call_count, 1)
+        self.assertGreaterEqual(mock_cleanup.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

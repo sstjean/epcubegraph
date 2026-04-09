@@ -1371,6 +1371,66 @@ class MetricsHandler(BaseHTTPRequestHandler):
 
 
 # ---------------------------------------------------------------------------
+# Vue downsampling and retention
+# ---------------------------------------------------------------------------
+
+def downsample_vue_readings(writer):
+    """Aggregate raw 1-second Vue readings into 1-minute averages.
+
+    Processes data from the last complete hour. Idempotent — uses
+    ON CONFLICT to update existing rows.
+    """
+    conn = writer._get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO vue_readings_1min (device_gid, channel_num, timestamp, value, sample_count)
+            SELECT device_gid, channel_num,
+                   date_trunc('minute', timestamp) AS minute_ts,
+                   avg(value),
+                   count(*)
+            FROM vue_readings
+            WHERE timestamp < date_trunc('hour', NOW())
+              AND timestamp >= date_trunc('hour', NOW()) - INTERVAL '1 hour'
+            GROUP BY device_gid, channel_num, date_trunc('minute', timestamp)
+            ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
+                value = EXCLUDED.value,
+                sample_count = EXCLUDED.sample_count
+        """)
+    conn.commit()
+    log.info("Vue: downsampled readings for the last complete hour")
+
+
+def cleanup_old_vue_readings(writer):
+    """Delete raw Vue readings older than 7 days.
+
+    Does NOT touch vue_readings_1min (retained indefinitely).
+    Returns the number of rows deleted.
+    """
+    conn = writer._get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM vue_readings
+            WHERE timestamp < NOW() - INTERVAL '7 days'
+        """)
+        deleted = cur.rowcount
+    conn.commit()
+    if deleted > 0:
+        log.info("Vue: cleaned up %d raw readings older than 7 days", deleted)
+    return deleted
+
+
+def downsampling_loop(writer, interval_seconds=3600):
+    """Background thread: runs downsampling + cleanup periodically."""
+    while True:
+        try:
+            downsample_vue_readings(writer)
+            cleanup_old_vue_readings(writer)
+        except Exception:
+            log.exception("Vue downsampling/cleanup failed")
+        time.sleep(interval_seconds)
+
+
+# ---------------------------------------------------------------------------
 # Vue collector
 # ---------------------------------------------------------------------------
 
@@ -1760,6 +1820,10 @@ def main():
         vue_collector = VueCollector(emporia_username, emporia_password, pg_writer=vue_pg_writer)
         vue_poll_thread = threading.Thread(target=vue_poll_loop, args=(vue_collector,), daemon=True)
         vue_poll_thread.start()
+        # Start downsampling loop if PostgreSQL is configured
+        if vue_pg_writer:
+            ds_thread = threading.Thread(target=downsampling_loop, args=(vue_pg_writer,), daemon=True)
+            ds_thread.start()
     else:
         log.warning("EMPORIA_USERNAME/PASSWORD not set — Vue collector disabled")
 
