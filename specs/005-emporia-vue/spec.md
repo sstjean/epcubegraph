@@ -88,6 +88,24 @@ As a dashboard user, I want to query Vue circuit data through a REST API, so I c
 
 ---
 
+### User Story 4 — Vue Debug Page with Per-Circuit Data (Priority: P1)
+
+As a homeowner monitoring the exporter, I want the Vue status on its own debug page (separate from the EP Cube page) showing each device's status and the last polled data for every circuit, so I can verify the data pipeline is working and see real-time readings without querying the database.
+
+**Why this priority**: The debug page is the primary tool for verifying the exporter is working correctly. The Vue poll loop runs at 1-second intervals but the debug page refreshes less frequently — showing the last pulled reading per circuit gives immediate visibility into what's flowing. Separate pages prevent the Vue data from cluttering the EP Cube status.
+
+**Independent Test**: Navigate to the Vue debug page via the navigation link from the EP Cube page. The page shows each Vue device with its online/offline status. Under each device, every circuit is listed with its channel number, circuit name, and last polled watt value. Navigation links allow switching between EP Cube and Vue pages.
+
+**Acceptance Scenarios**:
+
+1. **Given** the exporter is running with Vue credentials, **When** the user navigates to the Vue debug page, **Then** each Vue device is shown with its name, GID, and online/offline status.
+2. **Given** the Vue collector has polled at least once, **When** the Vue debug page renders, **Then** each circuit under each device shows its channel number, circuit name, and last polled value in watts (or kW).
+3. **Given** a circuit has 0 watts, **When** the Vue debug page renders, **Then** the circuit still appears in its position showing 0 W.
+4. **Given** the EP Cube debug page is displayed, **When** the user looks at the navigation, **Then** there is a link to the Vue debug page (and vice versa).
+5. **Given** Vue credentials are not configured, **When** the user navigates to the Vue debug page, **Then** the page shows a message indicating Vue polling is not configured.
+
+---
+
 ### Edge Cases
 
 - What happens when one of the Vue devices is offline? The system continues ingesting from the others and marks the offline device's data as stale.
@@ -105,7 +123,7 @@ As a dashboard user, I want to query Vue circuit data through a REST API, so I c
 - **FR-003a**: The exporter MUST periodically refresh the list of Vue devices and channels from the Emporia API to discover newly added devices or circuits. The refresh interval MUST be configurable via the Settings page (default: 30 minutes).
 - **FR-004**: The exporter MUST write only raw Vue power readings in watts to PostgreSQL. No deduplication at write time — raw data is the source of truth.
 - **FR-005**: The exporter MUST continue polling remaining Vue devices when one or more devices fail, logging errors per-device without stopping the poll cycle.
-- **FR-006**: The exporter debug page MUST display Vue-specific status: last successful poll time, device count, circuit count, per-device online/error status.
+- **FR-006**: The exporter MUST serve the Vue status on a separate debug page from the EP Cube status (e.g., `/vue` vs `/` or `/status`). Both pages MUST have navigation links to each other. The Vue debug page MUST display: last successful poll time, device count, circuit count, per-device online/error status, and the last polled watt value for every circuit on every device (grouped by device, ordered by channel number). The EP Cube debug page MUST NOT include Vue data.
 - **FR-007**: The system MUST support configurable panel hierarchy stored in the database, defining which panels are nested under other panels, enabling deduplication of overlapping measurements. The hierarchy MUST be editable via the API and the dashboard Settings page without redeployment.
 - **FR-008**: The API MUST compute deduplicated panel totals at query time by subtracting the total draw of all directly-monitored downstream subpanels from the parent panel's raw total, using the current panel hierarchy configuration. This ensures hierarchy changes immediately apply to all queries (including historical data) without reprocessing.
 - **FR-008a**: The API MUST compute a virtual "total home" value as the sum of all top-level panel mains (panels with no parent in the hierarchy). This accounts for split-phase or multi-leg services where no single device monitors the full service entry.
