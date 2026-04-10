@@ -18,7 +18,7 @@ As a homeowner viewing the Current Readings page in Flow mode, I want to see whi
 **Acceptance Scenarios**:
 
 1. **Given** Vue devices are reporting circuit data and the dashboard is in Flow mode, **When** the Current Readings page loads, **Then** the empty areas at the bottom-left and bottom-right of each EP Cube card display a list of active Vue circuits.
-2. **Given** multiple circuits have >0 watts, **When** the circuit list renders, **Then** circuits are ordered ascending by watt value (lowest consumption first).
+2. **Given** multiple circuits have >0 watts, **When** the circuit list renders, **Then** circuits are ordered ascending by watt value (lowest consumption first). Circuits with equal watt values are ordered alphabetically by display name.
 3. **Given** a circuit is consuming power, **When** its entry appears in the list, **Then** it shows the circuit's display name (alias if configured, otherwise the default name from the Emporia app) and its current power draw formatted as watts or kW (using the existing formatting convention: e.g., "850 W" or "1.2 kW").
 4. **Given** a circuit has 0 watts or negative watts, **When** the circuit list renders, **Then** that circuit is not shown in the list.
 5. **Given** the dashboard auto-refreshes data, **When** new circuit readings arrive, **Then** the circuit list updates without manual page reload — circuits may appear, disappear, or reorder as consumption changes.
@@ -39,7 +39,7 @@ As a homeowner, I want a dedicated page on the dashboard that shows all my Vue c
 2. **Given** a panel has circuits, **When** the panel section renders, **Then** circuits are listed in a fixed position ordered by circuit number (e.g., "1,2,3" mains first, then "1", "2", "3", etc.).
 3. **Given** a circuit is drawing power, **When** its row renders, **Then** it shows the display name, current power draw (formatted as W or kW), and cumulative energy consumed today (formatted as kWh).
 4. **Given** a circuit is drawing 0 watts, **When** its row renders, **Then** it still appears in its fixed position showing 0 W for current draw and its cumulative daily total (which may be >0 if it was active earlier today).
-5. **Given** the panel hierarchy is configured, **When** the Circuits page renders, **Then** each panel shows both its raw total and its deduplicated total (raw minus nested panel draws) in the panel header.
+5. **Given** the panel hierarchy is configured, **When** the Circuits page renders, **Then** each panel header shows the deduplicated total (raw minus nested panel draws). Children's totals are shown on their own panel sections.
 6. **Given** the dashboard auto-refreshes, **When** new data arrives, **Then** the Circuits page updates without manual reload.
 
 ---
@@ -76,14 +76,14 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 
 - **FR-001**: The dashboard MUST display active Vue circuits (power > 0 watts) in two columns flanking the Home node (left and right sides) of each EP Cube flow diagram card on the Current Readings Flow view. Each EP Cube card shows only circuits from Vue panels mapped to that EP Cube device via the `vue_device_mapping` setting.
 - **FR-002**: Each circuit entry MUST show the circuit's display name and its current power reading. The display name resolves from: display name override (if configured) → Emporia app channel name → channel number.
-- **FR-003**: Power values MUST be formatted consistently with the existing dashboard convention (e.g., "850 W" for values under 1000, "1.2 kW" for values at or above 1000).
+- **FR-003**: Power values MUST be formatted using the existing `formatWatts()` utility function (W for values under 1000, kW for values at or above 1000). Daily energy values MUST use the existing `formatKwh()` utility.
 - **FR-004**: When multiple circuits are active, they MUST be ordered ascending by watt value (lowest consumption first). Circuits with equal watt values MUST be ordered alphabetically by display name.
 - **FR-005**: Circuits with 0 watts or negative watts MUST NOT appear in the list.
 - **FR-006**: The circuit list MUST update automatically when the dashboard refreshes data, without requiring a manual page reload.
 - **FR-007**: When no circuits are active or Vue data is unavailable, the circuit display areas MUST be hidden — the flow diagram card MUST render identically to its pre-feature appearance.
 - **FR-008**: The circuit display MUST use the same visual style (font, colors, spacing) as the existing flow diagram to maintain visual consistency.
 - **FR-009**: The dashboard MUST provide a dedicated Circuits page accessible from the main navigation that shows all Vue circuits grouped by panel (Vue device).
-- **FR-010**: Each panel section on the Circuits page MUST display the panel's display name and its current power totals: raw total and deduplicated total (if the panel has children in the hierarchy).
+- **FR-010**: Each panel section on the Circuits page MUST display the panel's display name and its deduplicated power total (raw minus nested panel draws). If the panel has no children, the deduplicated total equals the raw total — show the single value without a "deduplicated" label.
 - **FR-011**: Within each panel section, all circuits MUST be listed in a fixed position ordered by circuit number (mains "1,2,3" first, then individual circuits "1", "2", "3", etc., then "Balance"). Circuits do not reorder based on watt values.
 - **FR-012**: Each circuit row on the Circuits page MUST show: the circuit's display name, its current power draw (formatted as W or kW per FR-003), and its cumulative energy consumption for the current day (formatted as kWh).
 - **FR-013**: Circuits drawing 0 watts MUST still appear in their fixed position on the Circuits page, showing 0 W for current draw and their cumulative daily total.
@@ -126,17 +126,17 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 - Q: How should the dashboard get cumulative daily kWh per circuit? → A: New API endpoint `GET /vue/devices/{gid}/readings/daily` backed by PyEmVue daily-scale query, returning per-circuit kWh directly from Emporia.
 - Q: How should active circuits be split across the flow diagram areas? → A: Each EP Cube card shows only the circuits from Vue panels mapped to that EP Cube. Mapping stored in settings table (e.g. `vue_device_mapping` key: `{epcube_device_id: [vue_gid, ...]}`), configurable via Settings page. No overlap — each Vue panel belongs to exactly one EP Cube.
 - Q: How should the API get daily-scale kWh data from Emporia? → A: Exporter polls PyEmVue at daily scale, writes per-circuit daily kWh to a `vue_readings_daily` table in PostgreSQL. API reads from that table. Keeps PyEmVue in Python, follows existing exporter-writes/API-reads pattern.
-- Q: What defines "today" for the daily kWh boundary? → A: User's browser local timezone. Always assume user's local timezone unless otherwise specified.
+- Q: What defines "today" for the daily kWh boundary? → A: User's browser local timezone for display purposes. API follows the same UTC/DateTimeOffset pattern as EP Cube endpoints — no timezone logic server-side. Dashboard computes the local date and passes it explicitly as a `date` query parameter. API has no server-side "today" default.
 - Q: Where exactly should the circuit list render within the flow card? → A: Two columns flanking the Home node (left and right sides).
-- Q: How should circuits be split between the two columns? → A: Left column fills first, overflow goes to right. If an EP Cube has 2+ mapped Vue panels, circuit names are prefixed with a panel prefix (configurable via Settings page hierarchy) to disambiguate.
-- Q: What format for the Vue-to-EPCube mapping? → A: Single settings key `vue_device_mapping` with JSON: `{"epcube3483": [480380, 480544], "epcube5488": [480577, 481808]}`. Stored as jsonb in the settings table.
+- Q: How should circuits be split between the two columns? → A: Left column fills first, overflow goes to right. If an EP Cube has 2+ mapped Vue panels, circuit display names are prefixed with the panel's configured `prefix` from the panel hierarchy settings (e.g., "M: Kitchen", "S1: Dryer"). The hierarchy settings include both an `alias` (display name for the panel) and a `prefix` (short label prepended to circuit names on the flow card).
+- Q: What format for the Vue-to-EPCube mapping? → A: Single settings key `vue_device_mapping` with JSON. Each EP Cube maps to an array of objects with `gid`, `alias`, and `prefix`: `{"epcube3483": [{"gid": 480380, "alias": "Main Panel", "prefix": "M"}, {"gid": 480544, "alias": "Subpanel 1", "prefix": "S1"}]}`. The `alias` is the panel display name on the Circuits page. The `prefix` is prepended to circuit names on the flow card when 2+ panels map to the same EP Cube.
 - Q: How frequently should the exporter poll for daily kWh totals? → A: Configurable via settings table (key `vue_daily_poll_interval_seconds`, default 300 = 5 minutes).
 - Q: Should mains row be visually distinct on the Circuits page? → A: Yes — mains row bold with a subtle separator line below it, individual circuits in normal weight.
 - Q: Should Balance (unmonitored loads) be shown on the Circuits page? → A: Yes — show as the last circuit row, labeled "Unmonitored loads".
 - Q: Should mains and Balance be shown in the flow card circuit list? → A: Exclude mains (it's the total of circuits+balance, redundant). Show Balance — it's still real load (unmonitored circuits).
 - Q: Where should the Circuits page link appear in navigation? → A: Third top-level nav item: Current Readings · Circuits · Settings.
 - Q: What schema for vue_readings_daily table? → A: `device_gid BIGINT, channel_num TEXT, date DATE, kwh DOUBLE PRECISION, updated_at TIMESTAMPTZ DEFAULT NOW()` with `UNIQUE(device_gid, channel_num, date)`. Exporter upserts on each daily poll.
-- Q: Should Vue circuit data refresh on the same 30s interval as EP Cube? → A: No — separate configurable interval, default 1 second. Vue data is current/real-time.
+- Q: Should Vue circuit data refresh on the same 30s interval as EP Cube? → A: No — separate interval, hardcoded to 1 second. Vue data is current/real-time. Not user-configurable for now (YAGNI).
 - Q: Should the Circuits page panel header show daily kWh total? → A: Yes — panel header shows both current watts (raw + dedup) and daily kWh total (sum of all circuits).
 - Q: Should the flow card circuit list show daily kWh alongside watts? → A: No — current watts only. Flow card is for real-time at-a-glance. Daily kWh belongs on the Circuits page.
 - Q: Should the daily kWh API return all devices or per-device? → A: All devices in one call: `GET /vue/readings/daily` — returns all devices' daily kWh in a single response.

@@ -79,7 +79,7 @@ Returns cumulative daily kWh per channel across all Vue devices for a given date
 
 | Parameter | Type | Required | Default | Notes |
 |-----------|------|----------|---------|-------|
-| `date` | ISO date | No | today (server tz) | Calendar date (e.g., `2026-04-09`) |
+| `date` | ISO date | Yes | — | Calendar date (e.g., `2026-04-09`). Dashboard sends the user's local date. |
 
 #### Response
 
@@ -129,7 +129,7 @@ Two new keys are added to the settings allowlist:
 
 | Key | Validation | Notes |
 |-----|-----------|-------|
-| `vue_device_mapping` | Valid JSON object: keys are strings, values are arrays of numbers. No duplicate GIDs across keys. | Maps EP Cube device IDs to Vue panel GIDs |
+| `vue_device_mapping` | Valid JSON object: keys are strings, values are arrays of objects with `gid` (number), `alias` (string), `prefix` (string). No duplicate GIDs across keys. | Maps EP Cube device IDs to Vue panels with display alias and flow card prefix |
 | `vue_daily_poll_interval_seconds` | Integer 1–3600 | Exporter poll interval for daily kWh data |
 
 #### Example: Save Vue Device Mapping
@@ -139,13 +139,13 @@ PUT /api/v1/settings/vue_device_mapping
 Content-Type: application/json
 
 {
-  "value": "{\"epcube3483\":[480380,480544],\"epcube5488\":[480577,481808]}"
+  "value": "{\"epcube3483\":[{\"gid\":480380,\"alias\":\"Main Panel\",\"prefix\":\"M\"},{\"gid\":480544,\"alias\":\"Subpanel 1\",\"prefix\":\"S1\"}]}"
 }
 ```
 
 **Validation errors**:
 - `400`: "Invalid JSON in vue_device_mapping value"
-- `400`: "vue_device_mapping values must be arrays of numbers"
+- `400`: "vue_device_mapping values must be arrays of objects with gid, alias, and prefix"
 - `400`: "Vue device GID {gid} is mapped to multiple EP Cube devices"
 
 ---
@@ -163,7 +163,7 @@ Content-Type: application/json
 - Include Balance channels (shown as "Unmonitored loads")
 - Sort ascending by `value`, then alphabetical by `display_name`
 - Left column fills first, overflow to right column
-- If 2+ Vue panels mapped to same EP Cube, prefix circuit names with a panel prefix
+- If 2+ Vue panels mapped to same EP Cube, prefix circuit names with the panel's `prefix` field from the mapping (e.g., "M: Kitchen", "S1: Dryer")
 - Style: 0.75em font, name left / watts right, tight line spacing
 
 ### Circuits Page

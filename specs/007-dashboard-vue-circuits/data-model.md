@@ -41,7 +41,7 @@ New keys used by this feature:
 
 | Key | Value Type | Default | Notes |
 |-----|-----------|---------|-------|
-| `vue_device_mapping` | JSON string | `{}` | Maps EP Cube device IDs to Vue panel GIDs: `{"epcube3483": [480380, 480544]}` |
+| `vue_device_mapping` | JSON string | `{}` | Maps EP Cube device IDs to Vue panels with alias/prefix: `{"epcube3483": [{"gid": 480380, "alias": "Main Panel", "prefix": "M"}]}` |
 | `vue_daily_poll_interval_seconds` | Integer string | `"300"` | How often the exporter polls PyEmVue for daily kWh |
 
 ### Existing Tables (no schema changes)
@@ -62,8 +62,8 @@ New keys used by this feature:
 Links EP Cube devices to their associated Vue panels so the flow card knows which circuits to display per EP Cube card.
 
 - **Storage**: `settings` table, key `vue_device_mapping`
-- **Format**: JSON object — keys are EP Cube device IDs (strings), values are arrays of Vue device GIDs (numbers)
-- **Example**: `{"epcube3483": [480380, 480544], "epcube5488": [480577, 481808]}`
+- **Format**: JSON object — keys are EP Cube device IDs (strings), values are arrays of panel objects with `gid` (number), `alias` (string — panel display name for Circuits page), and `prefix` (string — short label prepended to circuit names on flow card when 2+ panels)
+- **Example**: `{"epcube3483": [{"gid": 480380, "alias": "Main Panel", "prefix": "M"}, {"gid": 480544, "alias": "Subpanel 1", "prefix": "S1"}], "epcube5488": [{"gid": 480577, "alias": "Subpanel 2", "prefix": "S2"}]}`
 - **Constraint**: Each Vue GID belongs to exactly one EP Cube device (no overlap)
 - **Empty state**: `{}` or missing key — flow cards show no circuits, Circuits page shows configuration prompt
 
