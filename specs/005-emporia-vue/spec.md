@@ -19,6 +19,24 @@
 - Q: Is the device count hardcoded to 4? → A: No. System supports any number of Vue devices on the account.
 - Q: Should the US4 NEEDS CLARIFICATION marker stay? → A: Yes — intentionally deferred.
 
+### Session 2026-04-08
+- Q: Should the Vue poll interval be configurable via the Settings page? → A: Yes, configurable like EP Cube's interval. Default 1 second.
+- Q: How should the Balance channel be treated? → A: Store like any other channel. Visually distinguish on the dashboard with the label "Unmonitored loads" instead of "Balance".
+- Q: What timezone defines day boundaries for downsampling and daily aggregations? → A: Hardcoded `America/New_York`, same as EP Cube exporter. YAGNI for configurability.
+- Q: Should the exporter request kWh and convert, or request Watts directly? → A: PyEmVue does not support a Watts unit. Must request KilowattHours and convert to watts at ingestion time (watts = kWh * 3,600,000 for 1S scale; watts = kWh * 60,000 for 1MIN scale).
+- Q: What happens to US4 (dashboard visualization)? → A: Removed. Debug page is already covered in US1/FR-006. Dashboard visualization is handled by Feature 007 (Dashboard Vue Circuit Display).
+- Q: How often should the exporter refresh the device/channel list? → A: Configurable via Settings page, default 30 minutes. Device/channel changes are rare.
+- Q: Should the exporter update channel names when they change in the Emporia app? → A: Yes, upsert on every device refresh. If the Emporia name changes and the user has a display name override set, flag the conflict on the Settings page so the user can review.
+- Q: How should downsampling and raw data retention interact? → A: Downsample continuously (every hour, aggregate the last complete hour into 1-minute rows). Delete raw data after 7 days. API auto-selects resolution: raw for ranges within 7 days, 1-minute for older, seamlessly joined across the boundary.
+- Q: How should `step=auto` select resolution for range queries? → A: Smart auto-resolution targeting ~2,000 points per channel based on range width. Tiers: ≤30min→1s, 30min–2hr→5s, 2–8hr→15s, 8–24hr→1m, 1–7d→5m, 7–30d→15m, 30–90d→1h, >90d→4h. Hardcoded tiers (not configurable). User can override with explicit `step`. Only 1-minute pre-aggregation tier for now; 1-hour tier is an anticipated optimization to add when query performance warrants it (YAGNI).
+- Q: What is the actual panel hierarchy? → A: Split-phase 300A service, no single device monitors the full 300A. Leg 1 (150A) → Device 1 (Main Panel) with children Device 2 (Subpanel 1) and Device 4 (Workshop). Leg 2 (150A) → Device 3 (Subpanel 2), independent (no parent). Total home = sum of all top-level panel mains (Device 1 + Device 3). No virtual root node needed — compute from sum of panels with no parent.
+- Q: What channel types exist on split-phase? → A: Mains is "1,2,3" (split-phase total, not three-phase despite the naming). Individual channels "1" and "2" are the two hot legs — real measurements, not redundant. All channels are meaningful and should be stored and displayed.
+- Q: Should the API filter or include all channel types? → A: Return all channels (mains, legs, circuits, balance). The API is a data layer; the dashboard decides what to display in each view.
+- Q: How should the Vue thread handle authentication failure? → A: Retry login on next poll cycle (1s later). Log error, show on debug page. No immediate retries — the 1s interval means fast recovery.
+- Q: Where are Vue credentials stored locally? → A: Same `.env` file alongside EP Cube creds (`EMPORIA_USERNAME`, `EMPORIA_PASSWORD`). Same pattern, no divergence.
+- Q: Are both EP Cube and Vue credentials required? → A: Either or both. Run whichever collector has credentials, skip the other with a warning log. If neither is provided, exit with error.
+- Q: Should negative watt values be stored? → A: Yes, store as-is. Negative watts represent real bidirectional power flow (solar backfeed, battery discharge). Don't lose information at ingestion.
+
 ## User Scenarios & Testing
 
 ### User Story 1 — Ingest Vue Circuit Data (Priority: P1, #85)
@@ -70,20 +88,21 @@ As a dashboard user, I want to query Vue circuit data through a REST API, so I c
 
 ---
 
-### User Story 4 — Display Vue Data on the Dashboard (Priority: P4, #88)
+### User Story 4 — Vue Debug Page with Per-Circuit Data (Priority: P1)
 
-As a homeowner, I want to see my circuit-level energy consumption on the dashboard in various visualizations, so I can identify which circuits and appliances are consuming the most power.
+As a homeowner monitoring the exporter, I want the Vue status on its own debug page (separate from the EP Cube page) showing each device's status and the last polled data for every circuit, so I can verify the data pipeline is working and see real-time readings without querying the database.
 
-**Why this priority**: This is the user-facing value. Requirements for specific visualizations will be defined later — this story captures the intent that Vue data must be displayable on a dashboard.
+**Why this priority**: The debug page is the primary tool for verifying the exporter is working correctly. The Vue poll loop runs at 1-second intervals but the debug page refreshes less frequently — showing the last pulled reading per circuit gives immediate visibility into what's flowing. Separate pages prevent the Vue data from cluttering the EP Cube status.
 
-**Independent Test**: The dashboard shows Vue circuit data in at least one visualization format. The data refreshes automatically and matches what the API returns.
+**Independent Test**: Navigate to the Vue debug page via the navigation link from the EP Cube page. The page shows each Vue device with its online/offline status. Under each device, every circuit is listed with its channel number, circuit name, and last polled watt value. Navigation links allow switching between EP Cube and Vue pages.
 
 **Acceptance Scenarios**:
 
-1. **Given** the dashboard is loaded, **When** Vue data is available, **Then** at least one view shows circuit-level power consumption from the Vue devices.
-2. **Given** the dashboard displays Vue data, **When** the data refreshes, **Then** the visualization updates without manual page reload.
-
-[NEEDS CLARIFICATION: Specific visualization types and layouts to be defined in a follow-up — Steve said "to be defined later"]
+1. **Given** the exporter is running with Vue credentials, **When** the user navigates to the Vue debug page, **Then** each Vue device is shown with its name, GID, and online/offline status.
+2. **Given** the Vue collector has polled at least once, **When** the Vue debug page renders, **Then** each circuit under each device shows its channel number, circuit name, and last polled value in watts (or kW).
+3. **Given** a circuit has 0 watts, **When** the Vue debug page renders, **Then** the circuit still appears in its position showing 0 W.
+4. **Given** the EP Cube debug page is displayed, **When** the user looks at the navigation, **Then** there is a link to the Vue debug page (and vice versa).
+5. **Given** Vue credentials are not configured, **When** the user navigates to the Vue debug page, **Then** the page shows a message indicating Vue polling is not configured.
 
 ---
 
@@ -98,18 +117,20 @@ As a homeowner, I want to see my circuit-level energy consumption on the dashboa
 
 ### Functional Requirements
 
-- **FR-001**: The exporter MUST poll the Emporia Vue cloud API at a configurable interval (default: 1 second, using the `1S` scale) to retrieve power readings for all configured Vue devices in a single API call (`get_device_list_usage`). Retries MUST be disabled (`max_retry_attempts=1`) to prevent blocking the poll loop when devices return `None`. If the Emporia API rate-limits requests, the exporter MUST automatically back off to the next coarser scale (`1MIN`) and log the rate-limit event.
-- **FR-002**: The exporter MUST authenticate with the Emporia cloud API using username/password credentials, with automatic token refresh on expiry.
-- **FR-003**: The exporter MUST retrieve per-circuit energy readings for every channel on every configured Vue device, including the panel mains (total power in/out). The Emporia API returns kWh over the poll interval; the exporter MUST convert to watts at ingestion time (`watts = kWh / scale_hours * 1000`).
+- **FR-001**: The exporter MUST poll the Emporia Vue cloud API at a configurable interval (default: 1 second, using the `1S` scale) to retrieve power readings for all configured Vue devices in a single API call (`get_device_list_usage`). The interval MUST be configurable at runtime via the Settings page (stored in the `settings` table), following the same pattern as the EP Cube poll interval. Retries MUST be disabled (`max_retry_attempts=1`) to prevent blocking the poll loop when devices return `None`. If the Emporia API rate-limits requests, the exporter MUST automatically back off to the next coarser scale (`1MIN`) and log the rate-limit event.
+- **FR-002**: The exporter MUST authenticate with the Emporia cloud API using username/password credentials, with automatic token refresh on expiry. If Vue credentials are not configured, the Vue polling thread MUST NOT start, and the exporter MUST log a warning but continue running the EP Cube collector (and vice versa). If neither credential set is provided, the exporter MUST exit with an error.
+- **FR-003**: The exporter MUST retrieve per-circuit energy readings for every channel on every configured Vue device, including the panel mains (total power in/out). The Emporia API returns kWh over the poll interval; the exporter MUST convert to watts at ingestion time (`watts = kWh / scale_hours * 1000`). For the `1S` scale: `watts = kWh * 3,600,000`. For the `1MIN` scale (rate-limit fallback): `watts = kWh * 60,000`.
+- **FR-003a**: The exporter MUST periodically refresh the list of Vue devices and channels from the Emporia API to discover newly added devices or circuits. The refresh interval MUST be configurable via the Settings page (default: 30 minutes).
 - **FR-004**: The exporter MUST write only raw Vue power readings in watts to PostgreSQL. No deduplication at write time — raw data is the source of truth.
 - **FR-005**: The exporter MUST continue polling remaining Vue devices when one or more devices fail, logging errors per-device without stopping the poll cycle.
-- **FR-006**: The exporter debug page MUST display Vue-specific status: last successful poll time, device count, circuit count, per-device online/error status.
+- **FR-006**: The exporter MUST serve the Vue status on a separate debug page from the EP Cube status (e.g., `/vue` vs `/` or `/status`). Both pages MUST have navigation links to each other. The Vue debug page MUST display: last successful poll time, device count, circuit count, per-device online/error status, and the last polled watt value for every circuit on every device (grouped by device, ordered by channel number). The EP Cube debug page MUST NOT include Vue data.
 - **FR-007**: The system MUST support configurable panel hierarchy stored in the database, defining which panels are nested under other panels, enabling deduplication of overlapping measurements. The hierarchy MUST be editable via the API and the dashboard Settings page without redeployment.
 - **FR-008**: The API MUST compute deduplicated panel totals at query time by subtracting the total draw of all directly-monitored downstream subpanels from the parent panel's raw total, using the current panel hierarchy configuration. This ensures hierarchy changes immediately apply to all queries (including historical data) without reprocessing.
+- **FR-008a**: The API MUST compute a virtual "total home" value as the sum of all top-level panel mains (panels with no parent in the hierarchy). This accounts for split-phase or multi-leg services where no single device monitors the full service entry.
 - **FR-009**: The API MUST expose Vue device and circuit data through authenticated JSON endpoints that support time-series queries.
 - **FR-010**: The API MUST expose both raw and deduplicated panel totals for panels that have nested subpanels.
-- **FR-011**: The dashboard MUST be able to display Vue circuit data in at least one visualization format (specific formats to be defined later).
-- **FR-011a**: The dashboard Settings page MUST allow users to rename Vue devices and circuits for display purposes. Display names MUST be stored in the database and used in all dashboard views and API responses. Changes take effect without redeployment.
+- **FR-011**: Dashboard visualization of Vue circuit data is handled by Feature 007 (Dashboard Vue Circuit Display). Feature 005 delivers the data pipeline (exporter → PostgreSQL → API) that Feature 007 consumes.
+- **FR-011a**: The dashboard Settings page MUST allow users to rename Vue devices and circuits for display purposes. Display names MUST be stored in the database and used in all dashboard views and API responses. Changes take effect without redeployment. If the underlying Emporia app name changes for a device or circuit that has a user-set display name override, the system MUST flag the conflict on the Settings page (e.g., showing the old Emporia name versus the new one) so the user can review and update if needed.
 - **FR-012**: Vue credentials (username/password) MUST be stored securely (environment variables or Key Vault), never in source code or client-side code.
 - **FR-013**: The API MUST authenticate all Vue data endpoints using Microsoft Entra ID bearer tokens with `user_impersonation` scope enforcement. Unauthenticated requests MUST be rejected with HTTP 401.
 - **FR-014**: The exporter debug page MUST require authentication in Azure deployments, with a development-only auth bypass for local work.
@@ -119,7 +140,7 @@ As a homeowner, I want to see my circuit-level energy consumption on the dashboa
 ### Key Entities
 
 - **Vue Device**: An Emporia Vue energy monitor installed in an electrical panel. Attributes: device_gid (unique ID), device_name, panel_name, online status.
-- **Circuit Channel**: An individual circuit monitored by a Vue device. Attributes: channel_number, channel_name, parent device, power reading (watts).
+- **Circuit Channel**: An individual circuit monitored by a Vue device. Attributes: channel_number, channel_name, parent device, power reading (watts). The special "Balance" channel (PyEmVue's calculated remainder) MUST be displayed as "Unmonitored loads" on the dashboard to indicate it represents power not accounted for by individually monitored circuits.
 - **Panel Hierarchy**: Configuration defining which panels are downstream of other panels. Attributes: parent panel, child panels. Used for deduplication.
 - **Panel Total**: Aggregated power reading for an entire panel. Two variants: raw (sum of all circuits) and deduplicated (raw minus nested panel draws).
 
@@ -138,7 +159,7 @@ As a homeowner, I want to see my circuit-level energy consumption on the dashboa
 ## Assumptions
 
 - The Emporia Vue cloud API (accessed via PyEmVue library) remains available and stable. There is no official Emporia developer API — the library reverse-engineers the consumer API.
-- The system supports any number of Vue devices on the account. Currently 4 devices are installed: Main Panel, Sub-Panel 1, Workshop Sub-Panel, and one additional panel. Pool sub-panel does NOT have a Vue device.
+- The system supports any number of Vue devices on the account. Currently 4 devices are installed: Device 1 (Main Panel, Leg 1 — 150A), Device 2 (Subpanel 1, child of Device 1), Device 3 (Subpanel 2, Leg 2 — 150A, independent), Device 4 (Workshop, child of Device 1). The house has 300A split-phase service with no single device monitoring the full 300A entry point. Total home consumption = sum of all top-level panel mains (panels with no parent in the hierarchy).
 - Panel hierarchy is relatively static — it changes only when physical electrical work is done. Stored in the database and managed via the Settings page.
 - The PyEmVue library (Python, MIT license) handles authentication, token management, and API communication. Whether the Vue exporter shares a process with the EP Cube exporter or runs independently will be decided during planning.
 - Circuit names are initially populated from the Emporia app via the API. The Settings page can override any device or circuit name with a custom display name; if no override exists, the Emporia name is used.
@@ -151,5 +172,5 @@ As a homeowner, I want to see my circuit-level energy consumption on the dashboa
 
 - Local/on-device API access (Vue devices communicate only via Emporia's cloud)
 - Automatic inference of panel hierarchy from wiring (requires manual configuration)
-- Specific dashboard visualization designs (US4 — to be defined later)
+- Dashboard visualization of Vue data (handled by Feature 007 — Dashboard Vue Circuit Display)
 - Historical backfill from Emporia's stored data (future enhancement)

@@ -28,6 +28,20 @@ resource "azurerm_key_vault_secret" "epcube_password" {
   key_vault_id = data.azurerm_key_vault.main.id
 }
 
+# ── Emporia Vue credentials ──
+
+resource "azurerm_key_vault_secret" "emporia_username" {
+  name         = "emporia-username"
+  value        = var.emporia_username
+  key_vault_id = data.azurerm_key_vault.main.id
+}
+
+resource "azurerm_key_vault_secret" "emporia_password" {
+  name         = "emporia-password"
+  value        = var.emporia_password
+  key_vault_id = data.azurerm_key_vault.main.id
+}
+
 # ── Exporter OAuth client secret (for browser login flow) ──
 
 resource "azurerm_key_vault_secret" "exporter_oauth_secret" {

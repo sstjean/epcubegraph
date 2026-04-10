@@ -29,6 +29,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - Docker Compose for local runtime and test orchestration in `local/`
 - TypeScript 5.8 / Preact 10.x / Vite / MSAL.js / uPlot for the dashboard in `dashboard/`
 - `@microsoft/applicationinsights-web` for dashboard telemetry
+- Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + PyEmVue (exporter), Npgsql (API), uPlot (dashboard), psycopg2 (exporter) (005-emporia-vue)
+- PostgreSQL 17 (existing instance — same `epcubegraph` database) (005-emporia-vue)
 
 ## Project Structure
 
@@ -84,3 +86,6 @@ Before writing any code, trace the impact through the full stack:
 - Create or update the paper trail before implementing the change
 - Keep specs, docs, and issues synchronized with the actual architecture
 ````
+
+## Recent Changes
+- 005-emporia-vue: Added Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + PyEmVue (exporter), Npgsql (API), uPlot (dashboard), psycopg2 (exporter)

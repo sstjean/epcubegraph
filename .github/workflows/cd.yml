@@ -189,6 +189,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
@@ -247,6 +249,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-staging.tfvars
@@ -583,6 +587,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
           TF_VAR_api_image: ${{ steps.existing-images.outputs.api_image }}
           TF_VAR_epcube_image: ${{ steps.existing-images.outputs.epcube_image }}
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
@@ -637,6 +643,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
           TF_VAR_api_image: ${{ steps.api-image.outputs.image }}
           TF_VAR_epcube_image: ${{ steps.exporter-image.outputs.image }}
         run: terraform apply -auto-approve -input=false -var-file=custom-domains-production.tfvars
@@ -959,6 +967,8 @@ jobs:
           TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
         run: terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -980,11 +990,22 @@ jobs:
           TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false || true
           terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
           echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
+
+      # Re-authenticate — OIDC token may have expired during long destroy sequence
+      - name: Azure Re-Login for Cleanup (OIDC)
+        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Delete state blob
         if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
@@ -1134,6 +1155,8 @@ jobs:
           TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
         run: terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
       # Re-authenticate — OIDC token may have expired during long destroy
@@ -1155,10 +1178,20 @@ jobs:
           TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
           TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
           TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
+          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
+          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
         run: |
           echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
           terraform refresh -input=false
           terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
+
+      # Re-authenticate — OIDC token may have expired during long destroy sequence
+      - name: Azure Re-Login for Cleanup (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Delete state blob
         run: |

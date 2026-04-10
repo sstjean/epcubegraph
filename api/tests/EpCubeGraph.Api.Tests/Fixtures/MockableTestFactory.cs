@@ -23,6 +23,7 @@ public class MockableTestFactory : WebApplicationFactory<Program>
 {
     public ConfigurableMockStore MockStore { get; } = new();
     public ConfigurableMockSettingsStore MockSettingsStore { get; } = new();
+    public ConfigurableMockVueStore MockVueStore { get; } = new();
 
     public string? EnvironmentOverride { get; set; }
 
@@ -63,6 +64,14 @@ public class MockableTestFactory : WebApplicationFactory<Program>
             foreach (var d in settingsDescriptors)
                 services.Remove(d);
             services.AddSingleton<ISettingsStore>(MockSettingsStore);
+
+            // Register mock Vue store
+            var vueDescriptors = services
+                .Where(d => d.ServiceType == typeof(IVueStore))
+                .ToList();
+            foreach (var d in vueDescriptors)
+                services.Remove(d);
+            services.AddSingleton<IVueStore>(MockVueStore);
 
             // Bypass Entra ID: add "Test" scheme that always succeeds
             services.AddAuthentication("Test")
@@ -243,4 +252,59 @@ public sealed class ConfigurableMockSettingsStore : ISettingsStore
         var removed = _displayNames.RemoveAll(d => d.DeviceGid == deviceGid && d.ChannelNumber == channelNumber);
         return Task.FromResult(removed > 0);
     }
+}
+
+/// <summary>
+/// Configurable mock of IVueStore for endpoint testing.
+/// </summary>
+public sealed class ConfigurableMockVueStore : IVueStore
+{
+    public IReadOnlyList<VueDeviceInfo> DevicesResult { get; set; } = Array.Empty<VueDeviceInfo>();
+    public VueCurrentReadingsResponse? CurrentReadingsResult { get; set; }
+    public VueRangeReadingsResponse? RangeReadingsResult { get; set; }
+    public PanelTotalResponse? PanelTotalResult { get; set; }
+    public PanelTotalRangeResponse? PanelTotalRangeResult { get; set; }
+    public HomeTotalResponse HomeTotalResult { get; set; } = new(0, 0, Array.Empty<PanelChild>());
+    public HomeTotalRangeResponse HomeTotalRangeResult { get; set; } = new("", "", "1m", Array.Empty<TimeSeriesPoint>());
+
+    public void Reset()
+    {
+        DevicesResult = Array.Empty<VueDeviceInfo>();
+        CurrentReadingsResult = null;
+        RangeReadingsResult = null;
+        PanelTotalResult = null;
+        PanelTotalRangeResult = null;
+        HomeTotalResult = new(0, 0, Array.Empty<PanelChild>());
+        HomeTotalRangeResult = new("", "", "1m", Array.Empty<TimeSeriesPoint>());
+    }
+
+    public Task<IReadOnlyList<VueDeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
+        => Task.FromResult(DevicesResult);
+
+    public Task<VueDeviceInfo?> GetDeviceAsync(long deviceGid, CancellationToken ct = default)
+        => Task.FromResult(DevicesResult.FirstOrDefault(d => d.DeviceGid == deviceGid));
+
+    public Task<VueCurrentReadingsResponse?> GetCurrentReadingsAsync(long deviceGid, CancellationToken ct = default)
+        => Task.FromResult(CurrentReadingsResult);
+
+    public Task<VueRangeReadingsResponse?> GetRangeReadingsAsync(
+        long deviceGid, DateTimeOffset start, DateTimeOffset end,
+        string? step = null, string? channels = null, CancellationToken ct = default)
+        => Task.FromResult(RangeReadingsResult);
+
+    public Task<PanelTotalResponse?> GetPanelTotalAsync(long deviceGid, CancellationToken ct = default)
+        => Task.FromResult(PanelTotalResult);
+
+    public Task<PanelTotalRangeResponse?> GetPanelTotalRangeAsync(
+        long deviceGid, DateTimeOffset start, DateTimeOffset end,
+        string? step = null, CancellationToken ct = default)
+        => Task.FromResult(PanelTotalRangeResult);
+
+    public Task<HomeTotalResponse> GetHomeTotalAsync(CancellationToken ct = default)
+        => Task.FromResult(HomeTotalResult);
+
+    public Task<HomeTotalRangeResponse> GetHomeTotalRangeAsync(
+        DateTimeOffset start, DateTimeOffset end,
+        string? step = null, CancellationToken ct = default)
+        => Task.FromResult(HomeTotalRangeResult);
 }

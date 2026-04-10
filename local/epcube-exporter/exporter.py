@@ -186,6 +186,148 @@ class PostgresWriter:
         if self._conn and not self._conn.closed:
             self._conn.close()
 
+
+# ---------------------------------------------------------------------------
+# Vue PostgreSQL writer
+# ---------------------------------------------------------------------------
+
+_VUE_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS vue_devices (
+    device_gid BIGINT PRIMARY KEY,
+    device_name TEXT,
+    model TEXT,
+    firmware TEXT,
+    connected BOOLEAN DEFAULT TRUE,
+    last_seen TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS vue_channels (
+    id SERIAL PRIMARY KEY,
+    device_gid BIGINT NOT NULL REFERENCES vue_devices(device_gid),
+    channel_num TEXT NOT NULL,
+    name TEXT,
+    channel_multiplier DOUBLE PRECISION,
+    channel_type TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_gid, channel_num)
+);
+
+CREATE TABLE IF NOT EXISTS vue_readings (
+    device_gid BIGINT NOT NULL,
+    channel_num TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    UNIQUE (device_gid, channel_num, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_device_channel_time
+    ON vue_readings (device_gid, channel_num, timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_time
+    ON vue_readings (timestamp);
+
+CREATE TABLE IF NOT EXISTS vue_readings_1min (
+    device_gid BIGINT NOT NULL,
+    channel_num TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    sample_count INTEGER NOT NULL,
+    UNIQUE (device_gid, channel_num, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_1min_device_channel_time
+    ON vue_readings_1min (device_gid, channel_num, timestamp DESC);
+"""
+
+
+class VuePostgresWriter:
+    """Writes Vue energy readings and device info to PostgreSQL."""
+
+    def __init__(self, dsn):
+        self._dsn = dsn
+        self._conn = None
+        self._ensure_schema()
+
+    def _get_conn(self):
+        """Get or re-establish the database connection."""
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(self._dsn)
+            self._conn.autocommit = False
+        return self._conn
+
+    def _ensure_schema(self):
+        """Create Vue tables and indexes if they don't exist."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(_VUE_SCHEMA_SQL)
+        conn.commit()
+        log.info("Vue PostgreSQL schema verified")
+
+    def upsert_device(self, device_gid, device_name=None, model=None,
+                      firmware=None, connected=True):
+        """Insert or update a Vue device record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO vue_devices (device_gid, device_name, model, firmware, connected, last_seen)
+                   VALUES (%s, %s, %s, %s, %s, NOW())
+                   ON CONFLICT (device_gid) DO UPDATE SET
+                       device_name = EXCLUDED.device_name,
+                       model = EXCLUDED.model,
+                       firmware = EXCLUDED.firmware,
+                       connected = EXCLUDED.connected,
+                       last_seen = NOW(),
+                       updated_at = NOW()""",
+                (device_gid, device_name, model, firmware, connected),
+            )
+        conn.commit()
+
+    def upsert_channel(self, device_gid, channel_num, name=None,
+                       channel_multiplier=None, channel_type=None):
+        """Insert or update a Vue channel record."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO vue_channels (device_gid, channel_num, name, channel_multiplier, channel_type)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (device_gid, channel_num) DO UPDATE SET
+                       name = EXCLUDED.name,
+                       channel_multiplier = EXCLUDED.channel_multiplier,
+                       channel_type = EXCLUDED.channel_type,
+                       updated_at = NOW()""",
+                (device_gid, channel_num, name, channel_multiplier, channel_type),
+            )
+        conn.commit()
+
+    def write_readings(self, readings):
+        """Batch-insert Vue readings. Each reading is (device_gid, channel_num, timestamp, value).
+
+        Uses ON CONFLICT to deduplicate (same device + channel + timestamp).
+        """
+        if not readings:
+            return
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO vue_readings (device_gid, channel_num, timestamp, value)
+                   VALUES %s
+                   ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
+                       value = EXCLUDED.value""",
+                readings,
+                template="(%s, %s, %s, %s)",
+            )
+        conn.commit()
+
+    def close(self):
+        """Close the database connection."""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Cloud API helpers
 # ---------------------------------------------------------------------------
@@ -861,8 +1003,12 @@ def _render_status_page(status, health):
   .val-pos {{ color: #00d4aa; }}
   .val-neg {{ color: #e74c3c; }}
   .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+  .nav {{ font-size: 0.85em; margin-bottom: 0.5em; color: #666; }}
+  .nav a {{ color: #00d4aa; text-decoration: none; }}
+  .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head><body>
+<div class="nav"><a href="/vue">Emporia Vue</a> &middot; <a href="/metrics">/metrics</a> &middot; <a href="/health">/health</a></div>
 <h1>&#9889; epcube-exporter — debug status
 <span style="font-size:0.6em;background:{'#00d4aa' if health['healthy'] else '#e74c3c'};color:#fff;padding:0.2em 0.7em;border-radius:12px;margin-left:0.8em;vertical-align:middle">{'&#10003; healthy' if health['healthy'] else '&#10007; ' + ', '.join(health['checks'])}</span>
 </h1>
@@ -910,10 +1056,7 @@ setInterval(async () => {{
   }} catch (e) {{}}
 }}, {poll_interval * 1000});
 </script>
-<div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min) &middot;
-  <a href="/metrics" style="color:#00d4aa">/metrics</a> &middot;
-  <a href="/health" style="color:#00d4aa">/health</a>
-</div>
+<div class="footer">Auto-refreshes every {poll_interval}s &middot; Last 10 polls (~10 min)</div>
 </body></html>"""
 
 
@@ -949,7 +1092,8 @@ def _cleanup_expired():
 
 
 class MetricsHandler(BaseHTTPRequestHandler):
-    collector = None  # Set by main
+    collector = None  # Set by main (EpCubeCollector or None)
+    vue_collector = None  # Set by main (VueCollector or None)
     _jwks_client = None  # Lazily initialized
 
     def _get_cookie(self, name):
@@ -1163,14 +1307,20 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self._handle_callback()
             return
         if self.path == "/metrics":
-            body = self.collector.get_metrics().encode()
+            if self.collector:
+                body = self.collector.get_metrics().encode()
+            else:
+                body = b"# No EP Cube collector configured\n"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
         elif self.path == "/health":
-            health = self.collector.get_health()
+            if self.collector:
+                health = self.collector.get_health()
+            else:
+                health = {"healthy": True, "checks": []}
             if health["healthy"]:
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1184,9 +1334,31 @@ class MetricsHandler(BaseHTTPRequestHandler):
         elif self.path == "/" or self.path == "/status":
             if not self._check_auth():
                 return
-            status = self.collector.get_status()
-            health = self.collector.get_health()
-            body = _render_status_page(status, health).encode()
+            if self.collector:
+                status = self.collector.get_status()
+                health = self.collector.get_health()
+                body = _render_status_page(status, health).encode()
+            else:
+                body = b"""<!DOCTYPE html><html><head><meta charset="utf-8">
+                <title>epcube-exporter status</title>
+                <style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
+                a { color: #00d4aa; }</style>
+                </head><body>
+                <p><a href="/vue">Emporia Vue Status</a></p>
+                <h1>epcube-exporter</h1>
+                <p>EP Cube collector: disabled</p>
+                </body></html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/vue":
+            if not self._check_auth():
+                return
+            vue_status = self.vue_collector.get_status() if self.vue_collector else None
+            body = _render_vue_debug_page(vue_status).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
@@ -1201,6 +1373,516 @@ class MetricsHandler(BaseHTTPRequestHandler):
         pass  # Suppress per-request logging
 
 
+# ---------------------------------------------------------------------------
+# Vue downsampling and retention
+# ---------------------------------------------------------------------------
+
+def downsample_vue_readings(writer):
+    """Aggregate raw 1-second Vue readings into 1-minute averages.
+
+    Processes data from the last complete hour. Idempotent — uses
+    ON CONFLICT to update existing rows.
+    """
+    conn = writer._get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO vue_readings_1min (device_gid, channel_num, timestamp, value, sample_count)
+            SELECT device_gid, channel_num,
+                   date_trunc('minute', timestamp) AS minute_ts,
+                   avg(value),
+                   count(*)
+            FROM vue_readings
+            WHERE timestamp < date_trunc('hour', NOW())
+              AND timestamp >= date_trunc('hour', NOW()) - INTERVAL '1 hour'
+            GROUP BY device_gid, channel_num, date_trunc('minute', timestamp)
+            ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
+                value = EXCLUDED.value,
+                sample_count = EXCLUDED.sample_count
+        """)
+    conn.commit()
+    log.info("Vue: downsampled readings for the last complete hour")
+
+
+def cleanup_old_vue_readings(writer):
+    """Delete raw Vue readings older than 7 days.
+
+    Does NOT touch vue_readings_1min (retained indefinitely).
+    Returns the number of rows deleted.
+    """
+    conn = writer._get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            DELETE FROM vue_readings
+            WHERE timestamp < NOW() - INTERVAL '7 days'
+        """)
+        deleted = cur.rowcount
+    conn.commit()
+    if deleted > 0:
+        log.info("Vue: cleaned up %d raw readings older than 7 days", deleted)
+    return deleted
+
+
+def downsampling_loop(writer, interval_seconds=3600):
+    """Background thread: runs downsampling + cleanup periodically."""
+    while True:
+        try:
+            downsample_vue_readings(writer)
+            cleanup_old_vue_readings(writer)
+        except Exception:
+            log.exception("Vue downsampling/cleanup failed")
+        time.sleep(interval_seconds)
+
+
+# ---------------------------------------------------------------------------
+# Vue collector
+# ---------------------------------------------------------------------------
+
+# Import PyEmVue (optional — only needed when Vue credentials are set)
+PyEmVue = None
+try:
+    from pyemvue import PyEmVue
+    from pyemvue.enums import Scale, Unit
+except ImportError:
+    pass
+
+DEFAULT_VUE_POLL_INTERVAL = 1  # seconds
+DEFAULT_VUE_DEVICE_REFRESH_INTERVAL = 1800  # 30 minutes
+
+# kWh-to-watts multiplier per scale
+_SCALE_WATTS_MULTIPLIER = {
+    "1S": 3_600_000,    # 1 second: kWh * 3,600,000
+    "1MIN": 60_000,     # 1 minute: kWh * 60,000
+}
+
+
+def _read_vue_poll_interval_from_db():
+    """Read vue_poll_interval_seconds from settings table. Returns default on any error."""
+    if not POSTGRES_DSN:
+        return DEFAULT_VUE_POLL_INTERVAL
+    try:
+        import psycopg2 as _pg
+        conn = _pg.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = 'vue_poll_interval_seconds'")
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if 1 <= val <= 3600:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read Vue poll interval from DB, using default %ds", DEFAULT_VUE_POLL_INTERVAL)
+    return DEFAULT_VUE_POLL_INTERVAL
+
+
+def _read_vue_device_refresh_interval_from_db():
+    """Read vue_device_refresh_interval_seconds from settings table. Returns default on any error."""
+    if not POSTGRES_DSN:
+        return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+    try:
+        import psycopg2 as _pg
+        conn = _pg.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = 'vue_device_refresh_interval_seconds'")
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if 60 <= val <= 86400:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read Vue device refresh interval from DB, using default %ds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+
+
+class VueCollector:
+    """Collects power data from Emporia Vue devices via PyEmVue."""
+
+    RECOVERY_THRESHOLD = 10  # successful polls at 1MIN before trying 1S again
+
+    def __init__(self, username, password, pg_writer=None):
+        self._username = username
+        self._password = password
+        self._pg_writer = pg_writer
+        self._vue = None
+        self._authenticated = False
+        self._lock = threading.Lock()
+        self._last_poll = 0.0
+        self._poll_errors = 0
+        self._consecutive_errors = 0
+        self._device_count = 0
+        self._circuit_count = 0
+        self._device_gids = []
+        self._devices_info = []  # list of device status dicts for debug page
+        self._current_scale = "1S"
+        self._recovery_count = 0
+        self._had_successful_poll = False
+        self._poll_interval = DEFAULT_VUE_POLL_INTERVAL
+        self._next_poll_at = 0.0
+        self._last_device_refresh = 0.0
+        self._start_time = time.time()
+        self._last_readings = {}  # {(device_gid, channel_num): watts}
+        self._channel_names = {}  # {(device_gid, channel_num): name}
+
+        self._login()
+
+    def _login(self):
+        """Authenticate with the Emporia API via PyEmVue."""
+        try:
+            self._vue = PyEmVue()
+            self._vue.login(username=self._username, password=self._password)
+            self._authenticated = True
+            log.info("Vue: authenticated as %s", self._username)
+            self._discover_devices()
+        except Exception:
+            log.exception("Vue: authentication failed")
+            self._authenticated = False
+
+    def _discover_devices(self):
+        """Discover Vue devices and channels from the Emporia API."""
+        try:
+            raw_devices = self._vue.get_devices()
+            # PyEmVue returns multiple entries per device_gid (VUE003 hub +
+            # WAT001 CT module).  Merge them: take name/connected from the first
+            # entry with a name, merge channels from all entries.
+            merged = {}  # gid -> merged device info
+            for d in raw_devices:
+                gid = d.device_gid
+                if gid not in merged:
+                    merged[gid] = {
+                        "device": d,
+                        "channels": list(d.channels),
+                    }
+                else:
+                    # Merge: prefer named entry for device metadata
+                    if d.device_name and not merged[gid]["device"].device_name:
+                        merged[gid]["device"] = d
+                    # Add any new channels (avoid dups by channel_num)
+                    existing_nums = {ch.channel_num for ch in merged[gid]["channels"]}
+                    for ch in d.channels:
+                        if ch.channel_num not in existing_nums:
+                            merged[gid]["channels"].append(ch)
+                            existing_nums.add(ch.channel_num)
+
+            devices = list(merged.values())
+            self._device_gids = [info["device"].device_gid for info in devices]
+            self._device_count = len(devices)
+            self._circuit_count = sum(len(info["channels"]) for info in devices)
+            self._devices_info = []
+            for info in devices:
+                d = info["device"]
+                channels = info["channels"]
+                self._devices_info.append({
+                    "device_gid": d.device_gid,
+                    "name": d.device_name,
+                    "connected": d.connected,
+                    "channels": len(channels),
+                })
+                log.info("Vue:   Device: %s (gid=%d, channels=%d, online=%s)",
+                         d.device_name, d.device_gid, len(channels), d.connected)
+
+                # Persist device and channel metadata
+                for ch in channels:
+                    self._channel_names[(ch.device_gid, ch.channel_num)] = ch.name or ""
+                if self._pg_writer:
+                    self._pg_writer.upsert_device(
+                        device_gid=d.device_gid, device_name=d.device_name,
+                        model=getattr(d, "model", None),
+                        firmware=getattr(d, "firmware", None),
+                        connected=d.connected,
+                    )
+                    for ch in channels:
+                        self._pg_writer.upsert_channel(
+                            device_gid=ch.device_gid, channel_num=ch.channel_num,
+                            name=ch.name,
+                            channel_multiplier=getattr(ch, "channel_multiplier", None),
+                            channel_type=getattr(ch, "channel_type_gid", None),
+                        )
+
+            self._last_device_refresh = time.time()
+            log.info("Vue: discovered %d device(s), %d circuit(s)", self._device_count, self._circuit_count)
+        except Exception:
+            log.exception("Vue: device discovery failed")
+
+    def poll(self):
+        """Fetch usage data from all Vue devices and write to PostgreSQL."""
+        # Retry login if not authenticated
+        if not self._authenticated:
+            self._login()
+            if not self._authenticated:
+                with self._lock:
+                    self._poll_errors += 1
+                    self._consecutive_errors += 1
+                return
+
+        # Periodic device/channel refresh
+        refresh_interval = _read_vue_device_refresh_interval_from_db()
+        if time.time() - self._last_device_refresh > refresh_interval:
+            self._discover_devices()
+
+        if not self._device_gids:
+            return
+
+        multiplier = _SCALE_WATTS_MULTIPLIER.get(self._current_scale, 3_600_000)
+        all_none = True
+        readings = []
+
+        try:
+            usage = self._vue.get_device_list_usage(
+                deviceGids=self._device_gids,
+                instant=datetime.now(timezone.utc),
+                scale=self._current_scale,
+                unit="KilowattHours",
+                max_retry_attempts=1,
+            )
+
+            for device_gid, device_usage in usage.items():
+                try:
+                    ts = device_usage.timestamp
+                    if ts and ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                    for ch_num, ch_usage in device_usage.channels.items():
+                        if ch_usage.usage is None:
+                            continue
+                        all_none = False
+                        watts = ch_usage.usage * multiplier
+                        readings.append((device_gid, ch_num, ts, watts))
+                        self._last_readings[(device_gid, ch_num)] = watts
+                except Exception:
+                    log.exception("Vue: error processing device %d", device_gid)
+                    with self._lock:
+                        self._poll_errors += 1
+
+        except Exception:
+            log.exception("Vue: API call failed")
+            with self._lock:
+                self._poll_errors += 1
+                self._consecutive_errors += 1
+            return
+
+        # Write readings to PostgreSQL
+        if readings and self._pg_writer:
+            self._pg_writer.write_readings(readings)
+
+        with self._lock:
+            self._last_poll = time.time()
+            if readings:
+                self._consecutive_errors = 0
+
+        # Rate limit handling: only degrade if we previously had data (not just all devices offline)
+        if all_none and self._device_gids and self._had_successful_poll:
+            if self._current_scale == "1S":
+                self._current_scale = "1MIN"
+                self._recovery_count = 0
+                log.warning("Vue: rate limited — degrading to 1MIN scale")
+        elif self._current_scale == "1MIN" and not all_none:
+            self._recovery_count += 1
+            if self._recovery_count >= self.RECOVERY_THRESHOLD:
+                self._current_scale = "1S"
+                self._recovery_count = 0
+                log.info("Vue: recovered — returning to 1S scale")
+
+        if not all_none:
+            self._had_successful_poll = True
+
+    def get_status(self):
+        """Return current Vue collector status for the debug page."""
+        with self._lock:
+            return {
+                "device_count": self._device_count,
+                "circuit_count": self._circuit_count,
+                "last_poll": self._last_poll,
+                "poll_errors": self._poll_errors,
+                "consecutive_errors": self._consecutive_errors,
+                "current_scale": self._current_scale,
+                "poll_interval": self._poll_interval,
+                "next_poll_at": self._next_poll_at,
+                "authenticated": self._authenticated,
+                "devices": list(self._devices_info),
+                "uptime_s": int(time.time() - self._start_time),
+                "last_readings": dict(self._last_readings),
+                "channel_names": dict(self._channel_names),
+            }
+
+
+def _render_vue_debug_page(vue_status):
+    """Render a full HTML debug page for Vue collector status with per-circuit data."""
+    if not vue_status:
+        return """<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Emporia Vue — not configured</title>
+<style>body { font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }
+a { color: #00d4aa; }</style>
+</head><body>
+<p><a href="/status">&larr; EP Cube Status</a></p>
+<h1>Emporia Vue</h1>
+<p>Vue polling is not configured. Set EMPORIA_USERNAME and EMPORIA_PASSWORD to enable.</p>
+</body></html>"""
+
+    last_poll = vue_status["last_poll"]
+    if last_poll > 0:
+        last_poll_ts = last_poll * 1000  # JS timestamp in ms
+        last_poll_str = f'<span class="localtime" data-ts="{last_poll_ts}">loading...</span>'
+        ago = int(time.time() - last_poll)
+        last_poll_str += f" ({ago}s ago)"
+    else:
+        last_poll_str = "never"
+
+    next_poll_at = vue_status.get("next_poll_at", 0)
+    next_in = max(0, int(next_poll_at - time.time())) if next_poll_at else None
+    next_str = f"{next_in}s" if next_in is not None else "waiting"
+
+    # Build per-device sections with circuit tables
+    readings = vue_status.get("last_readings", {})
+    channel_names = vue_status.get("channel_names", {})
+    devices_html = ""
+
+    for dev in vue_status.get("devices", []):
+        gid = dev["device_gid"]
+        status_cls = "val-pos" if dev.get("connected") else "val-neg"
+        status_txt = "online" if dev.get("connected") else "offline"
+
+        # Gather circuits for this device, sorted by channel_num
+        circuits = []
+        for (d_gid, ch_num), watts in readings.items():
+            if d_gid == gid:
+                name = channel_names.get((d_gid, ch_num), "")
+                circuits.append((ch_num, name, watts))
+
+        # Sort: mains first, then numeric channels, then text channels
+        def _sort_key(c):
+            ch = c[0]
+            if ch == "1,2,3":
+                return (0, "")
+            if ch == "Balance":
+                return (2, "")
+            try:
+                return (1, int(ch))
+            except ValueError:
+                return (1, 999)
+        circuits.sort(key=_sort_key)
+
+        rows = ""
+        for ch_num, name, watts in circuits:
+            display_name = name if name else ch_num
+            if watts >= 1000:
+                watts_str = f"{watts / 1000:.1f} kW"
+            else:
+                watts_str = f"{watts:.0f} W"
+            row_cls = ' class="val-pos"' if watts > 0 else ""
+            rows += f"<tr><td>{ch_num}</td><td>{display_name}</td><td style='text-align:right'{row_cls}>{watts_str}</td></tr>\n"
+
+        if not rows:
+            rows = '<tr><td colspan="3" style="color:#888">No readings yet</td></tr>'
+
+        devices_html += f"""
+        <div style="margin-bottom:1.5em">
+        <h3>{dev['name']} <span class="badge {status_cls}">{status_txt}</span>
+            <span class="badge" style="color:#888">GID: {gid}</span></h3>
+        <table>
+        <tr><th>Channel</th><th>Circuit</th><th style="text-align:right">Power</th></tr>
+        {rows}
+        </table>
+        </div>
+        """
+
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Emporia Vue — debug status</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 2em; background: #1a1a2e; color: #e0e0e0; }}
+  h1 {{ color: #00d4aa; font-size: 1.3em; }}
+  h3 {{ color: #e0e0e0; margin-bottom: 0.3em; }}
+  a {{ color: #00d4aa; }}
+  .info {{ display: flex; gap: 2em; margin-bottom: 1.5em; font-size: 0.9em; flex-wrap: wrap; }}
+  .info span {{ background: #16213e; padding: 0.4em 0.8em; border-radius: 4px; }}
+  .badge {{ font-size: 0.75em; background: #16213e; padding: 0.2em 0.6em; border-radius: 4px; margin-left: 0.5em; vertical-align: middle; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 0.85em; margin-bottom: 0.5em; }}
+  th, td {{ padding: 0.4em 0.8em; border: 1px solid #2a2a4a; }}
+  th {{ background: #16213e; text-align: left; }}
+  tr:hover {{ background: #16213e; }}
+  .val-pos {{ color: #00d4aa; }}
+  .val-neg {{ color: #e74c3c; }}
+  .footer {{ margin-top: 1.5em; font-size: 0.8em; color: #666; }}
+  .nav {{ font-size: 0.85em; margin-bottom: 0.5em; color: #666; }}
+  .nav a {{ color: #00d4aa; text-decoration: none; }}
+  .nav a:hover {{ text-decoration: underline; }}
+</style>
+</head><body>
+<div class="nav"><a href="/status">&larr; EP Cube Status</a> &middot; <a href="/health">/health</a></div>
+<h1>&#9889; Emporia Vue — debug status</h1>
+<div class="info">
+  <span>Devices: <b>{vue_status["device_count"]}</b></span>
+  <span>Circuits: <b>{vue_status["circuit_count"]}</b></span>
+  <span>Scale: <b>{vue_status["current_scale"]}</b></span>
+  <span>Poll interval: <b>{vue_status["poll_interval"]}s</b></span>
+  <span>Last poll: <b>{last_poll_str}</b></span>
+  <span>Next poll in: <b id="countdown" data-next="{next_poll_at}">{next_str}</b></span>
+  <span>Errors: <b>{vue_status["poll_errors"]}</b> total, <b>{vue_status["consecutive_errors"]}</b> consecutive</span>
+</div>
+{devices_html}
+<script>
+// Convert timestamps to local time
+document.querySelectorAll('.localtime').forEach(el => {{
+  const ts = parseFloat(el.dataset.ts);
+  if (!ts) return;
+  const d = new Date(ts);
+  el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true}});
+}});
+
+// Countdown timer
+setInterval(() => {{
+  const el = document.getElementById('countdown');
+  if (!el) return;
+  const nextAt = parseFloat(el.dataset.next);
+  if (!nextAt) return;
+  const left = Math.max(0, Math.round(nextAt - Date.now() / 1000));
+  el.textContent = left + 's';
+}}, 1000);
+
+// Auto-refresh every 5 seconds (Vue polls at 1s, page refreshes at 5s)
+setInterval(async () => {{
+  try {{
+    const resp = await fetch(location.href);
+    if (!resp.ok) return;
+    const html = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    document.body.innerHTML = doc.body.innerHTML;
+    document.querySelectorAll('.localtime').forEach(el => {{
+      const ts = parseFloat(el.dataset.ts);
+      if (!ts) return;
+      const d = new Date(ts);
+      el.textContent = d.toLocaleDateString([], {{month: 'short', day: 'numeric'}}) + ' ' + d.toLocaleTimeString([], {{hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true}});
+    }});
+  }} catch (e) {{}}
+}}, 5000);
+</script>
+<div class="footer">Auto-refreshes every 5s</div>
+</body></html>"""
+
+
+def vue_poll_loop(collector):
+    """Background thread: polls Vue API on schedule."""
+    while True:
+        current_interval = _read_vue_poll_interval_from_db()
+        with collector._lock:
+            collector._poll_interval = current_interval
+            collector._next_poll_at = time.time() + current_interval
+        time.sleep(current_interval)
+        try:
+            collector.poll()
+        except Exception:
+            log.exception("Vue poll failed")
+            with collector._lock:
+                collector._poll_errors += 1
+                collector._consecutive_errors += 1
+
+
+# ---------------------------------------------------------------------------
+# Main
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1245,33 +1927,55 @@ def poll_loop(collector):
 
 
 def main():
-    username = os.environ.get("EPCUBE_USERNAME")
-    password = os.environ.get("EPCUBE_PASSWORD")
+    epcube_username = os.environ.get("EPCUBE_USERNAME")
+    epcube_password = os.environ.get("EPCUBE_PASSWORD")
+    emporia_username = os.environ.get("EMPORIA_USERNAME")
+    emporia_password = os.environ.get("EMPORIA_PASSWORD")
 
-    if not username or not password:
-        log.error("EPCUBE_USERNAME and EPCUBE_PASSWORD environment variables required")
+    has_epcube = bool(epcube_username and epcube_password)
+    has_emporia = bool(emporia_username and emporia_password)
+
+    if not has_epcube and not has_emporia:
+        log.error("At least one credential set required: EPCUBE_USERNAME/PASSWORD or EMPORIA_USERNAME/PASSWORD")
         sys.exit(1)
 
     # Initialize Postgres writer if configured
     pg_writer = None
+    vue_pg_writer = None
     if POSTGRES_DSN:
         if psycopg2 is None:
             log.error("POSTGRES_DSN is set but psycopg2 is not installed")
             sys.exit(1)
         pg_writer = PostgresWriter(POSTGRES_DSN)
+        vue_pg_writer = VuePostgresWriter(POSTGRES_DSN)
         log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
 
-    collector = EpCubeCollector(username, password, pg_writer=pg_writer)
+    # Start EP Cube collector if credentials are configured
+    collector = None
+    if has_epcube:
+        collector = EpCubeCollector(epcube_username, epcube_password, pg_writer=pg_writer)
+        collector.poll()
+        poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
+        poll_thread.start()
+    else:
+        log.warning("EPCUBE_USERNAME/PASSWORD not set — EP Cube collector disabled")
 
-    # Initial poll (blocks until first data is available)
-    collector.poll()
-
-    # Start background polling
-    poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
-    poll_thread.start()
+    # Start Vue collector if credentials are configured
+    vue_collector = None
+    if has_emporia:
+        vue_collector = VueCollector(emporia_username, emporia_password, pg_writer=vue_pg_writer)
+        vue_poll_thread = threading.Thread(target=vue_poll_loop, args=(vue_collector,), daemon=True)
+        vue_poll_thread.start()
+        # Start downsampling loop if PostgreSQL is configured
+        if vue_pg_writer:
+            ds_thread = threading.Thread(target=downsampling_loop, args=(vue_pg_writer,), daemon=True)
+            ds_thread.start()
+    else:
+        log.warning("EMPORIA_USERNAME/PASSWORD not set — Vue collector disabled")
 
     # Start HTTP server
     MetricsHandler.collector = collector
+    MetricsHandler.vue_collector = vue_collector
     server = HTTPServer(("0.0.0.0", METRICS_PORT), MetricsHandler)
     log.info("Serving metrics on :%d/metrics (poll interval: %ds)", METRICS_PORT, POLL_INTERVAL)
     if DISABLE_AUTH:

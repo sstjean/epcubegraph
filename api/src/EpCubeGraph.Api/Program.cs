@@ -41,6 +41,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? "Host=localhost;Port=5432;Database=epcubegraph;Username=epcube;Password=epcube_local";
 builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connectionString));
 builder.Services.AddSingleton<ISettingsStore>(new PostgresSettingsStore(connectionString));
+builder.Services.AddSingleton<IVueStore>(new PostgresVueStore(connectionString));
 
 // CORS
 builder.Services.AddCors();
@@ -110,6 +111,7 @@ v1.MapReadingsEndpoints();
 v1.MapDevicesEndpoints();
 v1.MapGridEndpoints();
 v1.MapSettingsEndpoints();
+v1.MapVueEndpoints();
 
 app.Run();
 

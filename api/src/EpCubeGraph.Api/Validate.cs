@@ -30,6 +30,19 @@ public static partial class Validate
         return $"'{paramName}' must be a positive integer (seconds)";
     }
 
+    /// <summary>
+    /// Validates Vue step format: &lt;number&gt;s, &lt;number&gt;m, or &lt;number&gt;h.
+    /// </summary>
+    public static string? VueStep(string? value, string paramName)
+    {
+        if (value is null) return null; // optional (auto-resolved)
+        if (value.Length >= 2 && "smh".Contains(value[^1]))
+        {
+            if (int.TryParse(value[..^1], out var n) && n > 0) return null;
+        }
+        return $"'{paramName}' must be <number>s, <number>m, or <number>h (e.g. 5s, 1m, 4h)";
+    }
+
     public static string? SafeName(string? value, string paramName)
     {
         if (string.IsNullOrWhiteSpace(value))

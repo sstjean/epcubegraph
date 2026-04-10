@@ -42,6 +42,30 @@ variable "epcube_password" {
   default     = ""
 }
 
+# ── Emporia Vue credentials ──
+
+variable "emporia_username" {
+  description = "Emporia Vue account email"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = var.emporia_username != ""
+    error_message = "emporia_username is required. Set the EMPORIA_USERNAME GitHub Actions secret."
+  }
+}
+
+variable "emporia_password" {
+  description = "Emporia Vue account password"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = var.emporia_password != ""
+    error_message = "emporia_password is required. Set the EMPORIA_PASSWORD GitHub Actions secret."
+  }
+}
+
 # ── Custom Domains ──
 
 variable "custom_domain_zone_name" {

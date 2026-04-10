@@ -2,6 +2,7 @@
 import base64
 import collections
 import json
+import os
 import threading
 import time
 import unittest
@@ -1474,6 +1475,1131 @@ class TestPollWithPostgres(unittest.TestCase):
 
         # Prometheus metrics should still be generated
         self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+
+
+# ---------------------------------------------------------------------------
+# T005: Flexible credential startup tests
+# ---------------------------------------------------------------------------
+
+class TestFlexibleCredentialStartup(unittest.TestCase):
+    """Tests that main() starts collectors based on which credentials are configured."""
+
+    @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p",
+                              "EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_both_credentials_starts_both(self):
+        # Arrange
+        with patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch.object(exporter, "VueCollector") as mock_vue, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_epc_inst = MagicMock()
+            mock_epc.return_value = mock_epc_inst
+            mock_vue_inst = MagicMock()
+            mock_vue.return_value = mock_vue_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_epc.assert_called_once()
+            mock_vue.assert_called_once()
+
+    @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_only_epcube_credentials_starts_epcube_only(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EMPORIA_USERNAME", None)
+        env.pop("EMPORIA_PASSWORD", None)
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_epc_inst = MagicMock()
+            mock_epc.return_value = mock_epc_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_epc.assert_called_once()
+            # VueCollector should not be instantiated when no Vue creds
+            mock_thread_calls = [str(c) for c in mock_thread.call_args_list]
+            vue_threads = [c for c in mock_thread_calls if "vue" in c.lower()]
+            self.assertEqual(len(vue_threads), 0, "Vue thread should not start without Vue credentials")
+
+    @patch.dict(os.environ, {"EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
+    @patch.object(exporter, "psycopg2", None)
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_only_vue_credentials_starts_vue_only(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EPCUBE_USERNAME", None)
+        env.pop("EPCUBE_PASSWORD", None)
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "VueCollector") as mock_vue, \
+             patch("threading.Thread") as mock_thread, \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_vue_inst = MagicMock()
+            mock_vue.return_value = mock_vue_inst
+
+            # Act
+            exporter.main()
+
+            # Assert
+            mock_vue.assert_called_once()
+
+    def test_no_credentials_exits_with_error(self):
+        # Arrange
+        env = os.environ.copy()
+        env.pop("EPCUBE_USERNAME", None)
+        env.pop("EPCUBE_PASSWORD", None)
+        env.pop("EMPORIA_USERNAME", None)
+        env.pop("EMPORIA_PASSWORD", None)
+
+        # Act & Assert
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "POSTGRES_DSN", ""), \
+             self.assertRaises(SystemExit) as ctx:
+            exporter.main()
+        self.assertEqual(ctx.exception.code, 1)
+
+
+# ---------------------------------------------------------------------------
+# T007: Vue schema creation tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterSchema(unittest.TestCase):
+    """Tests for VuePostgresWriter schema creation."""
+
+    def _make_mock_psycopg2(self):
+        """Create a mock psycopg2 module with connection and cursor."""
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_vue_schema(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        # Act
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+
+        # Assert
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_devices", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_channels", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings", call_args)
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings_1min", call_args)
+        self.assertIn("idx_vue_readings_device_channel_time", call_args)
+        self.assertIn("idx_vue_readings_time", call_args)
+        self.assertIn("idx_vue_readings_1min_device_channel_time", call_args)
+        mock_conn.commit.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# T009: Vue upsert device/channel tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterUpsert(unittest.TestCase):
+    """Tests for VuePostgresWriter upsert_device and upsert_channel."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_device(
+            device_gid=12345, device_name="Main Panel",
+            model="VUE001", firmware="1.0.0", connected=True,
+        )
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_devices", sql)
+        self.assertIn("ON CONFLICT (device_gid)", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[0], 12345)
+        self.assertEqual(params[1], "Main Panel")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_device_updates_on_conflict(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act — call twice with different name
+        writer.upsert_device(device_gid=12345, device_name="Old Name")
+        writer.upsert_device(device_gid=12345, device_name="New Name")
+
+        # Assert — two upsert calls, second has new name
+        self.assertEqual(mock_cursor.execute.call_count, 2)
+        second_params = mock_cursor.execute.call_args_list[1][0][1]
+        self.assertEqual(second_params[1], "New Name")
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_channel(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_channel(
+            device_gid=12345, channel_num="1,2,3", name="Main",
+            channel_multiplier=1.0, channel_type="Main",
+        )
+
+        # Assert
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_channels", sql)
+        self.assertIn("ON CONFLICT (device_gid, channel_num)", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[0], 12345)
+        self.assertEqual(params[1], "1,2,3")
+        self.assertEqual(params[2], "Main")
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_channel_balance(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_channel(
+            device_gid=12345, channel_num="Balance", name="Balance",
+        )
+
+        # Assert
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params[1], "Balance")
+        self.assertEqual(params[2], "Balance")
+
+
+# ---------------------------------------------------------------------------
+# T011: Vue write_readings tests
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterReadings(unittest.TestCase):
+    """Tests for VuePostgresWriter.write_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_batch(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        now = datetime.now(timezone.utc)
+        readings = [
+            (12345, "1,2,3", now, 8450.5),
+            (12345, "1", now, 4200.0),
+            (12345, "Balance", now, 1200.0),
+        ]
+
+        # Act
+        writer.write_readings(readings)
+
+        # Assert
+        mock_pg.extras.execute_values.assert_called_once()
+        call_args = mock_pg.extras.execute_values.call_args
+        sql = call_args[0][1]
+        self.assertIn("INSERT INTO vue_readings", sql)
+        self.assertIn("ON CONFLICT", sql)
+        self.assertEqual(call_args[0][2], readings)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_empty_readings_is_noop(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn.reset_mock()
+
+        # Act
+        writer.write_readings([])
+
+        # Assert
+        mock_conn.commit.assert_not_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_with_negative_values(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        now = datetime.now(timezone.utc)
+        readings = [
+            (12345, "4", now, -150.0),  # solar backfeed
+        ]
+
+        # Act
+        writer.write_readings(readings)
+
+        # Assert — negative value passed through unchanged
+        passed_readings = mock_pg.extras.execute_values.call_args[0][2]
+        self.assertEqual(passed_readings[0][3], -150.0)
+
+    @patch.object(exporter, "psycopg2")
+    def test_write_readings_reconnects_on_closed(self, mock_pg):
+        # Arrange
+        mock_conn1, _ = self._make_mock_psycopg2()
+        mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
+        mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn1.closed = True
+
+        now = datetime.now(timezone.utc)
+
+        # Act
+        writer.write_readings([(12345, "1,2,3", now, 1000.0)])
+
+        # Assert — reconnected
+        self.assertEqual(mock_pg.connect.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T013: VueCollector initialization and login tests
+# ---------------------------------------------------------------------------
+
+def _mock_pyemvue():
+    """Create a mock PyEmVue instance with devices and usage."""
+    mock_vue = MagicMock()
+
+    # Mock device with channels
+    mock_device = MagicMock()
+    mock_device.device_gid = 12345
+    mock_device.device_name = "Main Panel"
+    mock_device.model = "VUE001"
+    mock_device.firmware = "1.0"
+    mock_device.connected = True
+    mock_device.offline_since = None
+
+    mock_ch1 = MagicMock()
+    mock_ch1.device_gid = 12345
+    mock_ch1.channel_num = "1,2,3"
+    mock_ch1.name = "Main"
+    mock_ch1.channel_multiplier = 1.0
+    mock_ch1.channel_type_gid = None
+
+    mock_ch2 = MagicMock()
+    mock_ch2.device_gid = 12345
+    mock_ch2.channel_num = "1"
+    mock_ch2.name = "Kitchen"
+    mock_ch2.channel_multiplier = 1.0
+    mock_ch2.channel_type_gid = None
+
+    mock_device.channels = [mock_ch1, mock_ch2]
+    mock_vue.get_devices.return_value = [mock_device]
+
+    # Mock usage result
+    mock_usage_device = MagicMock()
+    mock_usage_device.device_gid = 12345
+    mock_usage_device.timestamp = datetime(2026, 4, 8, 12, 0, 0, tzinfo=timezone.utc)
+
+    mock_ch_usage_main = MagicMock()
+    mock_ch_usage_main.device_gid = 12345
+    mock_ch_usage_main.channel_num = "1,2,3"
+    mock_ch_usage_main.name = "Main"
+    mock_ch_usage_main.usage = 0.002347  # kWh for 1S scale → ~8449 watts
+
+    mock_ch_usage_kitchen = MagicMock()
+    mock_ch_usage_kitchen.device_gid = 12345
+    mock_ch_usage_kitchen.channel_num = "1"
+    mock_ch_usage_kitchen.name = "Kitchen"
+    mock_ch_usage_kitchen.usage = 0.000333  # kWh → ~1199 watts
+
+    mock_usage_device.channels = {"1,2,3": mock_ch_usage_main, "1": mock_ch_usage_kitchen}
+    mock_vue.get_device_list_usage.return_value = {12345: mock_usage_device}
+
+    return mock_vue
+
+
+class TestVueCollectorInit(unittest.TestCase):
+    """T013: VueCollector initialization and login tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_successful_login(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert
+        mock_vue.login.assert_called_once_with(username="user@test.com", password="password")
+        self.assertTrue(collector._authenticated)
+
+    @patch("exporter.PyEmVue")
+    def test_login_failure_sets_not_authenticated(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = MagicMock()
+        mock_vue.login.side_effect = Exception("Auth failed")
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("bad@test.com", "badpass")
+
+        # Assert
+        self.assertFalse(collector._authenticated)
+        self.assertEqual(collector._device_count, 0)
+
+    @patch("exporter.PyEmVue")
+    def test_login_discovers_devices(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert
+        mock_vue.get_devices.assert_called_once()
+        self.assertEqual(collector._device_count, 1)
+        self.assertEqual(collector._circuit_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T014: VueCollector.poll() tests
+# ---------------------------------------------------------------------------
+
+class TestVueCollectorPoll(unittest.TestCase):
+    """T014: VueCollector.poll() tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_poll_calls_get_device_list_usage(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        collector.poll()
+
+        # Assert
+        mock_vue.get_device_list_usage.assert_called_once()
+        call_kwargs = mock_vue.get_device_list_usage.call_args
+        self.assertEqual(call_kwargs[1].get("unit") or call_kwargs[0][3] if len(call_kwargs[0]) > 3 else call_kwargs[1].get("unit"), "KilowattHours")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_converts_kwh_to_watts(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act
+        collector.poll()
+
+        # Assert — readings written should be in watts
+        write_call = mock_pg.write_readings.call_args[0][0]
+        # kWh 0.002347 * 3_600_000 = 8449.2
+        main_reading = [r for r in write_call if r[1] == "1,2,3"][0]
+        self.assertAlmostEqual(main_reading[3], 0.002347 * 3_600_000, places=0)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_skips_none_channels(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # Make kitchen channel offline (None usage)
+        mock_vue.get_device_list_usage.return_value[12345].channels["1"].usage = None
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act
+        collector.poll()
+
+        # Assert — only main channel written (kitchen skipped)
+        write_call = mock_pg.write_readings.call_args[0][0]
+        self.assertEqual(len(write_call), 1)
+        self.assertEqual(write_call[0][1], "1,2,3")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_continues_on_device_error(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # Add a second device that errors
+        mock_dev2 = MagicMock()
+        mock_dev2.device_gid = 99999
+        mock_dev2.device_name = "Broken"
+        mock_dev2.model = "VUE001"
+        mock_dev2.firmware = "1.0"
+        mock_dev2.connected = True
+        mock_dev2.channels = []
+        mock_vue.get_devices.return_value.append(mock_dev2)
+        # Usage for device 99999 raises an error
+        original_usage = mock_vue.get_device_list_usage.return_value.copy()
+        mock_bad_device = MagicMock()
+        mock_bad_device.channels = {}
+        # Accessing channels raises
+        type(mock_bad_device).channels = property(lambda s: (_ for _ in ()).throw(Exception("Device error")))
+        original_usage[99999] = mock_bad_device
+        mock_vue.get_device_list_usage.return_value = original_usage
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Act — should not raise
+        collector.poll()
+
+        # Assert — readings from working device still written
+        self.assertTrue(mock_pg.write_readings.called)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_updates_last_poll_time(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        before = time.time()
+        collector.poll()
+
+        # Assert
+        self.assertGreaterEqual(collector._last_poll, before)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_when_not_authenticated_retries_login(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = MagicMock()
+        mock_vue.login.side_effect = [Exception("First fail"), None]
+        mock_vue.get_devices.return_value = []
+        mock_vue.get_device_list_usage.return_value = {}
+        mock_pyemvue_cls.return_value = mock_vue
+
+        collector = exporter.VueCollector("user@test.com", "password")
+        self.assertFalse(collector._authenticated)
+
+        # Act — poll should retry login
+        mock_vue.login.side_effect = None  # Now login succeeds
+        collector.poll()
+
+        # Assert — login called again
+        self.assertGreaterEqual(mock_vue.login.call_count, 2)
+
+
+# ---------------------------------------------------------------------------
+# T015: Device/channel discovery refresh tests
+# ---------------------------------------------------------------------------
+
+class TestVueDeviceDiscovery(unittest.TestCase):
+    """T015: Device/channel discovery refresh tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_discover_upserts_devices_to_postgres(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Assert — upsert_device called during init
+        mock_pg.upsert_device.assert_called_once_with(
+            device_gid=12345, device_name="Main Panel",
+            model="VUE001", firmware="1.0", connected=True,
+        )
+
+    @patch("exporter.PyEmVue")
+    def test_discover_upserts_channels_to_postgres(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_pg = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+
+        # Assert — upsert_channel called for each channel
+        self.assertEqual(mock_pg.upsert_channel.call_count, 2)
+
+    @patch("exporter.PyEmVue")
+    def test_refresh_updates_device_list(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        self.assertEqual(collector._device_count, 1)
+
+        # Add a new device
+        mock_dev2 = MagicMock()
+        mock_dev2.device_gid = 23456
+        mock_dev2.device_name = "Workshop"
+        mock_dev2.model = "VUE002"
+        mock_dev2.firmware = "2.0"
+        mock_dev2.connected = True
+        mock_dev2.channels = []
+        mock_vue.get_devices.return_value.append(mock_dev2)
+
+        # Act
+        collector._discover_devices()
+
+        # Assert
+        self.assertEqual(collector._device_count, 2)
+
+    @patch("exporter.PyEmVue")
+    def test_discover_deduplicates_same_gid(self, mock_pyemvue_cls):
+        # Arrange — PyEmVue returns two entries with same gid (VUE003 hub + WAT001 CT module)
+        mock_vue = MagicMock()
+        mock_vue.login.return_value = None
+
+        mock_hub = MagicMock()
+        mock_hub.device_gid = 480380
+        mock_hub.device_name = "Main Panel"
+        mock_hub.model = "VUE003"
+        mock_hub.firmware = "1.0"
+        mock_hub.connected = True
+        mock_hub.channels = [MagicMock(device_gid=480380, channel_num="1,2,3", name="Main",
+                                        channel_multiplier=1.0, channel_type_gid=None)]
+
+        mock_ct = MagicMock()
+        mock_ct.device_gid = 480380  # Same gid!
+        mock_ct.device_name = ""
+        mock_ct.model = "WAT001"
+        mock_ct.firmware = "1.0"
+        mock_ct.connected = False
+        mock_ct.channels = [MagicMock() for _ in range(18)]
+
+        mock_vue.get_devices.return_value = [mock_hub, mock_ct]
+        mock_vue.get_device_list_usage.return_value = {}
+        mock_pyemvue_cls.return_value = mock_vue
+
+        # Act
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Assert — only 1 device, not 2, but channels merged from both entries
+        self.assertEqual(collector._device_count, 1)
+        self.assertEqual(collector._circuit_count, 19)  # 1 mains + 18 CT channels
+
+
+# ---------------------------------------------------------------------------
+# T016: Vue poll interval from settings table tests
+# ---------------------------------------------------------------------------
+
+class TestVuePollInterval(unittest.TestCase):
+    """T016: Vue poll interval reading from settings table tests."""
+
+    def test_default_interval_is_1_second(self):
+        # Assert
+        self.assertEqual(exporter.DEFAULT_VUE_POLL_INTERVAL, 1)
+
+    @patch("exporter._read_vue_poll_interval_from_db", return_value=5)
+    @patch("exporter.PyEmVue")
+    def test_vue_poll_loop_reads_interval(self, mock_pyemvue_cls, mock_read_interval):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Simulate one iteration of vue_poll_loop
+        collector._poll_interval = mock_read_interval.return_value
+
+        # Assert
+        self.assertEqual(collector._poll_interval, 5)
+
+
+# ---------------------------------------------------------------------------
+# T017: Rate limit fallback tests
+# ---------------------------------------------------------------------------
+
+class TestVueRateLimitFallback(unittest.TestCase):
+    """T017: Rate limit fallback (1S → 1MIN) tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_degrades_to_1min_on_rate_limit(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # All channels return None (rate limited)
+        for ch in mock_vue.get_device_list_usage.return_value[12345].channels.values():
+            ch.usage = None
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._had_successful_poll = True  # had data before → this is rate limiting, not offline
+
+        # Act
+        collector.poll()
+
+        # Assert — scale degraded
+        self.assertEqual(collector._current_scale, "1MIN")
+
+    @patch("exporter.PyEmVue")
+    def test_recovers_to_1s_after_successful_polls(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._current_scale = "1MIN"
+        collector._recovery_count = collector.RECOVERY_THRESHOLD - 1
+
+        # Act
+        collector.poll()
+
+        # Assert — recovered to 1S
+        self.assertEqual(collector._current_scale, "1S")
+
+    @patch("exporter.PyEmVue")
+    def test_kwh_conversion_adjusts_for_1min_scale(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._current_scale = "1MIN"
+        mock_pg = MagicMock()
+        collector._pg_writer = mock_pg
+
+        # Act
+        collector.poll()
+
+        # Assert — conversion uses 60,000 not 3,600,000
+        write_call = mock_pg.write_readings.call_args[0][0]
+        main_reading = [r for r in write_call if r[1] == "1,2,3"][0]
+        self.assertAlmostEqual(main_reading[3], 0.002347 * 60_000, places=0)
+
+
+# ---------------------------------------------------------------------------
+# T018: Vue debug page status section tests
+# ---------------------------------------------------------------------------
+
+class TestVueDebugPage(unittest.TestCase):
+    """T018: Vue debug page status section tests."""
+
+    @patch("exporter.PyEmVue")
+    def test_get_vue_status(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+
+        # Act
+        status = collector.get_status()
+
+        # Assert
+        self.assertIn("device_count", status)
+        self.assertIn("circuit_count", status)
+        self.assertIn("last_poll", status)
+        self.assertIn("current_scale", status)
+        self.assertEqual(status["device_count"], 1)
+        self.assertEqual(status["circuit_count"], 2)
+
+    @patch("exporter.PyEmVue")
+    def test_render_vue_debug_page(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert
+        self.assertIn("Emporia Vue", html)
+        self.assertIn("1", html)  # device count
+        self.assertIn("2", html)  # circuit count
+        self.assertIn("1S", html)  # scale
+
+
+# ---------------------------------------------------------------------------
+# T027: Downsampling job tests
+# ---------------------------------------------------------------------------
+
+class TestDownsampling(unittest.TestCase):
+    """T027: Tests for downsample_vue_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_executes_insert_select(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        exporter.downsample_vue_readings(writer)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("INSERT INTO vue_readings_1min", sql)
+        self.assertIn("vue_readings", sql)
+        self.assertIn("avg", sql.lower())
+        self.assertIn("count", sql.lower())
+        self.assertIn("date_trunc", sql.lower())
+        self.assertIn("ON CONFLICT", sql)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_uses_last_complete_hour(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act
+        exporter.downsample_vue_readings(writer)
+
+        # Assert — SQL references hour boundary
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("date_trunc('hour'", sql.lower())
+
+    @patch.object(exporter, "psycopg2")
+    def test_downsample_handles_empty_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+
+        # Act — should not raise even with no data
+        exporter.downsample_vue_readings(writer)
+
+        # Assert — still executes (INSERT does nothing when SELECT returns empty)
+        mock_cursor.execute.assert_called_once()
+        mock_conn.commit.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# T028: Raw data retention cleanup tests
+# ---------------------------------------------------------------------------
+
+class TestRetentionCleanup(unittest.TestCase):
+    """T028: Tests for cleanup_old_vue_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_deletes_old_readings(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        mock_cursor.rowcount = 100
+
+        # Act
+        deleted = exporter.cleanup_old_vue_readings(writer)
+
+        # Assert
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("DELETE FROM vue_readings", sql)
+        self.assertIn("7 days", sql.lower().replace("'", ""))
+        self.assertNotIn("vue_readings_1min", sql)
+        mock_conn.commit.assert_called()
+        self.assertEqual(deleted, 100)
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_does_not_touch_1min_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_cursor.rowcount = 0
+
+        # Act
+        exporter.cleanup_old_vue_readings(writer)
+
+        # Assert — only one DELETE, and it's not against vue_readings_1min
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertNotIn("vue_readings_1min", sql)
+
+    @patch.object(exporter, "psycopg2")
+    def test_cleanup_returns_zero_when_nothing_to_delete(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_cursor.rowcount = 0
+
+        # Act
+        deleted = exporter.cleanup_old_vue_readings(writer)
+
+        # Assert
+        self.assertEqual(deleted, 0)
+
+
+# ---------------------------------------------------------------------------
+# Downsampling loop test
+# ---------------------------------------------------------------------------
+
+class TestDownsamplingLoop(unittest.TestCase):
+    """Test for downsampling_loop thread function."""
+
+    @patch.object(exporter, "cleanup_old_vue_readings", return_value=0)
+    @patch.object(exporter, "downsample_vue_readings")
+    def test_loop_calls_both_functions(self, mock_downsample, mock_cleanup):
+        # Arrange
+        mock_writer = MagicMock()
+        call_count = {"n": 0}
+
+        def side_effect(w):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise KeyboardInterrupt  # break out of loop
+
+        mock_downsample.side_effect = side_effect
+
+        # Act
+        try:
+            exporter.downsampling_loop(mock_writer, interval_seconds=0)
+        except KeyboardInterrupt:
+            pass
+
+        # Assert
+        self.assertGreaterEqual(mock_downsample.call_count, 1)
+        self.assertGreaterEqual(mock_cleanup.call_count, 1)
+
+
+# ---------------------------------------------------------------------------
+# T060: /vue debug page endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestVueDebugPageEndpoint(unittest.TestCase):
+    """T060: Tests for the /vue debug page showing per-circuit data."""
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_device_sections(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 8450.5,
+            (12345, "1"): 1200.0,
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — page contains device section
+        self.assertIn("Main Panel", html)
+        self.assertIn("12345", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_per_circuit_readings(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 8450.5,
+            (12345, "1"): 1200.0,
+        }
+        collector._channel_names = {
+            (12345, "1,2,3"): "Main",
+            (12345, "1"): "Kitchen",
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — per-circuit rows with name and watts
+        self.assertIn("Kitchen", html)
+        self.assertIn("1.2 kW", html)  # 1200W formatted as kW
+        self.assertIn("8.5 kW", html)  # 8450W formatted as kW
+        self.assertIn("1,2,3", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_zero_watt_circuits(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        collector._last_readings = {
+            (12345, "1,2,3"): 0.0,
+        }
+        collector._channel_names = {
+            (12345, "1,2,3"): "Main",
+        }
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — 0W circuit still shown
+        self.assertIn("Main", html)
+        self.assertIn("0", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_has_nav_link_to_status(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — navigation link to EP Cube page
+        self.assertIn("/status", html)
+
+    @patch("exporter.PyEmVue")
+    def test_vue_page_shows_local_time_timestamps(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._last_poll = time.time()
+        vue_status = collector.get_status()
+
+        # Act
+        html = exporter._render_vue_debug_page(vue_status)
+
+        # Assert — uses JS client-side time conversion
+        self.assertIn("toLocaleTimeString", html)
+
+    def test_vue_page_not_configured(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("not configured", html.lower())
+        self.assertIn("/status", html)
+
+
+# ---------------------------------------------------------------------------
+# T061: EP Cube page navigation link tests
+# ---------------------------------------------------------------------------
+
+class TestEpCubePageNavLink(unittest.TestCase):
+    """T061: Tests that EP Cube /status page has nav link to /vue."""
+
+    def test_status_page_has_vue_link(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert
+        self.assertIn("/vue", html)
+
+    def test_status_page_does_not_contain_vue_circuit_data(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert — no Vue circuit data (nav link is OK, circuit tables are not)
+        self.assertNotIn("vue_readings", html)
+        self.assertNotIn("Vue:   Device", html)
+
+
+# ---------------------------------------------------------------------------
+# T062: /vue page when not configured tests
+# ---------------------------------------------------------------------------
+
+class TestVuePageNotConfigured(unittest.TestCase):
+    """T062: Tests for /vue when vue_collector is None."""
+
+    def test_render_shows_not_configured_message(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("not configured", html.lower())
+
+    def test_render_has_nav_back_to_status(self):
+        # Act
+        html = exporter._render_vue_debug_page(None)
+
+        # Assert
+        self.assertIn("/status", html)
 
 
 if __name__ == "__main__":
