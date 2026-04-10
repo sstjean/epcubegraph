@@ -51,11 +51,16 @@ public class VueStoreAutoResolutionTests
         Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), result);
     }
 
-    [Fact]
-    public void ResolveDisplayName_OverrideTakesPriority()
+    [Theory]
+    [InlineData("1x")]
+    [InlineData("abc")]
+    [InlineData("")]
+    [InlineData("s")]
+    [InlineData("-1s")]
+    [InlineData("0m")]
+    public void ParseStep_ThrowsOnInvalidInput(string step)
     {
-        // The static method is private, so we test via the public API behavior
-        // This test verifies the concept — integration tests verify end-to-end
-        Assert.True(true);
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => PostgresVueStore.ParseStep(step));
     }
 }

@@ -493,13 +493,10 @@ public class PostgresVueStoreTests : IClassFixture<PostgresFixture>, IAsyncLifet
     }
 
     [Fact]
-    public void ParseStep_DefaultsTo1MinForUnknownSuffix()
+    public void ParseStep_ThrowsOnInvalidInput()
     {
-        // Act
-        var result = PostgresVueStore.ParseStep("1x");
-
-        // Assert
-        Assert.Equal(TimeSpan.FromMinutes(1), result);
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => PostgresVueStore.ParseStep("1x"));
     }
 
     // ── Display name resolution: device with no name falls back to "Device {gid}" ──

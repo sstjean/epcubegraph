@@ -58,6 +58,11 @@ public static class VueEndpoints
         [FromQuery] string? step, [FromQuery] string? channels,
         IVueStore store, CancellationToken ct)
     {
+        if (start >= end)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", "'start' must be before 'end'"));
+        var stepErr = Validate.VueStep(step, "step");
+        if (stepErr is not null)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", stepErr));
         var result = await store.GetRangeReadingsAsync(deviceGid, start, end, step, channels, ct);
         return result is null
             ? Results.NotFound(new ErrorResponse("error", "not_found", $"No readings for device {deviceGid} in range"))
@@ -81,6 +86,11 @@ public static class VueEndpoints
         [FromQuery] string? step,
         IVueStore store, CancellationToken ct)
     {
+        if (start >= end)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", "'start' must be before 'end'"));
+        var stepErr = Validate.VueStep(step, "step");
+        if (stepErr is not null)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", stepErr));
         var result = await store.GetPanelTotalRangeAsync(deviceGid, start, end, step, ct);
         return result is null
             ? Results.NotFound(new ErrorResponse("error", "not_found", $"No mains data for panel {deviceGid} in range"))
@@ -100,6 +110,11 @@ public static class VueEndpoints
         [FromQuery] string? step,
         IVueStore store, CancellationToken ct)
     {
+        if (start >= end)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", "'start' must be before 'end'"));
+        var stepErr = Validate.VueStep(step, "step");
+        if (stepErr is not null)
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", stepErr));
         var result = await store.GetHomeTotalRangeAsync(start, end, step, ct);
         return Results.Ok(result);
     }

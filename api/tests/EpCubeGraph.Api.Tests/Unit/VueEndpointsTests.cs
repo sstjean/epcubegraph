@@ -277,4 +277,46 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
         Assert.Equal("5s", doc.RootElement.GetProperty("step").GetString());
         Assert.Equal(1, doc.RootElement.GetProperty("total").GetArrayLength());
     }
+
+    // ── Validation ──
+
+    [Fact]
+    public async Task GetRangeReadings_Returns400_WhenStartAfterEnd()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetRangeReadings_Returns400_WhenInvalidStep()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=abc");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetPanelTotalRange_Returns400_WhenStartAfterEnd()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/panels/12345/total/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetHomeTotalRange_Returns400_WhenInvalidStep()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/home/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=-1s");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

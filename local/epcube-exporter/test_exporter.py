@@ -1528,8 +1528,10 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
 
             # Assert
             mock_epc.assert_called_once()
-            # VueCollector should not be instantiated
-            self.assertFalse(hasattr(exporter, '_vue_collector_started'))
+            # VueCollector should not be instantiated when no Vue creds
+            mock_thread_calls = [str(c) for c in mock_thread.call_args_list]
+            vue_threads = [c for c in mock_thread_calls if "vue" in c.lower()]
+            self.assertEqual(len(vue_threads), 0, "Vue thread should not start without Vue credentials")
 
     @patch.dict(os.environ, {"EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
     @patch.object(exporter, "psycopg2", None)
@@ -2166,6 +2168,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
             ch.usage = None
         mock_pyemvue_cls.return_value = mock_vue
         collector = exporter.VueCollector("user@test.com", "password")
+        collector._had_successful_poll = True  # had data before → this is rate limiting, not offline
 
         # Act
         collector.poll()

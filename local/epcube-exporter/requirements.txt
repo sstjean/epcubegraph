@@ -2,13 +2,13 @@
 # Used by Dockerfile: pip install -r requirements.txt
 
 # EP Cube cloud API (AJ-Captcha puzzle solver)
-opencv-python-headless
-pycryptodome
-numpy
-PyJWT[crypto]
+opencv-python-headless==4.13.0.92
+pycryptodome==3.23.0
+numpy==2.4.4
+PyJWT[crypto]==2.12.1
 
 # PostgreSQL
-psycopg2-binary
+psycopg2-binary==2.9.11
 
 # Emporia Vue cloud API
-pyemvue
+pyemvue==0.18.9

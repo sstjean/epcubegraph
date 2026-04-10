@@ -76,10 +76,13 @@ public class PostgresVueStore : IVueStore
 
     public static TimeSpan ParseStep(string step)
     {
-        if (step.EndsWith("s")) return TimeSpan.FromSeconds(int.Parse(step[..^1]));
-        if (step.EndsWith("m")) return TimeSpan.FromMinutes(int.Parse(step[..^1]));
-        if (step.EndsWith("h")) return TimeSpan.FromHours(int.Parse(step[..^1]));
-        return TimeSpan.FromMinutes(1);
+        if (step.Length >= 2 && step.EndsWith("s") && int.TryParse(step[..^1], out var s) && s > 0)
+            return TimeSpan.FromSeconds(s);
+        if (step.Length >= 2 && step.EndsWith("m") && int.TryParse(step[..^1], out var m) && m > 0)
+            return TimeSpan.FromMinutes(m);
+        if (step.Length >= 2 && step.EndsWith("h") && int.TryParse(step[..^1], out var h) && h > 0)
+            return TimeSpan.FromHours(h);
+        throw new ArgumentException($"Invalid step format '{step}'. Use <number>s, <number>m, or <number>h.");
     }
 
     // ── Devices (US3 — skeleton) ──
@@ -193,6 +196,7 @@ public class PostgresVueStore : IVueStore
     {
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
+        await EnsureSettingsTablesAsync(conn, ct);
 
         const string sql = """
             SELECT DISTINCT ON (vr.channel_num)
@@ -252,31 +256,82 @@ public class PostgresVueStore : IVueStore
 
         await using var conn = new NpgsqlConnection(_connectionString);
         await conn.OpenAsync(ct);
+        await EnsureSettingsTablesAsync(conn, ct);
 
-        // Determine source table based on data age
+        // Seamlessly join raw and 1-min tables across the 7-day retention boundary
         var sevenDaysAgo = DateTimeOffset.UtcNow.AddDays(-7);
-        var useRawTable = start >= sevenDaysAgo;
-        var table = useRawTable ? "vue_readings" : "vue_readings_1min";
 
-        var sql = $"""
-            SELECT vr.channel_num,
-                   date_trunc('second', date_bin(@interval, vr.timestamp, @start)) AS bucket,
-                   avg(vr.value) AS avg_value,
-                   vc.name AS channel_name,
-                   dno.display_name AS channel_override
-            FROM {table} vr
-            LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
-            LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
-            WHERE vr.device_gid = @gid AND vr.timestamp >= @start AND vr.timestamp < @end
-            GROUP BY vr.channel_num, bucket, vc.name, dno.display_name
-            ORDER BY vr.channel_num, bucket
-            """;
+        string sql;
+        if (end <= sevenDaysAgo)
+        {
+            // Entire range is older than 7 days — use 1-min table only
+            sql = """
+                SELECT vr.channel_num,
+                       date_trunc('second', date_bin(@interval, vr.timestamp, @start)) AS bucket,
+                       SUM(vr.value * vr.sample_count) / NULLIF(SUM(vr.sample_count), 0) AS avg_value,
+                       vc.name AS channel_name,
+                       dno.display_name AS channel_override
+                FROM vue_readings_1min vr
+                LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
+                LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
+                WHERE vr.device_gid = @gid AND vr.timestamp >= @start AND vr.timestamp < @end
+                GROUP BY vr.channel_num, bucket, vc.name, dno.display_name
+                ORDER BY vr.channel_num, bucket
+                """;
+        }
+        else if (start >= sevenDaysAgo)
+        {
+            // Entire range is within 7 days — use raw table only
+            sql = """
+                SELECT vr.channel_num,
+                       date_trunc('second', date_bin(@interval, vr.timestamp, @start)) AS bucket,
+                       avg(vr.value) AS avg_value,
+                       vc.name AS channel_name,
+                       dno.display_name AS channel_override
+                FROM vue_readings vr
+                LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
+                LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
+                WHERE vr.device_gid = @gid AND vr.timestamp >= @start AND vr.timestamp < @end
+                GROUP BY vr.channel_num, bucket, vc.name, dno.display_name
+                ORDER BY vr.channel_num, bucket
+                """;
+        }
+        else
+        {
+            // Range spans boundary — union both tables
+            sql = """
+                WITH combined AS (
+                    SELECT device_gid, channel_num, timestamp, value
+                    FROM vue_readings_1min
+                    WHERE device_gid = @gid AND timestamp >= @start AND timestamp < @boundary
+                    UNION ALL
+                    SELECT device_gid, channel_num, timestamp, value
+                    FROM vue_readings
+                    WHERE device_gid = @gid AND timestamp >= @boundary AND timestamp < @end
+                )
+                SELECT cr.channel_num,
+                       date_trunc('second', date_bin(@interval, cr.timestamp, @start)) AS bucket,
+                       avg(cr.value) AS avg_value,
+                       vc.name AS channel_name,
+                       dno.display_name AS channel_override
+                FROM combined cr
+                LEFT JOIN vue_channels vc ON vc.device_gid = cr.device_gid AND vc.channel_num = cr.channel_num
+                LEFT JOIN display_name_overrides dno ON dno.device_gid = cr.device_gid AND dno.channel_number = cr.channel_num
+                WHERE 1 = 1
+                GROUP BY cr.channel_num, bucket, vc.name, dno.display_name
+                ORDER BY cr.channel_num, bucket
+                """;
+        }
 
         if (!string.IsNullOrEmpty(channels))
         {
-            var channelList = channels.Split(',').Select(c => c.Trim()).ToArray();
-            sql = sql.Replace("WHERE vr.device_gid = @gid",
-                $"WHERE vr.device_gid = @gid AND vr.channel_num = ANY(@channels)");
+            sql = sql.Replace(
+                start >= sevenDaysAgo || end <= sevenDaysAgo
+                    ? "WHERE vr.device_gid = @gid"
+                    : "WHERE 1 = 1",
+                start >= sevenDaysAgo || end <= sevenDaysAgo
+                    ? "WHERE vr.device_gid = @gid AND vr.channel_num = ANY(@channels)"
+                    : "WHERE cr.channel_num = ANY(@channels)");
         }
 
         await using var cmd = new NpgsqlCommand(sql, conn);
@@ -284,6 +339,10 @@ public class PostgresVueStore : IVueStore
         cmd.Parameters.AddWithValue("start", start);
         cmd.Parameters.AddWithValue("end", end);
         cmd.Parameters.AddWithValue("interval", stepInterval);
+        if (start < sevenDaysAgo && end > sevenDaysAgo)
+        {
+            cmd.Parameters.AddWithValue("boundary", sevenDaysAgo);
+        }
         if (!string.IsNullOrEmpty(channels))
         {
             cmd.Parameters.AddWithValue("channels", channels.Split(',').Select(c => c.Trim()).ToArray());
@@ -366,7 +425,7 @@ public class PostgresVueStore : IVueStore
         {
             var childTotal = await GetLatestMainsAsync(conn, childGid, ct);
             var childName = await GetDeviceDisplayNameAsync(conn, childGid, ct);
-            var rawWatts = childTotal ?? 0;
+            var rawWatts = childTotal?.value ?? 0;
             children.Add(new PanelChild(childGid, childName, rawWatts));
             childSum += rawWatts;
         }
@@ -374,24 +433,30 @@ public class PostgresVueStore : IVueStore
         return new PanelTotalResponse(
             DeviceGid: deviceGid,
             DisplayName: displayName,
-            Timestamp: DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-            RawTotalWatts: parentTotal.Value,
-            DeduplicatedTotalWatts: parentTotal.Value - childSum,
+            Timestamp: parentTotal.Value.timestamp,
+            RawTotalWatts: parentTotal.Value.value,
+            DeduplicatedTotalWatts: parentTotal.Value.value - childSum,
             Children: children
         );
     }
 
-    private async Task<double?> GetLatestMainsAsync(NpgsqlConnection conn, long deviceGid, CancellationToken ct)
+    private async Task<(double value, long timestamp)?> GetLatestMainsAsync(NpgsqlConnection conn, long deviceGid, CancellationToken ct)
     {
         const string sql = """
-            SELECT value FROM vue_readings
+            SELECT value, EXTRACT(EPOCH FROM timestamp)::bigint AS ts FROM vue_readings
             WHERE device_gid = @gid AND channel_num = '1,2,3'
             ORDER BY timestamp DESC LIMIT 1
             """;
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("gid", deviceGid);
-        var result = await cmd.ExecuteScalarAsync(ct);
-        return result is double d ? d : (result is not null ? Convert.ToDouble(result) : null);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct))
+        {
+            var value = reader.GetDouble(0);
+            var ts = reader.GetInt64(1);
+            return (value, ts);
+        }
+        return null;
     }
 
     private async Task<string> GetDeviceDisplayNameAsync(NpgsqlConnection conn, long deviceGid, CancellationToken ct)
@@ -471,23 +536,63 @@ public class PostgresVueStore : IVueStore
         CancellationToken ct)
     {
         var sevenDaysAgo = DateTimeOffset.UtcNow.AddDays(-7);
-        var table = start >= sevenDaysAgo ? "vue_readings" : "vue_readings_1min";
 
-        var sql = $"""
-            SELECT date_trunc('second', date_bin(@interval, timestamp, @start)) AS bucket,
-                   avg(value) AS avg_value
-            FROM {table}
-            WHERE device_gid = @gid AND channel_num = '1,2,3'
-              AND timestamp >= @start AND timestamp < @end
-            GROUP BY bucket
-            ORDER BY bucket
-            """;
+        string sql;
+        if (end <= sevenDaysAgo)
+        {
+            sql = """
+                SELECT date_trunc('second', date_bin(@interval, timestamp, @start)) AS bucket,
+                       SUM(value * sample_count) / NULLIF(SUM(sample_count), 0) AS avg_value
+                FROM vue_readings_1min
+                WHERE device_gid = @gid AND channel_num = '1,2,3'
+                  AND timestamp >= @start AND timestamp < @end
+                GROUP BY bucket
+                ORDER BY bucket
+                """;
+        }
+        else if (start >= sevenDaysAgo)
+        {
+            sql = """
+                SELECT date_trunc('second', date_bin(@interval, timestamp, @start)) AS bucket,
+                       avg(value) AS avg_value
+                FROM vue_readings
+                WHERE device_gid = @gid AND channel_num = '1,2,3'
+                  AND timestamp >= @start AND timestamp < @end
+                GROUP BY bucket
+                ORDER BY bucket
+                """;
+        }
+        else
+        {
+            sql = """
+                WITH source_data AS (
+                    SELECT timestamp, value
+                    FROM vue_readings_1min
+                    WHERE device_gid = @gid AND channel_num = '1,2,3'
+                      AND timestamp >= @start AND timestamp < @boundary
+                    UNION ALL
+                    SELECT timestamp, value
+                    FROM vue_readings
+                    WHERE device_gid = @gid AND channel_num = '1,2,3'
+                      AND timestamp >= @boundary AND timestamp < @end
+                )
+                SELECT date_trunc('second', date_bin(@interval, timestamp, @start)) AS bucket,
+                       avg(value) AS avg_value
+                FROM source_data
+                GROUP BY bucket
+                ORDER BY bucket
+                """;
+        }
 
         await using var cmd = new NpgsqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("gid", deviceGid);
         cmd.Parameters.AddWithValue("start", start);
         cmd.Parameters.AddWithValue("end", end);
         cmd.Parameters.AddWithValue("interval", stepInterval);
+        if (start < sevenDaysAgo && end > sevenDaysAgo)
+        {
+            cmd.Parameters.AddWithValue("boundary", sevenDaysAgo);
+        }
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         var points = new List<TimeSeriesPoint>();
@@ -552,7 +657,8 @@ public class PostgresVueStore : IVueStore
         double totalWatts = 0;
         foreach (var (gid, displayName) in panelRows)
         {
-            var mains = await GetLatestMainsAsync(conn, gid, ct) ?? 0;
+            var mainsResult = await GetLatestMainsAsync(conn, gid, ct);
+            var mains = mainsResult?.value ?? 0;
             panels.Add(new PanelChild(gid, displayName, mains));
             totalWatts += mains;
         }

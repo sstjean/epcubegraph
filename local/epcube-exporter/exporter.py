@@ -1477,6 +1477,28 @@ def _read_vue_poll_interval_from_db():
     return DEFAULT_VUE_POLL_INTERVAL
 
 
+def _read_vue_device_refresh_interval_from_db():
+    """Read vue_device_refresh_interval_seconds from settings table. Returns default on any error."""
+    if not POSTGRES_DSN:
+        return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+    try:
+        import psycopg2 as _pg
+        conn = _pg.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = 'vue_device_refresh_interval_seconds'")
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if 60 <= val <= 86400:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read Vue device refresh interval from DB, using default %ds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+
+
 class VueCollector:
     """Collects power data from Emporia Vue devices via PyEmVue."""
 
@@ -1498,6 +1520,7 @@ class VueCollector:
         self._devices_info = []  # list of device status dicts for debug page
         self._current_scale = "1S"
         self._recovery_count = 0
+        self._had_successful_poll = False
         self._poll_interval = DEFAULT_VUE_POLL_INTERVAL
         self._next_poll_at = 0.0
         self._last_device_refresh = 0.0
@@ -1597,7 +1620,7 @@ class VueCollector:
                 return
 
         # Periodic device/channel refresh
-        refresh_interval = DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+        refresh_interval = _read_vue_device_refresh_interval_from_db()
         if time.time() - self._last_device_refresh > refresh_interval:
             self._discover_devices()
 
@@ -1650,8 +1673,8 @@ class VueCollector:
             if readings:
                 self._consecutive_errors = 0
 
-        # Rate limit handling: if all channels returned None, degrade scale
-        if all_none and self._device_gids:
+        # Rate limit handling: only degrade if we previously had data (not just all devices offline)
+        if all_none and self._device_gids and self._had_successful_poll:
             if self._current_scale == "1S":
                 self._current_scale = "1MIN"
                 self._recovery_count = 0
@@ -1662,6 +1685,9 @@ class VueCollector:
                 self._current_scale = "1S"
                 self._recovery_count = 0
                 log.info("Vue: recovered — returning to 1S scale")
+
+        if not all_none:
+            self._had_successful_poll = True
 
     def get_status(self):
         """Return current Vue collector status for the debug page."""
