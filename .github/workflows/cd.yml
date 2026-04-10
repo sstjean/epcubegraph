@@ -98,7 +98,7 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -198,7 +198,7 @@ jobs:
       # Phase 2: Build and push container images
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
       - name: Azure Re-Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -235,7 +235,7 @@ jobs:
       # Phase 3: Deploy container apps with built images
       # Re-authenticate — OIDC token may have expired during Docker builds
       - name: Azure Re-Login for Phase 3 (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -283,7 +283,7 @@ jobs:
           echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -320,7 +320,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -496,7 +496,7 @@ jobs:
           echo "✓ Deploying commit: $SHA"
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -595,7 +595,7 @@ jobs:
 
       # Re-authenticate — OIDC token may have expired during long infrastructure apply
       - name: Azure Re-Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -629,7 +629,7 @@ jobs:
 
       # Re-authenticate — OIDC token may have expired during Docker builds
       - name: Azure Re-Login for Container Apps (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -677,7 +677,7 @@ jobs:
           echo "token=${TOKEN}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -714,7 +714,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -837,230 +837,6 @@ jobs:
             echo "Dashboard not deployed (no SWA hostname) — skipping smoke test"
           fi
 
-  # ── Cleanup the merged branch's environment after successful prod deploy ──
-  cleanup-branch:
-    needs: validate-prod
-    runs-on: self-hosted
-    if: github.event_name == 'workflow_run'
-    environment: staging
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 2
-
-      - name: Determine merged branch environment
-        id: branch-env
-        run: |
-          # Extract branch name from the merge commit message
-          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
-          echo "Merge commit message: $COMMIT_MSG"
-
-          # Pattern: "Merge pull request #N from owner/branch-name"
-          BRANCH=$(echo "$COMMIT_MSG" | sed -n 's|.*Merge pull request #[0-9]* from [^/]*/||p')
-
-          # Fallback: "Merge branch 'branch-name'"
-          if [ -z "$BRANCH" ]; then
-            BRANCH=$(echo "$COMMIT_MSG" | sed -n "s/.*Merge branch '\([^']*\)'.*/\1/p")
-          fi
-
-          if [ -z "$BRANCH" ] || [ "$BRANCH" = "main" ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "No feature branch to clean up (commit: $COMMIT_MSG)"
-            exit 0
-          fi
-
-          echo "Merged branch: $BRANCH"
-
-          # Sanitize identically to check-ci job
-          SANITIZED=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-8 | sed 's/-$//')
-          [[ "$SANITIZED" =~ ^[0-9] ]] && SANITIZED="b${SANITIZED}" && SANITIZED=$(echo "$SANITIZED" | cut -c1-8)
-          ENV_NAME="epcubegraph-${SANITIZED}"
-          STATE_KEY="${ENV_NAME}.tfstate"
-
-          echo "env_name=${ENV_NAME}" >> "$GITHUB_OUTPUT"
-          echo "state_key=${STATE_KEY}" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✓ Branch '$BRANCH' → env '${ENV_NAME}' (state: ${STATE_KEY})"
-
-      - name: Azure Login (OIDC)
-        if: steps.branch-env.outputs.skip != 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Check if state file exists
-        if: steps.branch-env.outputs.skip != 'true'
-        id: state-check
-        run: |
-          EXISTS=$(az storage blob exists \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --container-name tfstate \
-            --name "${{ steps.branch-env.outputs.state_key }}" \
-            --auth-mode login \
-            --query exists --output tsv 2>/dev/null) || EXISTS="false"
-          echo "exists=${EXISTS}" >> "$GITHUB_OUTPUT"
-          if [ "$EXISTS" = "true" ]; then
-            echo "✓ State file found — will destroy environment"
-          else
-            echo "No state file for ${{ steps.branch-env.outputs.env_name }} — nothing to clean up"
-          fi
-
-      - name: Setup Terraform
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_wrapper: false
-
-      # Init both modules — main first (destroy order), then bootstrap
-      - name: Terraform Init
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        working-directory: infra
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          terraform init -input=false \
-            -backend-config="resource_group_name=tfstate-rg" \
-            -backend-config="storage_account_name=tfstateepcubegraph" \
-            -backend-config="container_name=tfstate" \
-            -backend-config="key=${{ steps.branch-env.outputs.state_key }}" \
-            -backend-config="use_oidc=true" \
-            -backend-config="use_azuread_auth=true"
-
-      - name: Bootstrap Init
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        working-directory: infra/bootstrap
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-        run: |
-          terraform init -input=false \
-            -backend-config="resource_group_name=tfstate-rg" \
-            -backend-config="storage_account_name=tfstateepcubegraph" \
-            -backend-config="container_name=tfstate" \
-            -backend-config="key=${{ steps.branch-env.outputs.state_key }}-bootstrap" \
-            -backend-config="use_oidc=true" \
-            -backend-config="use_azuread_auth=true"
-
-      - name: Azure Re-Login (OIDC)
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Terraform Destroy
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        id: branch-destroy
-        continue-on-error: true
-        working-directory: infra
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
-          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
-          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
-          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
-        run: terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
-
-      # Re-authenticate — OIDC token may have expired during long destroy
-      - name: Azure Re-Login for Retry (OIDC)
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Terraform Destroy — Retry
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true' && steps.branch-destroy.outcome == 'failure'
-        working-directory: infra
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
-          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
-          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
-          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
-        run: |
-          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
-          terraform refresh -input=false || true
-          terraform destroy -auto-approve -input=false -var-file=custom-domains-staging.tfvars
-          echo "✓ Environment ${{ steps.branch-env.outputs.env_name }} destroyed"
-
-      # Re-authenticate — OIDC token may have expired during long destroy sequence
-      - name: Azure Re-Login for Cleanup (OIDC)
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Delete state blob
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          az storage blob delete \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --container-name tfstate \
-            --name "${{ steps.branch-env.outputs.state_key }}" \
-            --auth-mode login \
-            --output none 2>/dev/null || true
-          echo "✓ State file ${{ steps.branch-env.outputs.state_key }} deleted"
-
-      # Bootstrap destroy — remove RG, KV, runner PE (reverse order)
-      - name: Bootstrap Destroy
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        working-directory: infra/bootstrap
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          TF_VAR_environment_name: ${{ steps.branch-env.outputs.env_name }}
-        run: terraform destroy -auto-approve -input=false
-
-      - name: Delete bootstrap state blob
-        if: steps.branch-env.outputs.skip != 'true' && steps.state-check.outputs.exists == 'true'
-        run: |
-          az storage blob delete \
-            --account-name "$TFSTATE_STORAGE_ACCOUNT" \
-            --container-name tfstate \
-            --name "${{ steps.branch-env.outputs.state_key }}-bootstrap" \
-            --auth-mode login \
-            --output none 2>/dev/null
-          echo "✓ Bootstrap state file deleted"
-
-      # Safety net: delete orphaned DNS records from the shared zone.
-      # Terraform should handle this during destroy, but if destroy fails
-      # or state is incomplete, these records survive and block future deploys.
-      - name: Clean orphaned DNS records
-        if: steps.branch-env.outputs.skip != 'true'
-        run: |
-          ZONE="devsbx.xyz"
-          ZONE_RG="devsbx-shared"
-          for name in epcube-staging epcube-api-staging epcube-debug-staging; do
-            if az network dns record-set cname show --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" -o none 2>/dev/null; then
-              az network dns record-set cname delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
-              echo "✓ Deleted CNAME $name"
-            fi
-          done
-          for name in asuid.epcube-api-staging asuid.epcube-debug-staging; do
-            if az network dns record-set txt show --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" -o none 2>/dev/null; then
-              az network dns record-set txt delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
-              echo "✓ Deleted TXT $name"
-            fi
-          done
-
   # Tear down: only on manual request — runs directly without requiring deploy
   destroy:
     runs-on: self-hosted
@@ -1095,7 +871,7 @@ jobs:
           fi
 
       - name: Azure Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -1138,7 +914,7 @@ jobs:
 
       # Re-authenticate — OIDC token may have expired during firewall propagation wait
       - name: Azure Re-Login (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -1162,7 +938,7 @@ jobs:
       # Re-authenticate — OIDC token may have expired during long destroy
       - name: Azure Re-Login for Retry (OIDC)
         if: steps.destroy.outcome == 'failure'
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -1187,7 +963,7 @@ jobs:
 
       # Re-authenticate — OIDC token may have expired during long destroy sequence
       - name: Azure Re-Login for Cleanup (OIDC)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
