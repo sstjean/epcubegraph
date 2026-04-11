@@ -13,12 +13,12 @@ As a homeowner viewing the Current Readings page in Flow mode, I want to see whi
 
 **Why this priority**: This is the entire feature — showing circuit-level consumption data inline with the existing energy flow visualization. Without this, Vue circuit data has no visibility on the main dashboard view.
 
-**Independent Test**: Load the dashboard Current Readings page in Flow mode. The two areas flanking the Home node (bottom-left and bottom-right of each EP Cube card) show a list of Vue circuits that are currently drawing power. Each circuit shows its name and watt value. Circuits with 0 watts or less are not shown. When multiple circuits are active, they are ordered ascending by watts (lowest first).
+**Independent Test**: Load the dashboard Current Readings page in Flow mode. The two areas flanking the Home node (bottom-left and bottom-right of each EP Cube card) show a list of Vue circuits that are currently drawing power. Each circuit shows its name and watt value. Circuits with 0 watts or less are not shown. When multiple circuits are active, they are ordered descending by watts (highest first).
 
 **Acceptance Scenarios**:
 
 1. **Given** Vue devices are reporting circuit data and the dashboard is in Flow mode, **When** the Current Readings page loads, **Then** the empty areas at the bottom-left and bottom-right of each EP Cube card display a list of active Vue circuits.
-2. **Given** multiple circuits have >0 watts, **When** the circuit list renders, **Then** circuits are ordered ascending by watt value (lowest consumption first). Circuits with equal watt values are ordered alphabetically by display name.
+2. **Given** multiple circuits have >0 watts, **When** the circuit list renders, **Then** circuits are ordered descending by watt value (highest consumption first). Circuits with equal watt values are ordered alphabetically by display name.
 3. **Given** a circuit is consuming power, **When** its entry appears in the list, **Then** it shows the circuit's display name (alias if configured, otherwise the default name from the Emporia app) and its current power draw formatted as watts or kW (using the existing formatting convention: e.g., "850 W" or "1.2 kW").
 4. **Given** a circuit has 0 watts or negative watts, **When** the circuit list renders, **Then** that circuit is not shown in the list.
 5. **Given** the dashboard auto-refreshes data, **When** new circuit readings arrive, **Then** the circuit list updates without manual page reload — circuits may appear, disappear, or reorder as consumption changes.
@@ -64,7 +64,7 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 ### Edge Cases
 
 - What happens when a Vue device goes offline mid-session? On the flow card, circuits from that device disappear from the active list. On the Circuits page, the panel and all circuits remain in their fixed positions but show stale values (last known reading). No error shown to the user.
-- What happens when there are many active circuits (e.g., 30+)? In the flow card: show all active circuits, letting the card grow, since the typical active count is small. On the Circuits page: all circuits always appear in their fixed positions — the page scrolls naturally.
+- What happens when there are many active circuits (e.g., 30+)? In the flow card: show a maximum of 30 circuits (15 per column). Circuits beyond the cap are truncated (highest-watt circuits shown first). On the Circuits page: all circuits always appear in their fixed positions — the page scrolls naturally.
 - What happens when the display name override is set for a circuit? The overridden name is shown instead of the Emporia app name (both in flow cards and on the Circuits page).
 - What happens when two circuits have the same watt value? In the flow card (sorted by watts): they appear adjacent, secondary sort alphabetical by name. On the Circuits page: irrelevant — circuits are in fixed positions by circuit number.
 - What happens when a new panel is added to the hierarchy? The Circuits page picks it up on the next data refresh — no configuration needed in the dashboard.
@@ -77,7 +77,7 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 - **FR-001**: The dashboard MUST display active Vue circuits (power > 0 watts) in two columns flanking the Home node (left and right sides) of each EP Cube flow diagram card on the Current Readings Flow view. Each EP Cube card shows only circuits from Vue panels mapped to that EP Cube device via the `vue_device_mapping` setting.
 - **FR-002**: Each circuit entry MUST show the circuit's display name and its current power reading. The display name resolves from: display name override (if configured) → Emporia app channel name → channel number.
 - **FR-003**: Power values MUST be formatted using the existing `formatWatts()` utility function (W for values under 1000, kW for values at or above 1000). Daily energy values MUST use the existing `formatKwh()` utility.
-- **FR-004**: When multiple circuits are active, they MUST be ordered ascending by watt value (lowest consumption first). Circuits with equal watt values MUST be ordered alphabetically by display name.
+- **FR-004**: When multiple circuits are active, they MUST be ordered descending by watt value (highest consumption first). Circuits with equal watt values MUST be ordered alphabetically by display name. The flow card MUST display a maximum of 30 circuits (15 per column); circuits beyond the cap are truncated.
 - **FR-005**: Circuits with 0 watts or negative watts MUST NOT appear in the list.
 - **FR-006**: The circuit list MUST update automatically when the dashboard refreshes data, without requiring a manual page reload.
 - **FR-007**: When no circuits are active or Vue data is unavailable, the circuit display areas MUST be hidden — the flow diagram card MUST render identically to its pre-feature appearance.

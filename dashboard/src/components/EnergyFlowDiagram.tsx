@@ -86,13 +86,14 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
   const m = group.metrics;
   const prefix = `flow-${index}`;
 
-  const maxPerSide = 10;
-  const half = Math.ceil(circuits.length / 2);
-  const left = circuits.slice(0, Math.min(half, maxPerSide));
-  const right = circuits.slice(half, half + maxPerSide);
+  const maxPerSide = 15;
+  const capped = circuits.slice(0, maxPerSide * 2);
+  const half = Math.ceil(capped.length / 2);
+  const left = capped.slice(0, half);
+  const right = capped.slice(half);
   const maxCol = Math.max(left.length, right.length);
   const circuitBoxHeight = maxCol * CIRCUIT_ROW_HEIGHT + 8;
-  const height = circuits.length > 0 ? HOME.y - 60 + circuitBoxHeight : BASE_HEIGHT;
+  const height = circuits.length > 0 ? Math.max(BASE_HEIGHT, HOME.y - 60 + circuitBoxHeight) : BASE_HEIGHT;
 
   const solarActive = Math.abs(m.solarWatts) > THRESHOLD;
   const gridActive = Math.abs(m.gridWatts) > THRESHOLD;
@@ -255,7 +256,7 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
               <foreignObject x={0} y={HOME.y - 60} width={HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
                 <div class="circuit-column circuit-column-left">
                   {left.map((c) => (
-                    <div key={c.channel_num} class="circuit-entry">
+                    <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
                       <span class="circuit-name">{c.display_name}</span>
                       <span class="circuit-sep"> - </span>
                       <span class="circuit-watts">{formatWatts(c.value)}</span>
@@ -267,7 +268,7 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
                 <foreignObject x={HOME.x + 40} y={HOME.y - 60} width={WIDTH - HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
                   <div class="circuit-column circuit-column-right">
                     {right.map((c) => (
-                      <div key={c.channel_num} class="circuit-entry">
+                      <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
                         <span class="circuit-name">{c.display_name}</span>
                         <span class="circuit-sep"> - </span>
                         <span class="circuit-watts">{formatWatts(c.value)}</span>
@@ -341,6 +342,7 @@ export function getCircuitsForGroup(
       }
 
       entries.push({
+        device_gid: gid,
         channel_num: ch.channel_num,
         display_name: ch.display_name,
         value,

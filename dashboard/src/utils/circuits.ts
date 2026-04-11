@@ -4,6 +4,7 @@ const MAINS_CHANNEL = '1,2,3';
 const BALANCE_CHANNEL = 'Balance';
 
 export interface CircuitEntry {
+  device_gid: number;
   channel_num: string;
   display_name: string;
   value: number;

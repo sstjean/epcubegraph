@@ -48,6 +48,7 @@ export function CurrentReadings() {
   const [vueDeviceMapping, setVueDeviceMapping] = useState<VueDeviceMapping | undefined>();
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = async () => {
     if (retryingRef.current) return;
@@ -129,15 +130,23 @@ export function CurrentReadings() {
     };
   }, []);
 
-  // Vue data polling (separate from EP Cube polling)
-  const loadVueData = async () => {
+  // Vue readings polling (1s — real-time circuit data)
+  const loadVueReadings = async () => {
     try {
-      const [vueReadings, settingsResp, hierarchyResp] = await Promise.all([
-        fetchVueBulkCurrentReadings(),
+      const vueReadings = await fetchVueBulkCurrentReadings();
+      setVueCurrentReadings(vueReadings);
+    } catch {
+      // Vue errors don't break EP Cube display
+    }
+  };
+
+  // Vue settings/hierarchy polling (60s — rarely changes)
+  const loadVueSettings = async () => {
+    try {
+      const [settingsResp, hierarchyResp] = await Promise.all([
         fetchSettings(),
         fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
       ]);
-      setVueCurrentReadings(vueReadings);
       setHierarchyEntries(hierarchyResp.entries);
 
       const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
@@ -145,19 +154,29 @@ export function CurrentReadings() {
         try {
           setVueDeviceMapping(JSON.parse(mappingSetting.value) as VueDeviceMapping);
         } catch {
-          // Invalid mapping JSON — ignore silently
+          setVueDeviceMapping(undefined);
         }
+      } else {
+        setVueDeviceMapping(undefined);
       }
     } catch {
-      // Vue errors don't break EP Cube display
+      // Settings errors don't break EP Cube display
     }
   };
 
   useEffect(() => {
-    loadVueData();
-    vuePollingRef.current = setInterval(loadVueData, 1000);
+    loadVueReadings();
+    vuePollingRef.current = setInterval(loadVueReadings, 1000);
     return () => {
       if (vuePollingRef.current) clearInterval(vuePollingRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    loadVueSettings();
+    vueSettingsPollingRef.current = setInterval(loadVueSettings, 60000);
+    return () => {
+      if (vueSettingsPollingRef.current) clearInterval(vueSettingsPollingRef.current);
     };
   }, []);
 

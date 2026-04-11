@@ -738,46 +738,62 @@ public class PostgresVueStore : IVueStore
             deviceGids.Add(deviceReader.GetInt64(0));
         await deviceReader.CloseAsync();
 
-        var devices = new List<VueDeviceCurrentReadings>();
-        foreach (var gid in deviceGids)
+        if (deviceGids.Count == 0)
+            return new VueBulkCurrentReadingsResponse(new List<VueDeviceCurrentReadings>());
+
+        const string sql = """
+            SELECT DISTINCT ON (vr.device_gid, vr.channel_num)
+                   vr.device_gid,
+                   vr.channel_num,
+                   EXTRACT(EPOCH FROM vr.timestamp)::bigint AS ts,
+                   vr.value,
+                   vc.name AS channel_name,
+                   dno.display_name AS channel_override
+            FROM vue_readings vr
+            LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
+            LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
+            WHERE vr.device_gid = ANY(@gids)
+            ORDER BY vr.device_gid, vr.channel_num, vr.timestamp DESC
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("gids", deviceGids.ToArray());
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        var deviceChannels = new Dictionary<long, List<VueChannelReading>>();
+        var deviceLatestTimestamps = new Dictionary<long, long>();
+
+        while (await reader.ReadAsync(ct))
         {
-            const string sql = """
-                SELECT DISTINCT ON (vr.channel_num)
-                       vr.channel_num,
-                       EXTRACT(EPOCH FROM vr.timestamp)::bigint AS ts,
-                       vr.value,
-                       vc.name AS channel_name,
-                       dno.display_name AS channel_override
-                FROM vue_readings vr
-                LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
-                LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
-                WHERE vr.device_gid = @gid
-                ORDER BY vr.channel_num, vr.timestamp DESC
-                """;
+            var gid = reader.GetInt64(0);
+            var channelNum = reader.GetString(1);
+            var ts = reader.GetInt64(2);
+            var value = reader.GetDouble(3);
+            var channelName = reader.IsDBNull(4) ? null : reader.GetString(4);
+            var channelOverride = reader.IsDBNull(5) ? null : reader.GetString(5);
 
-            await using var cmd = new NpgsqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("gid", gid);
-            await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-            var channels = new List<VueChannelReading>();
-            long latestTs = 0;
-            while (await reader.ReadAsync(ct))
+            if (!deviceChannels.TryGetValue(gid, out var channels))
             {
-                var channelNum = reader.GetString(0);
-                var ts = reader.GetInt64(1);
-                var value = reader.GetDouble(2);
-                var channelName = reader.IsDBNull(3) ? null : reader.GetString(3);
-                var channelOverride = reader.IsDBNull(4) ? null : reader.GetString(4);
-
-                if (ts > latestTs) latestTs = ts;
-                channels.Add(new VueChannelReading(
-                    ChannelNum: channelNum,
-                    DisplayName: ResolveDisplayName(channelOverride, channelName, channelNum),
-                    Value: value
-                ));
+                channels = new List<VueChannelReading>();
+                deviceChannels[gid] = channels;
             }
 
-            devices.Add(new VueDeviceCurrentReadings(gid, latestTs, channels));
+            if (!deviceLatestTimestamps.TryGetValue(gid, out var latestTs) || ts > latestTs)
+                deviceLatestTimestamps[gid] = ts;
+
+            channels.Add(new VueChannelReading(
+                ChannelNum: channelNum,
+                DisplayName: ResolveDisplayName(channelOverride, channelName, channelNum),
+                Value: value
+            ));
+        }
+
+        var devices = new List<VueDeviceCurrentReadings>(deviceGids.Count);
+        foreach (var gid in deviceGids)
+        {
+            deviceChannels.TryGetValue(gid, out var channels);
+            deviceLatestTimestamps.TryGetValue(gid, out var latestTs);
+            devices.Add(new VueDeviceCurrentReadings(gid, latestTs, channels ?? new List<VueChannelReading>()));
         }
 
         return new VueBulkCurrentReadingsResponse(devices);

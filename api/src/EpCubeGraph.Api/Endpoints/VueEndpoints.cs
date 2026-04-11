@@ -1,5 +1,6 @@
 using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EpCubeGraph.Api.Endpoints;
@@ -139,7 +140,7 @@ public static class VueEndpoints
     {
         if (string.IsNullOrWhiteSpace(date))
             return Results.BadRequest(new ErrorResponse("error", "bad_request", "'date' query parameter is required"));
-        if (!DateOnly.TryParse(date, out var parsedDate))
+        if (!DateOnly.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedDate))
             return Results.BadRequest(new ErrorResponse("error", "bad_request", $"Invalid date format: '{date}'. Use ISO format (e.g. 2026-04-09)"));
         var result = await store.GetDailyReadingsAsync(parsedDate, ct);
         return Results.Ok(result);
