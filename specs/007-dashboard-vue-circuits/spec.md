@@ -109,7 +109,7 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 
 - Feature 005 (Emporia Vue energy monitoring) is fully implemented and the Vue API endpoints are available before this feature begins.
 - The dashboard already fetches data on a polling interval (currently 30 seconds for EP Cube data). Vue circuit data will be fetched on the same or similar interval.
-- The existing `formatKw()` utility function handles the W/kW formatting threshold correctly.
+- The existing `formatWatts()` utility function handles the W/kW formatting threshold correctly.
 - The number of simultaneously active circuits is typically small enough (under 20) that a simple list without pagination is sufficient. If this assumption proves wrong, truncation can be added later.
 - The two areas (bottom-left and bottom-right of each card) naturally split the circuit list — the exact layout (single list or split) will be determined during planning.
 - A `vue_device_mapping` setting in the settings table maps each EP Cube device to its associated Vue panel GIDs. Each Vue panel belongs to exactly one EP Cube. No overlap.

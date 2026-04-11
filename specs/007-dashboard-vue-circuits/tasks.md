@@ -76,14 +76,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [X] T022 [P] [US1] Component test for circuit list overlay in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: renders active circuits sorted by watts, excludes 0W and mains, shows Balance as "Unmonitored loads", hides circuit area when no active circuits, handles missing vue_device_mapping, two-column layout (left fills first), display name override takes priority over channel name, circuits from multiple panels shown by display_name
-- [X] T023 [P] [US1] Component test for Vue polling in `dashboard/tests/component/CurrentReadings.test.tsx` — add tests: fetches bulk current readings on 1s interval (separate from EP Cube 30s interval), passes Vue data to EnergyFlowDiagram, handles API errors gracefully
+- [X] T023 [P] [US1] Component test for circuit list overlay in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: renders active circuits sorted by watts, excludes 0W and mains, shows Balance as "Unmonitored loads", hides circuit area when no active circuits, handles missing vue_device_mapping, two-column layout (left fills first), display name override takes priority over channel name, circuits from multiple panels shown by display_name
+- [X] T024 [P] [US1] Component test for Vue polling in `dashboard/tests/component/CurrentReadings.test.tsx` — add tests: fetches bulk current readings on 1s interval (separate from EP Cube 30s interval), passes Vue data to EnergyFlowDiagram, handles API errors gracefully
 
 ### Implementation for User Story 1
 
-- [X] T024 [US1] Add Vue circuit list rendering to `dashboard/src/components/EnergyFlowDiagram.tsx` — accept Vue current readings + device mapping props, filter active circuits (>0W, exclude mains "1,2,3"), sort by watts then name, render as two columns flanking Home node (0.75em, name left / watts right), show display_name directly without prefix
-- [X] T025 [US1] Add Vue bulk current polling loop to `dashboard/src/components/CurrentReadings.tsx` — separate 1s interval for `fetchVueBulkCurrentReadings`, pass results + vue_device_mapping to EnergyFlowDiagram, handle API errors without breaking EP Cube data display
-- [X] T026 [US1] Wire Vue data flow in `dashboard/src/components/CurrentReadings.tsx` — read `vue_device_mapping` from settings response, pass device mapping to flow diagram for per-card circuit filtering
+- [X] T025 [US1] Add Vue circuit list rendering to `dashboard/src/components/EnergyFlowDiagram.tsx` — accept Vue current readings + device mapping props, filter active circuits (>0W, exclude mains "1,2,3"), sort by watts then name, render as two columns flanking Home node (0.75em, name left / watts right), show display_name directly without prefix
+- [X] T026 [US1] Add Vue bulk current polling loop to `dashboard/src/components/CurrentReadings.tsx` — separate 1s interval for `fetchVueBulkCurrentReadings`, pass results + vue_device_mapping to EnergyFlowDiagram, handle API errors without breaking EP Cube data display
+- [X] T027 [US1] Wire Vue data flow in `dashboard/src/components/CurrentReadings.tsx` — read `vue_device_mapping` from settings response, pass device mapping to flow diagram for per-card circuit filtering
 
 **Checkpoint**: Flow diagram cards show active circuits inline. 0W circuits hidden. Cards with no mapping look unchanged. US1 independently testable. `npm run typecheck && npm run test:coverage` passes at 100%.
 
@@ -99,14 +99,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T027 [P] [US2] Component test for CircuitsPage in `dashboard/tests/component/CircuitsPage.test.tsx` — renders panels in correct order (top-level without children alphabetical, parents followed by children alphabetical), renders circuits in fixed order (mains, numbered, Balance), mains row bold, shows 0W circuits in fixed position, shows current watts and daily kWh for each circuit, panel header shows raw/dedup/daily totals, auto-refresh updates data, empty state shows configuration prompt when vue_device_mapping missing, handles API errors
-- [ ] T028 [P] [US2] Component test for App routing in `dashboard/tests/component/App.test.tsx` — add tests: /circuits route renders CircuitsPage, nav shows "Circuits" as third item
+- [ ] T028 [P] [US2] Component test for CircuitsPage in `dashboard/tests/component/CircuitsPage.test.tsx` — renders panels in correct order (top-level without children alphabetical, parents followed by children alphabetical), renders circuits in fixed order (mains, numbered, Balance), mains row bold, shows 0W circuits in fixed position, shows current watts and daily kWh for each circuit, panel header shows raw/dedup/daily totals, auto-refresh updates data, empty state shows configuration prompt when vue_device_mapping missing, handles API errors
+- [ ] T029 [P] [US2] Component test for App routing in `dashboard/tests/component/App.test.tsx` — add tests: /circuits route renders CircuitsPage, nav shows "Circuits" as third item
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Create `dashboard/src/components/CircuitsPage.tsx` — fetch vue devices + bulk current + daily readings + hierarchy, group circuits by panel, order panels per FR-014, order circuits per FR-011 (mains → numbered → Balance), render panel headers with deduplicated watts total and daily kWh sum, render circuit rows (name, watts, kWh), mains bold with separator, Balance labeled "Unmonitored loads", auto-refresh on polling interval
-- [ ] T030 [US2] Add `/circuits` route and nav link in `dashboard/src/App.tsx` — third nav item after Current Readings, before Settings
-- [ ] T031 [US2] Add CSS styles for Circuits page in `dashboard/src/app.css` — panel section styling, mains bold + separator, circuit row layout (name left, watts center, kWh right), 0W dimming
+- [ ] T030 [US2] Create `dashboard/src/components/CircuitsPage.tsx` — fetch vue devices + bulk current + daily readings + hierarchy, group circuits by panel, order panels per FR-014, order circuits per FR-011 (mains → numbered → Balance), render panel headers with deduplicated watts total and daily kWh sum, render circuit rows (name, watts, kWh), mains bold with separator, Balance labeled "Unmonitored loads", auto-refresh on polling interval
+- [ ] T031 [US2] Add `/circuits` route and nav link in `dashboard/src/App.tsx` — third nav item after Current Readings, before Settings
+- [ ] T032 [US2] Add CSS styles for Circuits page in `dashboard/src/app.css` — panel section styling, mains bold + separator, circuit row layout (name left, watts center, kWh right), 0W dimming
 
 **Checkpoint**: Circuits page fully functional with panel grouping, circuit ordering, daily kWh. Navigation updated. US2 independently testable. `npm run typecheck && npm run test:coverage` passes at 100%.
 
@@ -122,13 +122,13 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T032 [P] [US3] Component test for empty/error states in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: no circuit area rendered when API returns empty devices, no circuit area when vue_device_mapping is `{}`, no errors when API call fails (flow card renders normally), no layout shift between circuits-visible and circuits-hidden states
-- [ ] T033 [P] [US3] Component test for Circuits page edge cases in `dashboard/tests/component/CircuitsPage.test.tsx` — add tests: API error shows "Vue data is not yet available" message, all circuits 0W still renders in fixed positions, stale data persists when API call fails mid-session (verify last-known values displayed not cleared), empty mapping shows configuration prompt
+- [ ] T033 [P] [US3] Component test for empty/error states in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: no circuit area rendered when API returns empty devices, no circuit area when vue_device_mapping is `{}`, no errors when API call fails (flow card renders normally), no layout shift between circuits-visible and circuits-hidden states
+- [ ] T034 [P] [US3] Component test for Circuits page edge cases in `dashboard/tests/component/CircuitsPage.test.tsx` — add tests: API error shows "Vue data is not yet available" message, all circuits 0W still renders in fixed positions, stale data persists when API call fails mid-session (verify last-known values displayed not cleared), empty mapping shows configuration prompt
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Harden EnergyFlowDiagram circuit overlay in `dashboard/src/components/EnergyFlowDiagram.tsx` — ensure circuit area is completely hidden (not empty container) when no active circuits or no Vue data, no layout shift when transitioning between states
-- [ ] T035 [US3] Harden CircuitsPage error handling in `dashboard/src/components/CircuitsPage.tsx` — show "Vue data is not yet available" when API fails, preserve last-known values on transient errors, show "Configure Vue device mapping in Settings to see circuits" when mapping is empty/unconfigured
+- [ ] T035 [US3] Harden EnergyFlowDiagram circuit overlay in `dashboard/src/components/EnergyFlowDiagram.tsx` — ensure circuit area is completely hidden (not empty container) when no active circuits or no Vue data, no layout shift when transitioning between states
+- [ ] T036 [US3] Harden CircuitsPage error handling in `dashboard/src/components/CircuitsPage.tsx` — show "Vue data is not yet available" when API fails, preserve last-known values on transient errors, show "Configure Vue device mapping in Settings to see circuits" when mapping is empty/unconfigured
 
 **Checkpoint**: All edge cases handled gracefully. No visual regressions. US3 independently testable. `npm run typecheck && npm run test:coverage` passes at 100%.
 
@@ -142,12 +142,12 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [X] T036 [P] Component test for mapping editor in `dashboard/tests/component/SettingsPage.test.tsx` — add tests: renders EP Cube devices with assigned Vue panels, renders unassigned Vue panel pool, assign panel to device updates mapping state, unassign panel returns to pool, save calls PUT /settings/vue_device_mapping with correct JSON, validation error displayed on save failure, auto-discovers devices from API, handles empty device lists
+- [X] T037 [P] Component test for mapping editor in `dashboard/tests/component/SettingsPage.test.tsx` — add tests: renders EP Cube devices with assigned Vue panels, renders unassigned Vue panel pool, assign panel to device updates mapping state, unassign panel returns to pool, save calls PUT /settings/vue_device_mapping with correct JSON, validation error displayed on save failure, auto-discovers devices from API, handles empty device lists
 
 ### Implementation for Phase 6
 
-- [X] T037 Add mapping editor section to `dashboard/src/components/SettingsPage.tsx` — fetch EP Cube devices (`GET /devices`) and Vue devices (`GET /vue/devices`), read current mapping from settings, render EP Cube targets with assigned Vue panels, unassigned pool, dropdown assignment, save to `PUT /settings/vue_device_mapping`
-- [X] T038 Add CSS for mapping editor in `dashboard/src/app.css` — device/panel assignment layout, unassigned pool styling
+- [X] T038 Add mapping editor section to `dashboard/src/components/SettingsPage.tsx` — fetch EP Cube devices (`GET /devices`) and Vue devices (`GET /vue/devices`), read current mapping from settings, render EP Cube targets with assigned Vue panels, unassigned pool, dropdown assignment, save to `PUT /settings/vue_device_mapping`
+- [X] T039 Add CSS for mapping editor in `dashboard/src/app.css` — device/panel assignment layout, unassigned pool styling
 
 **Checkpoint**: Settings page allows mapping Vue panels to EP Cubes. Mapping persists via API. `npm run typecheck && npm run test:coverage` passes at 100%.
 
@@ -157,11 +157,11 @@
 
 **Purpose**: Final validation across all user stories, coverage verification, integration
 
-- [ ] T039 Run full API coverage check: `cd api && rm -rf TestResults CoverageMerged && dotnet test EpCubeGraph.sln --collect:"XPlat Code Coverage" --results-directory ./TestResults --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings` then `reportgenerator` + verify 100% line coverage
-- [ ] T040 Run full dashboard coverage check: `cd dashboard && npm run typecheck && npm run test:coverage` — verify 100% line coverage
-- [ ] T041 Run exporter tests with coverage: `cd local/epcube-exporter && python -m pytest test_exporter.py -v --cov=exporter --cov-report=term --cov-fail-under=100` — verify all pass at 100% coverage
-- [ ] T042 Run quickstart.md validation — start local stack, verify both new endpoints return data, verify Circuits page renders, verify flow card circuits display
-- [ ] T043 Verify no TypeScript type errors across all dashboard files: `cd dashboard && npm run typecheck`
+- [ ] T040 Run full API coverage check: `cd api && rm -rf TestResults CoverageMerged && dotnet test EpCubeGraph.sln --collect:"XPlat Code Coverage" --results-directory ./TestResults --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings` then `reportgenerator` + verify 100% line coverage
+- [ ] T041 Run full dashboard coverage check: `cd dashboard && npm run typecheck && npm run test:coverage` — verify 100% line coverage
+- [ ] T042 Run exporter tests with coverage: `cd local/epcube-exporter && python -m pytest test_exporter.py -v --cov=exporter --cov-report=term --cov-fail-under=100` — verify all pass at 100% coverage
+- [ ] T043 Run quickstart.md validation — start local stack, verify both new endpoints return data, verify Circuits page renders, verify flow card circuits display
+- [ ] T044 Verify no TypeScript type errors across all dashboard files: `cd dashboard && npm run typecheck`
 
 ---
 
