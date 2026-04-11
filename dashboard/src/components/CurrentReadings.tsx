@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchDevices, fetchCurrentReadings } from '../api';
+import { fetchDevices, fetchCurrentReadings, fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../api';
 import { DeviceCard } from './DeviceCard';
 import { EnergyFlowDiagram } from './EnergyFlowDiagram';
 import type { DeviceCardMetrics } from './DeviceCard';
-import type { Device, CurrentReadingsResponse } from '../types';
+import type { Device, CurrentReadingsResponse, VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
 import { createPollingInterval, clearPollingInterval } from '../utils/polling';
 import { formatRelativeTime } from '../utils/formatting';
 import { withRetry } from '../utils/retry';
-import { groupDevicesByAlias, getDisplayName } from '../utils/devices';
+import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
 
 export interface DeviceGroup {
   name: string;
+  baseDeviceId: string;
   online: boolean;
   devices: Device[];
   metrics: DeviceCardMetrics;
@@ -43,6 +44,11 @@ export function CurrentReadings() {
   const [retryAttempt, setRetryAttempt] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryingRef = useRef(false);
+  const [vueCurrentReadings, setVueCurrentReadings] = useState<VueBulkCurrentReadingsResponse | undefined>();
+  const [vueDeviceMapping, setVueDeviceMapping] = useState<VueDeviceMapping | undefined>();
+  const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
+  const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadData = async () => {
     if (retryingRef.current) return;
@@ -69,12 +75,14 @@ export function CurrentReadings() {
       const deviceGroups: DeviceGroup[] = Array.from(groupMap.entries()).map(
         ([_key, devices]) => {
           const name = getDisplayName(devices);
+          const baseDeviceId = getBaseDeviceId(devices[0]);
           const batteryDevice = devices.find((d) => d.class === 'storage_battery');
           const solarDevice = devices.find((d) => d.class === 'home_solar');
           const online = devices.some((d) => d.online);
 
           return {
             name,
+            baseDeviceId,
             online,
             devices,
             metrics: {
@@ -122,6 +130,56 @@ export function CurrentReadings() {
     };
   }, []);
 
+  // Vue readings polling (1s — real-time circuit data)
+  const loadVueReadings = async () => {
+    try {
+      const vueReadings = await fetchVueBulkCurrentReadings();
+      setVueCurrentReadings(vueReadings);
+    } catch {
+      // Vue errors don't break EP Cube display
+    }
+  };
+
+  // Vue settings/hierarchy polling (60s — rarely changes)
+  const loadVueSettings = async () => {
+    try {
+      const [settingsResp, hierarchyResp] = await Promise.all([
+        fetchSettings(),
+        fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
+      ]);
+      setHierarchyEntries(hierarchyResp.entries);
+
+      const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
+      if (mappingSetting) {
+        try {
+          setVueDeviceMapping(JSON.parse(mappingSetting.value) as VueDeviceMapping);
+        } catch {
+          setVueDeviceMapping(undefined);
+        }
+      } else {
+        setVueDeviceMapping(undefined);
+      }
+    } catch {
+      // Settings errors don't break EP Cube display
+    }
+  };
+
+  useEffect(() => {
+    loadVueReadings();
+    vuePollingRef.current = setInterval(loadVueReadings, 1000);
+    return () => {
+      if (vuePollingRef.current) clearInterval(vuePollingRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    loadVueSettings();
+    vueSettingsPollingRef.current = setInterval(loadVueSettings, 60000);
+    return () => {
+      if (vueSettingsPollingRef.current) clearInterval(vueSettingsPollingRef.current);
+    };
+  }, []);
+
   return (
     <section aria-busy={loading ? 'true' : undefined}>
       <div class="device-card-header">
@@ -152,7 +210,7 @@ export function CurrentReadings() {
       {loading && !error && retryAttempt === 0 && <p class="status-message">Loading devices…</p>}
       {!loading && !error && groups.length === 0 && <p class="status-message">No devices found.</p>}
       {view === 'flow' && groups.length > 0 && (
-        <EnergyFlowDiagram groups={groups} />
+        <EnergyFlowDiagram groups={groups} vueCurrentReadings={vueCurrentReadings} vueDeviceMapping={vueDeviceMapping} hierarchyEntries={hierarchyEntries} />
       )}
       {view === 'gauges' && (
         <div class="device-cards">

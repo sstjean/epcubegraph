@@ -562,10 +562,10 @@ fi
 # ==============================================================================
 header "Entra ID App Registration"
 
-ENTRA_APP=$(az ad app list --filter "startswith(displayName,'EP Cube Graph API')" --query "[0]" -o json 2>/dev/null || echo "")
+ENTRA_APP=$(az ad app list --filter "displayName eq 'EP Cube Graph API (${ENV_NAME})'" --query "[0]" -o json 2>/dev/null || echo "")
 
 if [[ -z "$ENTRA_APP" || "$ENTRA_APP" == "null" ]]; then
-  fail "Entra ID App Registration 'EP Cube Graph API' not found"
+  fail "Entra ID App Registration 'EP Cube Graph API (${ENV_NAME})' not found"
 else
   ENTRA_DISPLAY=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('displayName',''))")
   pass "App Registration '$ENTRA_DISPLAY' exists"

@@ -6,6 +6,10 @@ import type {
   CurrentReadingsResponse,
   RangeReadingsResponse,
   SettingsResponse,
+  VueBulkCurrentReadingsResponse,
+  VueBulkDailyReadingsResponse,
+  VueDevicesResponse,
+  PanelHierarchyResponse,
 } from './types';
 
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
@@ -128,4 +132,27 @@ export async function fetchSettings(): Promise<SettingsResponse> {
 
 export async function updateSetting(key: string, value: string): Promise<void> {
   await authFetchWrite(`${getBaseUrl()}/settings/${encodeURIComponent(key)}`, 'PUT', { value });
+}
+
+// ── Vue API (Feature 007) ──
+
+export async function fetchVueDevices(): Promise<VueDevicesResponse> {
+  const response = await authFetch(`${getBaseUrl()}/vue/devices`);
+  return response.json();
+}
+
+export async function fetchVueBulkCurrentReadings(): Promise<VueBulkCurrentReadingsResponse> {
+  const response = await authFetch(`${getBaseUrl()}/vue/readings/current`);
+  return response.json();
+}
+
+export async function fetchVueDailyReadings(date: string): Promise<VueBulkDailyReadingsResponse> {
+  const params = new URLSearchParams({ date });
+  const response = await authFetch(`${getBaseUrl()}/vue/readings/daily?${params}`);
+  return response.json();
+}
+
+export async function fetchHierarchy(): Promise<PanelHierarchyResponse> {
+  const response = await authFetch(`${getBaseUrl()}/settings/hierarchy`);
+  return response.json();
 }

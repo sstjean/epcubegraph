@@ -27,4 +27,10 @@ public interface IVueStore
     Task<HomeTotalRangeResponse> GetHomeTotalRangeAsync(
         DateTimeOffset start, DateTimeOffset end,
         string? step = null, CancellationToken ct = default);
+
+    // Bulk Current Readings
+    Task<VueBulkCurrentReadingsResponse> GetBulkCurrentReadingsAsync(CancellationToken ct = default);
+
+    // Daily Readings
+    Task<VueBulkDailyReadingsResponse> GetDailyReadingsAsync(DateOnly date, CancellationToken ct = default);
 }

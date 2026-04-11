@@ -78,6 +78,17 @@ describe('formatting', () => {
       // Assert
       expect(result).toBe('0 W');
     });
+
+    it('formats negative zero as 0 W not -0 W', async () => {
+      // Arrange
+      const { formatWatts } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatWatts(-0.4);
+
+      // Assert
+      expect(result).toBe('0 W');
+    });
   });
 
   describe('formatKw', () => {

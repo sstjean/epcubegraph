@@ -1608,6 +1608,24 @@ class TestVuePostgresWriterSchema(unittest.TestCase):
         self.assertIn("idx_vue_readings_1min_device_channel_time", call_args)
         mock_conn.commit.assert_called()
 
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_vue_readings_daily_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        # Act
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+
+        # Assert
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings_daily", call_args)
+        self.assertIn("device_gid", call_args)
+        self.assertIn("channel_num", call_args)
+        self.assertIn("date DATE", call_args)
+        self.assertIn("kwh", call_args)
+        self.assertIn("updated_at", call_args)
+
 
 # ---------------------------------------------------------------------------
 # T009: Vue upsert device/channel tests
@@ -2600,6 +2618,144 @@ class TestVuePageNotConfigured(unittest.TestCase):
 
         # Assert
         self.assertIn("/status", html)
+
+
+# ---------------------------------------------------------------------------
+# T014: Daily poll loop and vue_readings_daily upsert
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterDaily(unittest.TestCase):
+    """Tests for VuePostgresWriter.upsert_daily_readings."""
+
+    def _make_mock_psycopg2(self):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        return mock_conn, mock_cursor
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_daily_readings_creates_rows(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+        mock_conn.reset_mock()
+        from datetime import date
+        readings = [
+            (12345, "1,2,3", date(2026, 4, 9), 42.5),
+            (12345, "4", date(2026, 4, 9), 3.2),
+        ]
+
+        # Act
+        writer.upsert_daily_readings(readings)
+
+        # Assert
+        mock_pg.extras.execute_values.assert_called_once()
+        sql = mock_pg.extras.execute_values.call_args[0][1]
+        self.assertIn("INSERT INTO vue_readings_daily", sql)
+        self.assertIn("ON CONFLICT", sql)
+        self.assertIn("kwh", sql)
+        self.assertEqual(mock_pg.extras.execute_values.call_args[0][2], readings)
+        mock_conn.commit.assert_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_daily_readings_empty_is_noop(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_conn.reset_mock()
+
+        # Act
+        writer.upsert_daily_readings([])
+
+        # Assert
+        mock_conn.commit.assert_not_called()
+
+    @patch.object(exporter, "psycopg2")
+    def test_upsert_daily_updates_on_conflict(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+
+        # Act — upsert guarantees update via ON CONFLICT
+        from datetime import date
+        readings = [(12345, "4", date(2026, 4, 9), 10.5)]
+        writer.upsert_daily_readings(readings)
+
+        # Assert — SQL uses ON CONFLICT DO UPDATE SET kwh
+        sql = mock_pg.extras.execute_values.call_args[0][1]
+        self.assertIn("DO UPDATE SET", sql)
+        self.assertIn("kwh", sql)
+
+
+class TestReadVueDailyPollInterval(unittest.TestCase):
+    """Tests for _read_vue_daily_poll_interval_from_db."""
+
+    @patch.object(exporter, "POSTGRES_DSN", "")
+    def test_returns_default_when_no_dsn(self):
+        # Act
+        result = exporter._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    def test_reads_from_settings_table(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("600",)
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch.object(exporter, "psycopg2") as mock_pg:
+            mock_pg.connect.return_value = mock_conn
+
+            # Act
+            result = exporter._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, 600)
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("vue_daily_poll_interval_seconds", sql)
+
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    def test_returns_default_on_db_error(self):
+        # Arrange
+        with patch.object(exporter, "psycopg2") as mock_pg:
+            mock_pg.connect.side_effect = Exception("conn failed")
+
+            # Act
+            result = exporter._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    def test_returns_default_when_no_setting(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch.object(exporter, "psycopg2") as mock_pg:
+            mock_pg.connect.return_value = mock_conn
+
+            # Act
+            result = exporter._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
 
 if __name__ == "__main__":

@@ -112,6 +112,18 @@ public class PostgresFixture : IAsyncLifetime
                 display_name TEXT NOT NULL,
                 UNIQUE (device_gid, channel_number)
             );
+
+            CREATE TABLE IF NOT EXISTS vue_readings_daily (
+                device_gid BIGINT NOT NULL,
+                channel_num TEXT NOT NULL,
+                date DATE NOT NULL,
+                kwh DOUBLE PRECISION NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE (device_gid, channel_num, date)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_vue_readings_daily_device_date
+                ON vue_readings_daily (device_gid, date);
             """;
 
         using var cmd = new Npgsql.NpgsqlCommand(schema, conn);
@@ -165,7 +177,7 @@ public class PostgresFixture : IAsyncLifetime
         await conn.OpenAsync();
 
         using var cmd = new Npgsql.NpgsqlCommand(
-            "DELETE FROM readings; DELETE FROM devices; DELETE FROM vue_readings_1min; DELETE FROM vue_readings; DELETE FROM vue_channels; DELETE FROM vue_devices; DELETE FROM panel_hierarchy; DELETE FROM display_name_overrides;",
+            "DELETE FROM readings; DELETE FROM devices; DELETE FROM vue_readings_daily; DELETE FROM vue_readings_1min; DELETE FROM vue_readings; DELETE FROM vue_channels; DELETE FROM vue_devices; DELETE FROM panel_hierarchy; DELETE FROM display_name_overrides;",
             conn);
         await cmd.ExecuteNonQueryAsync();
     }
@@ -279,6 +291,25 @@ public class PostgresFixture : IAsyncLifetime
         cmd.Parameters.AddWithValue(deviceGid);
         cmd.Parameters.AddWithValue((object?)channelNumber ?? DBNull.Value);
         cmd.Parameters.AddWithValue(displayName);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task SeedVueDailyReadingAsync(long deviceGid, string channelNum, DateOnly date, double kwh)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(ConnectionString);
+        await conn.OpenAsync();
+
+        const string sql = """
+            INSERT INTO vue_readings_daily (device_gid, channel_num, date, kwh)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (device_gid, channel_num, date) DO UPDATE SET kwh = $4, updated_at = NOW()
+            """;
+
+        using var cmd = new Npgsql.NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue(deviceGid);
+        cmd.Parameters.AddWithValue(channelNum);
+        cmd.Parameters.AddWithValue(date);
+        cmd.Parameters.AddWithValue(kwh);
         await cmd.ExecuteNonQueryAsync();
     }
 }

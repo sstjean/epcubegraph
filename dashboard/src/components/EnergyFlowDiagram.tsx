@@ -1,12 +1,19 @@
-import { formatKw, formatPercent, formatKwh } from '../utils/formatting';
+import { formatKw, formatPercent, formatKwh, formatWatts } from '../utils/formatting';
+import { filterActiveCircuits, sortByWattsThenName } from '../utils/circuits';
+import type { CircuitEntry } from '../utils/circuits';
 import type { DeviceGroup } from './CurrentReadings';
+import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
 
 export interface EnergyFlowDiagramProps {
   groups: DeviceGroup[];
+  vueCurrentReadings?: VueBulkCurrentReadingsResponse;
+  vueDeviceMapping?: VueDeviceMapping;
+  hierarchyEntries?: PanelHierarchyEntry[];
 }
 
 const WIDTH = 380;
-const HEIGHT = 380;
+const BASE_HEIGHT = 380;
+const CIRCUIT_ROW_HEIGHT = 16; // approx height per circuit entry at 0.65em
 
 // Node positions: Solar top, Grid left, Battery right, Gateway center, Home bottom
 const SOLAR   = { x: 190, y: 40 };
@@ -75,9 +82,18 @@ function describeArc(cx: number, cy: number, r: number, startDeg: number, endDeg
 }
 
 /** Single-system flow diagram rendered inside a device card. */
-function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number }) {
+function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; index: number; circuits: CircuitEntry[] }) {
   const m = group.metrics;
   const prefix = `flow-${index}`;
+
+  const maxPerSide = 15;
+  const capped = circuits.slice(0, maxPerSide * 2);
+  const half = Math.ceil(capped.length / 2);
+  const left = capped.slice(0, half);
+  const right = capped.slice(half);
+  const maxCol = Math.max(left.length, right.length);
+  const circuitBoxHeight = maxCol * CIRCUIT_ROW_HEIGHT + 8;
+  const height = circuits.length > 0 ? Math.max(BASE_HEIGHT, HOME.y - 60 + circuitBoxHeight) : BASE_HEIGHT;
 
   const solarActive = Math.abs(m.solarWatts) > THRESHOLD;
   const gridActive = Math.abs(m.gridWatts) > THRESHOLD;
@@ -110,7 +126,7 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
       </header>
       <div class="energy-flow-diagram">
         <svg
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          viewBox={`0 0 ${WIDTH} ${height}`}
           aria-hidden="true"
           class="energy-flow-svg"
         >
@@ -233,17 +249,120 @@ function SystemFlowDiagram({ group, index }: { group: DeviceGroup; index: number
             </g>
             <text x={HOME.x} y={HOME.y + 22} text-anchor="middle" class="flow-node-label">Home</text>
           </g>
+
+          {/* --- Circuit lists flanking Home node --- */}
+          {circuits.length > 0 && (
+            <>
+              <foreignObject x={0} y={HOME.y - 60} width={HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
+                <div class="circuit-column circuit-column-left">
+                  {left.map((c) => (
+                    <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
+                      <span class="circuit-name">{c.display_name}</span>
+                      <span class="circuit-sep"> - </span>
+                      <span class="circuit-watts">{formatWatts(c.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              </foreignObject>
+              {right.length > 0 && (
+                <foreignObject x={HOME.x + 40} y={HOME.y - 60} width={WIDTH - HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
+                  <div class="circuit-column circuit-column-right">
+                    {right.map((c) => (
+                      <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
+                        <span class="circuit-name">{c.display_name}</span>
+                        <span class="circuit-sep"> - </span>
+                        <span class="circuit-watts">{formatWatts(c.value)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </foreignObject>
+              )}
+            </>
+          )}
         </svg>
       </div>
     </article>
   );
 }
 
-export function EnergyFlowDiagram({ groups }: EnergyFlowDiagramProps) {
+export function getCircuitsForGroup(
+  baseDeviceId: string,
+  vueCurrentReadings?: VueBulkCurrentReadingsResponse,
+  vueDeviceMapping?: VueDeviceMapping,
+  hierarchyEntries?: PanelHierarchyEntry[],
+): CircuitEntry[] {
+  if (!vueCurrentReadings || !vueDeviceMapping) return [];
+  const panels = vueDeviceMapping[baseDeviceId];
+  if (!panels || panels.length === 0) return [];
+
+  // Resolve mapped GIDs + their children from the hierarchy
+  const mappedGids = new Set(panels.map((p) => p.gid));
+  const resolvedGids = new Set(mappedGids);
+  if (hierarchyEntries) {
+    for (const h of hierarchyEntries) {
+      if (mappedGids.has(h.parent_device_gid)) {
+        resolvedGids.add(h.child_device_gid);
+      }
+    }
+  }
+
+  const entries: CircuitEntry[] = [];
+
+  // Build a set of child GIDs per parent for Balance deduplication
+  const childGidsOf = new Map<number, Set<number>>();
+  if (hierarchyEntries) {
+    for (const h of hierarchyEntries) {
+      if (resolvedGids.has(h.parent_device_gid)) {
+        const children = childGidsOf.get(h.parent_device_gid) ?? new Set();
+        children.add(h.child_device_gid);
+        childGidsOf.set(h.parent_device_gid, children);
+      }
+    }
+  }
+
+  for (const gid of resolvedGids) {
+    const device = vueCurrentReadings.devices.find((d) => d.device_gid === gid);
+    if (!device) continue;
+
+    const active = filterActiveCircuits(device.channels);
+    for (const ch of active) {
+      let value = ch.value;
+
+      // Deduplicate Balance: subtract children's mains from parent's Balance
+      if (ch.channel_num === 'Balance' && childGidsOf.has(gid)) {
+        const childGids = childGidsOf.get(gid)!;
+        for (const childGid of childGids) {
+          const childDevice = vueCurrentReadings.devices.find((d) => d.device_gid === childGid);
+          if (childDevice) {
+            const childMains = childDevice.channels.find((c) => c.channel_num === '1,2,3');
+            if (childMains) value -= childMains.value;
+          }
+        }
+        if (value <= 0) continue; // Skip if deduplication makes it zero or negative
+      }
+
+      entries.push({
+        device_gid: gid,
+        channel_num: ch.channel_num,
+        display_name: ch.display_name,
+        value,
+      });
+    }
+  }
+
+  return entries.sort(sortByWattsThenName);
+}
+
+export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping, hierarchyEntries }: EnergyFlowDiagramProps) {
   return (
     <div class="device-cards">
       {groups.map((group, i) => (
-        <SystemFlowDiagram key={group.name} group={group} index={i} />
+        <SystemFlowDiagram
+          key={group.name}
+          group={group}
+          index={i}
+          circuits={getCircuitsForGroup(group.baseDeviceId, vueCurrentReadings, vueDeviceMapping, hierarchyEntries)}
+        />
       ))}
     </div>
   );

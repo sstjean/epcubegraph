@@ -82,3 +82,28 @@ public record HomeTotalRangeResponse(
     [property: JsonPropertyName("end")] string End,
     [property: JsonPropertyName("step")] string Step,
     [property: JsonPropertyName("total")] IReadOnlyList<TimeSeriesPoint> Total);
+
+// Bulk current readings (all devices)
+
+public record VueDeviceCurrentReadings(
+    [property: JsonPropertyName("device_gid")] long DeviceGid,
+    [property: JsonPropertyName("timestamp")] long Timestamp,
+    [property: JsonPropertyName("channels")] IReadOnlyList<VueChannelReading> Channels);
+
+public record VueBulkCurrentReadingsResponse(
+    [property: JsonPropertyName("devices")] IReadOnlyList<VueDeviceCurrentReadings> Devices);
+
+// Daily readings (kWh per circuit per day)
+
+public record VueDailyChannelReading(
+    [property: JsonPropertyName("channel_num")] string ChannelNum,
+    [property: JsonPropertyName("display_name")] string DisplayName,
+    [property: JsonPropertyName("kwh")] double Kwh);
+
+public record VueDeviceDailyReadings(
+    [property: JsonPropertyName("device_gid")] long DeviceGid,
+    [property: JsonPropertyName("channels")] IReadOnlyList<VueDailyChannelReading> Channels);
+
+public record VueBulkDailyReadingsResponse(
+    [property: JsonPropertyName("date")] string Date,
+    [property: JsonPropertyName("devices")] IReadOnlyList<VueDeviceDailyReadings> Devices);

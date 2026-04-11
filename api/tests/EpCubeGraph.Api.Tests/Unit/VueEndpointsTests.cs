@@ -319,4 +319,96 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    // ── GET /vue/readings/current (bulk) ──
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_ReturnsOk_WithAllDevices()
+    {
+        // Arrange
+        _factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(new[]
+        {
+            new VueDeviceCurrentReadings(480380, 1712592000, new[]
+            {
+                new VueChannelReading("1,2,3", "Main", 8450.5),
+                new VueChannelReading("4", "Kitchen", 1200.0),
+            }),
+            new VueDeviceCurrentReadings(480544, 1712592000, new[]
+            {
+                new VueChannelReading("1,2,3", "Main", 3220.0),
+            }),
+        });
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/current");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(2, doc.RootElement.GetProperty("devices").GetArrayLength());
+        var dev0 = doc.RootElement.GetProperty("devices")[0];
+        Assert.Equal(480380, dev0.GetProperty("device_gid").GetInt64());
+        Assert.Equal(2, dev0.GetProperty("channels").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_ReturnsEmptyDevices_WhenNoData()
+    {
+        // Arrange
+        _factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(
+            Array.Empty<VueDeviceCurrentReadings>());
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/current");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, doc.RootElement.GetProperty("devices").GetArrayLength());
+    }
+
+    // ── GET /vue/readings/daily ──
+
+    [Fact]
+    public async Task GetDailyReadings_ReturnsOk_WithData()
+    {
+        // Arrange
+        _factory.MockVueStore.DailyReadingsResult = new VueBulkDailyReadingsResponse("2026-04-09", new[]
+        {
+            new VueDeviceDailyReadings(480380, new[]
+            {
+                new VueDailyChannelReading("1,2,3", "Main", 42.5),
+                new VueDailyChannelReading("4", "Kitchen", 3.2),
+            }),
+        });
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=2026-04-09");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("2026-04-09", doc.RootElement.GetProperty("date").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("devices").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task GetDailyReadings_Returns400_WhenDateMissing()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetDailyReadings_Returns400_WhenDateInvalid()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=not-a-date");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }
