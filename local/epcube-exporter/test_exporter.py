@@ -1608,6 +1608,24 @@ class TestVuePostgresWriterSchema(unittest.TestCase):
         self.assertIn("idx_vue_readings_1min_device_channel_time", call_args)
         mock_conn.commit.assert_called()
 
+    @patch.object(exporter, "psycopg2")
+    def test_init_creates_vue_readings_daily_table(self, mock_pg):
+        # Arrange
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        # Act
+        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+
+        # Assert
+        call_args = mock_cursor.execute.call_args[0][0]
+        self.assertIn("CREATE TABLE IF NOT EXISTS vue_readings_daily", call_args)
+        self.assertIn("device_gid", call_args)
+        self.assertIn("channel_num", call_args)
+        self.assertIn("date DATE", call_args)
+        self.assertIn("kwh", call_args)
+        self.assertIn("updated_at", call_args)
+
 
 # ---------------------------------------------------------------------------
 # T009: Vue upsert device/channel tests

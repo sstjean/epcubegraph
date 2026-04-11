@@ -240,6 +240,18 @@ CREATE TABLE IF NOT EXISTS vue_readings_1min (
 
 CREATE INDEX IF NOT EXISTS idx_vue_readings_1min_device_channel_time
     ON vue_readings_1min (device_gid, channel_num, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS vue_readings_daily (
+    device_gid BIGINT NOT NULL,
+    channel_num TEXT NOT NULL,
+    date DATE NOT NULL,
+    kwh DOUBLE PRECISION NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (device_gid, channel_num, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_vue_readings_daily_device_date
+    ON vue_readings_daily (device_gid, date);
 """
 
 

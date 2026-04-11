@@ -62,3 +62,45 @@ export interface SettingEntry {
 export interface SettingsResponse {
   settings: SettingEntry[];
 }
+
+// Vue types — Feature 007
+
+export interface VueCurrentChannel {
+  channel_num: string;
+  display_name: string;
+  value: number;
+}
+
+export interface VueDeviceCurrentReadings {
+  device_gid: number;
+  timestamp: number;
+  channels: VueCurrentChannel[];
+}
+
+export interface VueBulkCurrentReadingsResponse {
+  devices: VueDeviceCurrentReadings[];
+}
+
+export interface VueDailyChannel {
+  channel_num: string;
+  display_name: string;
+  kwh: number;
+}
+
+export interface VueDeviceDailyReadings {
+  device_gid: number;
+  channels: VueDailyChannel[];
+}
+
+export interface VueBulkDailyReadingsResponse {
+  date: string;
+  devices: VueDeviceDailyReadings[];
+}
+
+export interface VuePanelMapping {
+  gid: number;
+  alias: string;
+  prefix: string;
+}
+
+export type VueDeviceMapping = Record<string, VuePanelMapping[]>;
