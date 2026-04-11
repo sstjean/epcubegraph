@@ -100,6 +100,7 @@ export function SettingsPage() {
 
   async function handleSavePolling() {
     setPollingMessage(null);
+    setError(null);
 
     // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
@@ -166,6 +167,7 @@ export function SettingsPage() {
 
   async function handleSaveMapping() {
     setMappingMessage(null);
+    setError(null);
     setSavingMapping(true);
     try {
       // Only include devices with assigned panels

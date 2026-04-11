@@ -141,7 +141,7 @@ export function CurrentReadings() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Vue readings unavailable';
       setVueError(msg);
-      if (err instanceof Error) trackException(err);
+      trackException(err instanceof Error ? err : new Error(msg));
     }
   };
 
