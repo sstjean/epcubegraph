@@ -414,6 +414,46 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenNonLeapYearFeb29()
+    {
+        // Arrange — 2025 is not a leap year
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=2025-02-29");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenImpossibleDay()
+    {
+        // Arrange — April has 30 days
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=2026-04-31");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenEmptyDate()
+    {
+        // Arrange — empty string
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenNonIsoFormat()
+    {
+        // Arrange — US date format
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=04/09/2026");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     // ── CORS ──
 
     [Theory]

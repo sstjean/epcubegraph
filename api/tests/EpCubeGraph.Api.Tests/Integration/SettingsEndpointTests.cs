@@ -508,4 +508,68 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task UpdateHierarchy_TransitiveCycle_Returns400()
+    {
+        // Arrange — A → B → C → D → A (4-node cycle)
+        var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
+        {
+            new(100, 200),
+            new(200, 300),
+            new(300, 400),
+            new(400, 100),
+        });
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("circular", body.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_EmptyArrayValue_Accepted()
+    {
+        // Arrange — device with empty panel array
+        var json = "{\"epcube1\":[]}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_NullAlias_Returns400()
+    {
+        // Arrange — alias is null instead of string
+        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":null}]}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_NumericAlias_Returns400()
+    {
+        // Arrange — alias is number instead of string
+        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":42}]}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

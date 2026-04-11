@@ -454,4 +454,33 @@ public class ValidateTests
         // Assert
         Assert.NotNull(result);
     }
+
+    // ── SafeName max length ──
+
+    [Fact]
+    public void SafeName_ExceedsMaxLength_ReturnsError()
+    {
+        // Arrange — 257-character valid name
+        var longName = "a" + new string('b', 256);
+
+        // Act
+        var result = Validate.SafeName(longName, "metric");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Contains("256", result);
+    }
+
+    [Fact]
+    public void SafeName_ExactlyMaxLength_ReturnsNull()
+    {
+        // Arrange — 256-character valid name
+        var name = "a" + new string('b', 255);
+
+        // Act
+        var result = Validate.SafeName(name, "metric");
+
+        // Assert
+        Assert.Null(result);
+    }
 }

@@ -47,6 +47,8 @@ public static partial class Validate
     {
         if (string.IsNullOrWhiteSpace(value))
             return $"'{paramName}' is required";
+        if (value.Length > 256)
+            return $"'{paramName}' must be 256 characters or fewer";
         if (SafeNameRegex().IsMatch(value))
             return null;
         return $"'{paramName}' contains invalid characters";
