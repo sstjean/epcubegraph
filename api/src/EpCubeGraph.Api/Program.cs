@@ -92,7 +92,7 @@ if (!string.IsNullOrEmpty(allowedOrigin))
     corsOptions.Value.AddDefaultPolicy(policy =>
     {
         policy.WithOrigins(allowedOrigin)
-              .WithMethods("GET")
+              .WithMethods("GET", "PUT", "DELETE")
               .WithHeaders("Authorization", "Content-Type");
     });
     app.UseCors();
