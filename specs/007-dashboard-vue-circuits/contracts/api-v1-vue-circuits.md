@@ -161,7 +161,7 @@ Content-Type: application/json
 - Collect channels from those devices where `value > 0`
 - Exclude mains channels (`channel_num === "1,2,3"`)
 - Include Balance channels (shown as "Unmonitored loads")
-- Sort ascending by `value`, then alphabetical by `display_name`
+- Sort descending by `value` (highest first), then alphabetical by `display_name`
 - Left column fills first, overflow to right column
 - If 2+ Vue panels mapped to same EP Cube, all circuits from all panels are shown by `display_name` without prefix
 - Style: 0.75em font, name left / watts right, tight line spacing

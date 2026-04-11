@@ -74,7 +74,7 @@ A single active circuit displayed inline on the flow diagram card.
 - **Source**: Bulk current readings API filtered by vue_device_mapping
 - **Fields**: display name (resolved), current watts
 - **Filter**: watts > 0, excluding mains ("1,2,3") channels
-- **Sort**: ascending by watts, then alphabetical by display name
+- **Sort**: descending by watts (highest first), then alphabetical by display name
 - **Display name resolution**: display_name_overrides → vue_channels.name → "Channel {num}". Balance channel: "Unmonitored loads"
 - **Format**: name left-aligned, watts right-aligned (using `formatWatts` — "850 W" / "1.2 kW")
 

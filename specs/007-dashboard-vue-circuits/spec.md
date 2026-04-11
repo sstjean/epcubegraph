@@ -3,7 +3,7 @@
 **Feature Branch**: `007-dashboard-vue-circuits`
 **Created**: 2026-04-08
 **Status**: Clarified
-**Input**: Show Vue circuits in the empty areas of the EP Cube flow diagram cards. Display only circuits with >0 watts, ordered ascending by watts, showing the circuit name/alias and watt value. Also add a dedicated page showing circuits grouped by panel (MVP — basic structure, will evolve).
+**Input**: Show Vue circuits in the empty areas of the EP Cube flow diagram cards. Display only circuits with >0 watts, ordered descending by watts (highest first), showing the circuit name/alias and watt value. Also add a dedicated page showing circuits grouped by panel (MVP — basic structure, will evolve).
 
 ## User Scenarios & Testing
 
@@ -96,7 +96,7 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 ### Measurable Outcomes
 
 - **SC-001**: Active Vue circuits appear in the flow diagram cards within 2 seconds of page load when Vue data is available.
-- **SC-002**: Circuit list correctly orders by ascending watt value — verifiable by comparing displayed order to API response data.
+- **SC-002**: Circuit list correctly orders by descending watt value (highest first) — verifiable by comparing displayed order to API response data.
 - **SC-003**: Circuits at 0 watts never appear in the displayed list.
 - **SC-004**: 100% test coverage on all new dashboard code (constitution requirement).
 - **SC-005**: Flow diagram cards render identically to pre-feature appearance when no Vue data is present — no layout regression.

@@ -65,7 +65,9 @@ export function SettingsPage() {
           try {
             const parsed = JSON.parse(rawMapping) as Record<string, VuePanelMapping[]>;
             for (const [key, panels] of Object.entries(parsed)) {
-              initMapping[key] = panels;
+              if (key in initMapping) {
+                initMapping[key] = panels;
+              }
             }
           } catch {
             // Malformed JSON — treat as empty mapping

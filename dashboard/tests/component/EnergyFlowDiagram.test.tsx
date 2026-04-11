@@ -378,8 +378,8 @@ describe('EnergyFlowDiagram', () => {
       <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
     );
 
-    // Assert — no circuit-list container at all
-    expect(container.querySelector('.circuit-list')).toBeNull();
+    // Assert — no circuit column rendered
+    expect(container.querySelector('.circuit-column')).toBeNull();
   });
 
   it('handles missing vue_device_mapping gracefully', () => {
@@ -398,7 +398,7 @@ describe('EnergyFlowDiagram', () => {
     );
 
     // Assert — no circuits shown
-    expect(container.querySelector('.circuit-list')).toBeNull();
+    expect(container.querySelector('.circuit-column')).toBeNull();
   });
 
   it('renders two-column layout with left filling first', () => {
