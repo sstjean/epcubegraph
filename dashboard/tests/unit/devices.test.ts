@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getGroupName, groupDevicesByAlias, getDisplayName } from '../../src/utils/devices';
+import { getGroupName, groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../../src/utils/devices';
 import type { Device } from '../../src/types';
 
 function makeDevice(overrides: Partial<Device> & { device: string }): Device {
@@ -94,5 +94,27 @@ describe('getDisplayName', () => {
       makeDevice({ device: 'epcube3483_battery', product_code: 'Unknown Format' }),
     ];
     expect(getDisplayName(devices)).toBe('EP Cube 3483');
+  });
+});
+
+describe('getBaseDeviceId', () => {
+  it('strips _battery suffix', () => {
+    const device = makeDevice({ device: 'epcube3483_battery' });
+    expect(getBaseDeviceId(device)).toBe('epcube3483');
+  });
+
+  it('strips _solar suffix', () => {
+    const device = makeDevice({ device: 'epcube3483_solar' });
+    expect(getBaseDeviceId(device)).toBe('epcube3483');
+  });
+
+  it('strips _home_solar suffix', () => {
+    const device = makeDevice({ device: 'epcube3483_home_solar' });
+    expect(getBaseDeviceId(device)).toBe('epcube3483');
+  });
+
+  it('returns raw device id when no known suffix', () => {
+    const device = makeDevice({ device: 'custom_device' });
+    expect(getBaseDeviceId(device)).toBe('custom_device');
   });
 });

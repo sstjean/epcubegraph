@@ -351,4 +351,66 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
+
+    // ── Bulk Vue Current Readings (Feature 007) ──
+
+    [Fact]
+    public async Task BulkCurrentReadings_ReturnsOk()
+    {
+        // Arrange
+        _factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(new[]
+        {
+            new VueDeviceCurrentReadings(480380, 1712592000, new[]
+            {
+                new VueChannelReading("1,2,3", "Main", 8450.5),
+            }),
+        });
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/current");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(1, doc.RootElement.GetProperty("devices").GetArrayLength());
+    }
+
+    // ── Daily Readings (Feature 007) ──
+
+    [Fact]
+    public async Task DailyReadings_ReturnsOk_WithDate()
+    {
+        // Arrange
+        _factory.MockVueStore.DailyReadingsResult = new VueBulkDailyReadingsResponse("2026-04-09", new[]
+        {
+            new VueDeviceDailyReadings(480380, new[]
+            {
+                new VueDailyChannelReading("4", "Kitchen", 3.2),
+            }),
+        });
+
+        // Act
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=2026-04-09");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("2026-04-09", doc.RootElement.GetProperty("date").GetString());
+    }
+
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenNoDate()
+    {
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DailyReadings_Returns400_WhenInvalidDate()
+    {
+        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=invalid");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

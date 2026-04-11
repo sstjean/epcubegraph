@@ -266,6 +266,8 @@ public sealed class ConfigurableMockVueStore : IVueStore
     public PanelTotalRangeResponse? PanelTotalRangeResult { get; set; }
     public HomeTotalResponse HomeTotalResult { get; set; } = new(0, 0, Array.Empty<PanelChild>());
     public HomeTotalRangeResponse HomeTotalRangeResult { get; set; } = new("", "", "1m", Array.Empty<TimeSeriesPoint>());
+    public VueBulkCurrentReadingsResponse BulkCurrentReadingsResult { get; set; } = new(Array.Empty<VueDeviceCurrentReadings>());
+    public VueBulkDailyReadingsResponse? DailyReadingsResult { get; set; }
 
     public void Reset()
     {
@@ -276,6 +278,8 @@ public sealed class ConfigurableMockVueStore : IVueStore
         PanelTotalRangeResult = null;
         HomeTotalResult = new(0, 0, Array.Empty<PanelChild>());
         HomeTotalRangeResult = new("", "", "1m", Array.Empty<TimeSeriesPoint>());
+        BulkCurrentReadingsResult = new(Array.Empty<VueDeviceCurrentReadings>());
+        DailyReadingsResult = null;
     }
 
     public Task<IReadOnlyList<VueDeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
@@ -307,4 +311,10 @@ public sealed class ConfigurableMockVueStore : IVueStore
         DateTimeOffset start, DateTimeOffset end,
         string? step = null, CancellationToken ct = default)
         => Task.FromResult(HomeTotalRangeResult);
+
+    public Task<VueBulkCurrentReadingsResponse> GetBulkCurrentReadingsAsync(CancellationToken ct = default)
+        => Task.FromResult(BulkCurrentReadingsResult);
+
+    public Task<VueBulkDailyReadingsResponse> GetDailyReadingsAsync(DateOnly date, CancellationToken ct = default)
+        => Task.FromResult(DailyReadingsResult ?? new VueBulkDailyReadingsResponse(date.ToString("yyyy-MM-dd"), Array.Empty<VueDeviceDailyReadings>()));
 }

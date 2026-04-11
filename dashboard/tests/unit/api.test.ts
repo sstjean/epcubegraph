@@ -296,6 +296,86 @@ describe('api', () => {
       expect((err as InstanceType<typeof ApiError>).status).toBe(502);
     }
   });
+
+  // ── Vue API functions (Feature 007) ──
+
+  it('fetchVueDevices calls vue devices endpoint', async () => {
+    // Arrange
+    await setupAuth();
+    const mockResponse = {
+      devices: [
+        { device_gid: 480380, device_name: 'Vue 1', display_name: 'Main Panel', connected: true },
+      ],
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+    const { fetchVueDevices } = await import('../../src/api');
+
+    // Act
+    const result = await fetchVueDevices();
+
+    // Assert
+    expect(result).toEqual(mockResponse);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/vue/devices'),
+      expect.any(Object),
+    );
+  });
+
+  it('fetchVueBulkCurrentReadings calls bulk current endpoint', async () => {
+    // Arrange
+    await setupAuth();
+    const mockResponse = {
+      devices: [
+        { device_gid: 480380, timestamp: 1712592000, channels: [{ channel_num: '1,2,3', display_name: 'Main', value: 8450.5 }] },
+      ],
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+    const { fetchVueBulkCurrentReadings } = await import('../../src/api');
+
+    // Act
+    const result = await fetchVueBulkCurrentReadings();
+
+    // Assert
+    expect(result).toEqual(mockResponse);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/vue/readings/current'),
+      expect.any(Object),
+    );
+  });
+
+  it('fetchVueDailyReadings sends date parameter', async () => {
+    // Arrange
+    await setupAuth();
+    const mockResponse = {
+      date: '2026-04-09',
+      devices: [
+        { device_gid: 480380, channels: [{ channel_num: '4', display_name: 'Kitchen', kwh: 3.2 }] },
+      ],
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+    const { fetchVueDailyReadings } = await import('../../src/api');
+
+    // Act
+    const result = await fetchVueDailyReadings('2026-04-09');
+
+    // Assert
+    expect(result).toEqual(mockResponse);
+    const url = (globalThis.fetch as any).mock.calls[0][0] as string;
+    expect(url).toContain('/vue/readings/daily');
+    expect(url).toContain('date=2026-04-09');
+  });
 });
 
 describe('Settings API', () => {
@@ -436,5 +516,29 @@ describe('Settings API', () => {
     // Assert
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('HTTP 422');
+  });
+
+  it('fetchHierarchy returns PanelHierarchyResponse', async () => {
+    // Arrange
+    await setupAuth();
+    const mockResponse = {
+      entries: [{ id: 1, parent_device_gid: 480380, child_device_gid: 480544 }],
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+    const { fetchHierarchy } = await import('../../src/api');
+
+    // Act
+    const result = await fetchHierarchy();
+
+    // Assert
+    expect(result).toEqual(mockResponse);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/settings/hierarchy'),
+      expect.any(Object),
+    );
   });
 });

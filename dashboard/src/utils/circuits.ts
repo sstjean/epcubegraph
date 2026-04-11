@@ -7,7 +7,6 @@ export interface CircuitEntry {
   channel_num: string;
   display_name: string;
   value: number;
-  prefix?: string;
 }
 
 export function filterActiveCircuits(
@@ -19,7 +18,7 @@ export function filterActiveCircuits(
 }
 
 export function sortByWattsThenName(a: CircuitEntry, b: CircuitEntry): number {
-  if (a.value !== b.value) return a.value - b.value;
+  if (a.value !== b.value) return b.value - a.value;
   return a.display_name.localeCompare(b.display_name);
 }
 
@@ -48,7 +47,6 @@ export function sortByCircuitNumber(
 export interface PanelInfo {
   device_gid: number;
   alias: string;
-  prefix: string;
   parentGid?: number;
 }
 

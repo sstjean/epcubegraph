@@ -3,7 +3,7 @@ export function formatWatts(watts: number): string {
   const abs = Math.abs(watts);
   if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(3)} MW`;
   if (abs >= 1_000) return `${(watts / 1_000).toFixed(3)} kW`;
-  return `${watts} W`;
+  return `${Math.round(watts)} W`;
 }
 
 /** 1-decimal axis labels for readability. Tooltip uses formatWatts (whole W / 3-decimal kW). */

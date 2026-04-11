@@ -1,5 +1,10 @@
 import type { Device } from '../types';
 
+/** Extract the base device ID (e.g., "epcube3483") from a raw device name. */
+export function getBaseDeviceId(device: Device): string {
+  return device.device.replace(/_(battery|home_solar|solar)$/, '');
+}
+
 /** Extract the base alias (e.g. "EP Cube v2") from a device's alias or id. */
 export function getGroupName(device: Device): string {
   if (device.alias) {

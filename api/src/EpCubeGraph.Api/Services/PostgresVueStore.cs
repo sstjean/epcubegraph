@@ -720,4 +720,113 @@ public class PostgresVueStore : IVueStore
             Total: totalSeries
         );
     }
+
+    // ── Bulk Current Readings ──
+
+    public async Task<VueBulkCurrentReadingsResponse> GetBulkCurrentReadingsAsync(CancellationToken ct = default)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await EnsureSettingsTablesAsync(conn, ct);
+
+        // Get all devices
+        const string deviceSql = "SELECT device_gid FROM vue_devices ORDER BY device_gid";
+        await using var deviceCmd = new NpgsqlCommand(deviceSql, conn);
+        await using var deviceReader = await deviceCmd.ExecuteReaderAsync(ct);
+        var deviceGids = new List<long>();
+        while (await deviceReader.ReadAsync(ct))
+            deviceGids.Add(deviceReader.GetInt64(0));
+        await deviceReader.CloseAsync();
+
+        var devices = new List<VueDeviceCurrentReadings>();
+        foreach (var gid in deviceGids)
+        {
+            const string sql = """
+                SELECT DISTINCT ON (vr.channel_num)
+                       vr.channel_num,
+                       EXTRACT(EPOCH FROM vr.timestamp)::bigint AS ts,
+                       vr.value,
+                       vc.name AS channel_name,
+                       dno.display_name AS channel_override
+                FROM vue_readings vr
+                LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
+                LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
+                WHERE vr.device_gid = @gid
+                ORDER BY vr.channel_num, vr.timestamp DESC
+                """;
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("gid", gid);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+            var channels = new List<VueChannelReading>();
+            long latestTs = 0;
+            while (await reader.ReadAsync(ct))
+            {
+                var channelNum = reader.GetString(0);
+                var ts = reader.GetInt64(1);
+                var value = reader.GetDouble(2);
+                var channelName = reader.IsDBNull(3) ? null : reader.GetString(3);
+                var channelOverride = reader.IsDBNull(4) ? null : reader.GetString(4);
+
+                if (ts > latestTs) latestTs = ts;
+                channels.Add(new VueChannelReading(
+                    ChannelNum: channelNum,
+                    DisplayName: ResolveDisplayName(channelOverride, channelName, channelNum),
+                    Value: value
+                ));
+            }
+
+            devices.Add(new VueDeviceCurrentReadings(gid, latestTs, channels));
+        }
+
+        return new VueBulkCurrentReadingsResponse(devices);
+    }
+
+    // ── Daily Readings ──
+
+    public async Task<VueBulkDailyReadingsResponse> GetDailyReadingsAsync(DateOnly date, CancellationToken ct = default)
+    {
+        await using var conn = new NpgsqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        await EnsureSettingsTablesAsync(conn, ct);
+
+        const string sql = """
+            SELECT vrd.device_gid, vrd.channel_num, vrd.kwh,
+                   vc.name AS channel_name,
+                   dno.display_name AS channel_override
+            FROM vue_readings_daily vrd
+            LEFT JOIN vue_channels vc ON vc.device_gid = vrd.device_gid AND vc.channel_num = vrd.channel_num
+            LEFT JOIN display_name_overrides dno ON dno.device_gid = vrd.device_gid AND dno.channel_number = vrd.channel_num
+            WHERE vrd.date = @date
+            ORDER BY vrd.device_gid, vrd.channel_num
+            """;
+
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("date", date);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        var deviceMap = new Dictionary<long, List<VueDailyChannelReading>>();
+        while (await reader.ReadAsync(ct))
+        {
+            var deviceGid = reader.GetInt64(0);
+            var channelNum = reader.GetString(1);
+            var kwh = reader.GetDouble(2);
+            var channelName = reader.IsDBNull(3) ? null : reader.GetString(3);
+            var channelOverride = reader.IsDBNull(4) ? null : reader.GetString(4);
+
+            if (!deviceMap.ContainsKey(deviceGid))
+                deviceMap[deviceGid] = new List<VueDailyChannelReading>();
+
+            deviceMap[deviceGid].Add(new VueDailyChannelReading(
+                ChannelNum: channelNum,
+                DisplayName: ResolveDisplayName(channelOverride, channelName, channelNum),
+                Kwh: kwh
+            ));
+        }
+
+        var devices = deviceMap.Select(kvp => new VueDeviceDailyReadings(kvp.Key, kvp.Value)).ToList();
+
+        return new VueBulkDailyReadingsResponse(date.ToString("yyyy-MM-dd"), devices);
+    }
 }

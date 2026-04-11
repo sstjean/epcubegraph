@@ -339,6 +339,27 @@ class VuePostgresWriter:
         if self._conn and not self._conn.closed:
             self._conn.close()
 
+    def upsert_daily_readings(self, readings):
+        """Batch-upsert daily readings. Each reading is (device_gid, channel_num, date, kwh).
+
+        Uses ON CONFLICT to update kwh if row already exists for same device+channel+date.
+        """
+        if not readings:
+            return
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO vue_readings_daily (device_gid, channel_num, date, kwh)
+                   VALUES %s
+                   ON CONFLICT (device_gid, channel_num, date) DO UPDATE SET
+                       kwh = EXCLUDED.kwh,
+                       updated_at = NOW()""",
+                readings,
+                template="(%s, %s, %s, %s)",
+            )
+        conn.commit()
+
 
 # ---------------------------------------------------------------------------
 # Cloud API helpers
@@ -1459,6 +1480,7 @@ except ImportError:
 
 DEFAULT_VUE_POLL_INTERVAL = 1  # seconds
 DEFAULT_VUE_DEVICE_REFRESH_INTERVAL = 1800  # 30 minutes
+DEFAULT_VUE_DAILY_POLL_INTERVAL = 300  # seconds (5 minutes)
 
 # kWh-to-watts multiplier per scale
 _SCALE_WATTS_MULTIPLIER = {
@@ -1509,6 +1531,27 @@ def _read_vue_device_refresh_interval_from_db():
     except Exception:
         log.debug("Could not read Vue device refresh interval from DB, using default %ds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
     return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+
+
+def _read_vue_daily_poll_interval_from_db():
+    """Read vue_daily_poll_interval_seconds from settings table. Returns default on any error."""
+    if not POSTGRES_DSN:
+        return DEFAULT_VUE_DAILY_POLL_INTERVAL
+    try:
+        conn = psycopg2.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = 'vue_daily_poll_interval_seconds'")
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if 1 <= val <= 3600:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read Vue daily poll interval from DB, using default %ds", DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    return DEFAULT_VUE_DAILY_POLL_INTERVAL
 
 
 class VueCollector:

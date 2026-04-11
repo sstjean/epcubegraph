@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -10,7 +11,10 @@ public static class SettingsEndpoints
     {
         "epcube_poll_interval_seconds",
         "vue_poll_interval_seconds",
+        "vue_daily_poll_interval_seconds",
     };
+
+    private const string VueDeviceMappingKey = "vue_device_mapping";
 
     public static RouteGroupBuilder MapSettingsEndpoints(this RouteGroupBuilder group)
     {
@@ -57,10 +61,15 @@ public static class SettingsEndpoints
     private static async Task<IResult> HandleUpdateSetting(
         [FromRoute] string key, [FromBody] SettingUpdateRequest request, ISettingsStore store, CancellationToken ct)
     {
+        if (key == VueDeviceMappingKey)
+        {
+            return await HandleUpdateVueDeviceMapping(request, store, ct);
+        }
+
         if (!PollIntervalKeys.Contains(key))
         {
             return Results.BadRequest(new ErrorResponse(
-                "error", "validation", $"Unknown setting key '{key}'. Allowed keys: {string.Join(", ", PollIntervalKeys)}"));
+                "error", "validation", $"Unknown setting key '{key}'. Allowed keys: {string.Join(", ", PollIntervalKeys)}, {VueDeviceMappingKey}"));
         }
 
         if (!int.TryParse(request.Value, out var interval) || interval < 1 || interval > 3600)
@@ -70,6 +79,65 @@ public static class SettingsEndpoints
         }
 
         var entry = await store.UpdateSettingAsync(key, request.Value, ct);
+        return Results.Ok(entry);
+    }
+
+    private static async Task<IResult> HandleUpdateVueDeviceMapping(
+        SettingUpdateRequest request, ISettingsStore store, CancellationToken ct)
+    {
+        // Parse JSON
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(request.Value);
+        }
+        catch (JsonException)
+        {
+            return Results.BadRequest(new ErrorResponse(
+                "error", "validation", "Invalid JSON in vue_device_mapping value"));
+        }
+
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+        {
+            return Results.BadRequest(new ErrorResponse(
+                "error", "validation", "Invalid JSON in vue_device_mapping value"));
+        }
+
+        // Validate structure and collect GIDs for duplicate check
+        var seenGids = new HashSet<long>();
+        foreach (var prop in doc.RootElement.EnumerateObject())
+        {
+            if (prop.Value.ValueKind != JsonValueKind.Array)
+            {
+                return Results.BadRequest(new ErrorResponse(
+                    "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
+            }
+
+            foreach (var panel in prop.Value.EnumerateArray())
+            {
+                if (panel.ValueKind != JsonValueKind.Object ||
+                    !panel.TryGetProperty("gid", out var gidProp) ||
+                    !panel.TryGetProperty("alias", out _))
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
+                }
+
+                if (!gidProp.TryGetInt64(out var gid))
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
+                }
+
+                if (!seenGids.Add(gid))
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", $"Vue device GID {gid} is mapped to multiple EP Cube devices"));
+                }
+            }
+        }
+
+        var entry = await store.UpdateSettingAsync(VueDeviceMappingKey, request.Value, ct);
         return Results.Ok(entry);
     }
 

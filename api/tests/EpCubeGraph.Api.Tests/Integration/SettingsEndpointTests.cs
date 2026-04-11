@@ -367,4 +367,145 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         Assert.NotNull(body);
         Assert.Contains("Duplicate channel", body.Error);
     }
+
+    // ── PUT /api/v1/settings/vue_daily_poll_interval_seconds ──
+
+    [Fact]
+    public async Task UpdateSetting_VueDailyPollInterval_ValidValue_Returns200()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("300");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_daily_poll_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<SettingEntry>();
+        Assert.NotNull(body);
+        Assert.Equal("vue_daily_poll_interval_seconds", body.Key);
+        Assert.Equal("300", body.Value);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDailyPollInterval_Zero_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("0");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_daily_poll_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDailyPollInterval_AboveMax_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("7200");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_daily_poll_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    // ── PUT /api/v1/settings/vue_device_mapping ──
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_ValidJson_Returns200()
+    {
+        // Arrange
+        var mapping = new { epcube3483 = new[] { new { gid = 480380, alias = "Main Panel" } } };
+        var request = new SettingUpdateRequest(JsonSerializer.Serialize(mapping));
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<SettingEntry>();
+        Assert.NotNull(body);
+        Assert.Equal("vue_device_mapping", body.Key);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_EmptyObject_Returns200()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("{}");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_InvalidJson_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("not valid json");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("Invalid JSON", body.Error);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_InvalidStructure_Returns400()
+    {
+        // Arrange — values must be arrays of objects with gid/alias
+        var request = new SettingUpdateRequest("{\"epcube1\": \"not-an-array\"}");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("arrays of objects", body.Error);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_DuplicateGids_Returns400()
+    {
+        // Arrange — same GID mapped to two EP Cubes
+        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":\"A\"}],\"epcube2\":[{\"gid\":480380,\"alias\":\"B\"}]}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("480380", body.Error);
+        Assert.Contains("multiple", body.Error);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_MissingFields_Returns400()
+    {
+        // Arrange — missing alias field
+        var json = "{\"epcube1\":[{\"gid\":480380}]}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

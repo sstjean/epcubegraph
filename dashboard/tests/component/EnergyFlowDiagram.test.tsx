@@ -1,12 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/preact';
 import { h } from 'preact';
-import { EnergyFlowDiagram } from '../../src/components/EnergyFlowDiagram';
+import { EnergyFlowDiagram, getCircuitsForGroup } from '../../src/components/EnergyFlowDiagram';
 import type { DeviceGroup } from '../../src/components/CurrentReadings';
+import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../../src/types';
 
-function makeGroup(overrides: Partial<DeviceGroup['metrics']> = {}, name = 'EP Cube v2', online = true): DeviceGroup {
+function makeGroup(overrides: Partial<DeviceGroup['metrics']> = {}, name = 'EP Cube v2', online = true, baseDeviceId = 'epcube5488'): DeviceGroup {
   return {
     name,
+    baseDeviceId,
     online,
     devices: [],
     metrics: {
@@ -25,7 +27,7 @@ describe('EnergyFlowDiagram', () => {
   afterEach(cleanup);
 
   it('renders one article per device group', () => {
-    const groups = [makeGroup({}, 'System 1'), makeGroup({}, 'System 2')];
+    const groups = [makeGroup({}, 'System 1', true, 'system1'), makeGroup({}, 'System 2', true, 'system2')];
     render(<EnergyFlowDiagram groups={groups} />);
 
     const articles = screen.getAllByRole('article');
@@ -40,7 +42,7 @@ describe('EnergyFlowDiagram', () => {
   });
 
   it('renders offline badge when device is offline', () => {
-    render(<EnergyFlowDiagram groups={[makeGroup({}, 'Offline System', false)]} />);
+    render(<EnergyFlowDiagram groups={[makeGroup({}, 'Offline System', false, 'offline1')]} />);
 
     expect(screen.getByLabelText('Offline')).toBeTruthy();
   });
@@ -293,5 +295,363 @@ describe('EnergyFlowDiagram', () => {
     const svgs = Array.from(container.querySelectorAll('svg svg'));
     const grayIcons = svgs.filter((s) => s.getAttribute('stroke') === '#4b5563');
     expect(grayIcons.length).toBe(0);
+  });
+
+  // ── Vue Circuit List Overlay (US1 — Feature 007) ──
+
+  it('renders active circuits sorted by watts on flow card', () => {
+    // Arrange
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [
+          { channel_num: '1,2,3', display_name: 'Main', value: 8450.5 },
+          { channel_num: '4', display_name: 'Kitchen', value: 1200.0 },
+          { channel_num: '5', display_name: 'HVAC', value: 3000.0 },
+          { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 320.5 },
+        ],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — mains excluded, sorted by watts descending: HVAC (3000) > Kitchen (1200) > Unmonitored loads (320.5)
+    const circuitItems = container.querySelectorAll('.circuit-entry');
+    expect(circuitItems.length).toBe(3);
+    const names = Array.from(circuitItems).map((el) => el.querySelector('.circuit-name')?.textContent);
+    expect(names[0]).toBe('HVAC');
+    expect(names[1]).toBe('Kitchen');
+    expect(names[2]).toBe('Unmonitored loads');
+  });
+
+  it('excludes 0W circuits from flow card', () => {
+    // Arrange
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [
+          { channel_num: '4', display_name: 'Kitchen', value: 0 },
+          { channel_num: '5', display_name: 'HVAC', value: 500.0 },
+        ],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — only HVAC shown (Kitchen is 0W)
+    const circuitItems = container.querySelectorAll('.circuit-entry');
+    expect(circuitItems.length).toBe(1);
+    expect(circuitItems[0].querySelector('.circuit-name')?.textContent).toBe('HVAC');
+  });
+
+  it('hides circuit area when no active circuits', () => {
+    // Arrange
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [
+          { channel_num: '4', display_name: 'Kitchen', value: 0 },
+        ],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — no circuit-list container at all
+    expect(container.querySelector('.circuit-list')).toBeNull();
+  });
+
+  it('handles missing vue_device_mapping gracefully', () => {
+    // Arrange
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 1200.0 }],
+      }],
+    };
+
+    // Act — no mapping prop
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} />,
+    );
+
+    // Assert — no circuits shown
+    expect(container.querySelector('.circuit-list')).toBeNull();
+  });
+
+  it('renders two-column layout with left filling first', () => {
+    // Arrange — 4 circuits
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [
+          { channel_num: '4', display_name: 'A', value: 100 },
+          { channel_num: '5', display_name: 'B', value: 200 },
+          { channel_num: '6', display_name: 'C', value: 300 },
+          { channel_num: '7', display_name: 'D', value: 400 },
+        ],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — two columns rendered
+    const columns = container.querySelectorAll('.circuit-column');
+    expect(columns.length).toBe(2);
+  });
+
+  it('shows display name override over channel name', () => {
+    // Arrange — display_name from API already includes override resolution
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [
+          { channel_num: '4', display_name: 'Custom Override Name', value: 500 },
+        ],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert
+    const name = container.querySelector('.circuit-name');
+    expect(name?.textContent).toBe('Custom Override Name');
+  });
+
+  it('renders circuits from multiple panels mapped to same EP Cube', () => {
+    // Arrange
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 480380,
+          timestamp: 1712592000,
+          channels: [{ channel_num: '4', display_name: 'Kitchen', value: 500 }],
+        },
+        {
+          device_gid: 480544,
+          timestamp: 1712592000,
+          channels: [{ channel_num: '4', display_name: 'Dryer', value: 3000 }],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [
+        { gid: 480380, alias: 'Main Panel' },
+        { gid: 480544, alias: 'Subpanel' },
+      ],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — circuits from both panels shown by display_name
+    const names = Array.from(container.querySelectorAll('.circuit-name')).map((el) => el.textContent);
+    expect(names).toContain('Kitchen');
+    expect(names).toContain('Dryer');
+  });
+
+  it('handles mapped device GID not in Vue readings', () => {
+    // Arrange — mapping references GID 999999 which has no readings
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 500 }],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [
+        { gid: 480380, alias: 'Main Panel' },
+        { gid: 999999, alias: 'Missing Panel' },
+      ],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — only Kitchen from 480380 shown (999999 skipped)
+    const names = Array.from(container.querySelectorAll('.circuit-name')).map((el) => el.textContent);
+    expect(names).toContain('Kitchen');
+    expect(names.length).toBe(1);
+  });
+
+  it('resolves hierarchy children when filtering circuits for flow card', () => {
+    // Arrange — Main Panel (480380) is mapped, Subpanel 1 (480544) is its child
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 480380,
+          timestamp: 1712592000,
+          channels: [{ channel_num: '4', display_name: 'Kitchen', value: 500 }],
+        },
+        {
+          device_gid: 480544,
+          timestamp: 1712592000,
+          channels: [{ channel_num: '4', display_name: 'Dryer', value: 3000 }],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+    ];
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram
+        groups={[makeGroup()]}
+        vueCurrentReadings={vueData}
+        vueDeviceMapping={mapping}
+        hierarchyEntries={hierarchy}
+      />,
+    );
+
+    // Assert — both parent and child circuits shown
+    const names = Array.from(container.querySelectorAll('.circuit-name')).map((el) => el.textContent);
+    expect(names).toContain('Kitchen');
+    expect(names).toContain('Dryer');
+  });
+
+  it('renders display_name directly when single mapped panel has no children', () => {
+    // Arrange — single panel, no hierarchy children
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 500 }],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram
+        groups={[makeGroup()]}
+        vueCurrentReadings={vueData}
+        vueDeviceMapping={mapping}
+        hierarchyEntries={[]}
+      />,
+    );
+
+    // Assert — display_name used directly
+    const name = container.querySelector('.circuit-name');
+    expect(name?.textContent).toBe('Kitchen');
+  });
+
+  it('deduplicates parent Balance by subtracting children mains', () => {
+    // Arrange
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: '1', display_name: 'Kitchen', value: 500 },
+            { channel_num: 'Balance', display_name: 'M: Unmonitored', value: 1000 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub Main', value: 600 },
+            { channel_num: '1', display_name: 'Office', value: 200 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — Balance should be 1000 - 600 = 400W
+    const balance = circuits.find((c) => c.display_name.includes('Unmonitored'));
+    expect(balance).toBeDefined();
+    expect(balance!.value).toBe(400);
+  });
+
+  it('hides Balance when deduplication makes it zero or negative', () => {
+    // Arrange
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: 'Balance', display_name: 'M: Unmonitored', value: 500 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub Main', value: 600 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — Balance should not appear
+    expect(circuits.find((c) => c.display_name.includes('Unmonitored'))).toBeUndefined();
   });
 });

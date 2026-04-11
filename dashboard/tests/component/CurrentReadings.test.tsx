@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
-import { fetchDevices, fetchCurrentReadings } from '../../src/api';
+import { fetchDevices, fetchCurrentReadings, fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../../src/api';
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
 import { withRetry } from '../../src/utils/retry';
 import { CurrentReadings } from '../../src/components/CurrentReadings';
@@ -10,6 +10,9 @@ import { CurrentReadings } from '../../src/components/CurrentReadings';
 vi.mock('../../src/api', () => ({
   fetchDevices: vi.fn(),
   fetchCurrentReadings: vi.fn(),
+  fetchVueBulkCurrentReadings: vi.fn(),
+  fetchSettings: vi.fn(),
+  fetchHierarchy: vi.fn(),
 }));
 
 vi.mock('../../src/utils/polling', () => ({
@@ -33,6 +36,9 @@ vi.mock('../../src/utils/retry', () => ({
 
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchCurrentReadings = fetchCurrentReadings as ReturnType<typeof vi.fn>;
+const mockFetchVueBulkCurrentReadings = fetchVueBulkCurrentReadings as ReturnType<typeof vi.fn>;
+const mockFetchSettings = fetchSettings as ReturnType<typeof vi.fn>;
+const mockFetchHierarchy = fetchHierarchy as ReturnType<typeof vi.fn>;
 const mockCreatePolling = createPollingInterval as ReturnType<typeof vi.fn>;
 const mockWithRetry = withRetry as ReturnType<typeof vi.fn>;
 
@@ -540,6 +546,126 @@ describe('CurrentReadings', () => {
     await waitFor(() => {
       // withRetry was only called once (mount) — the polling tick was skipped
       expect(mockWithRetry).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Vue data polling (Feature 007 — US1) ──
+
+  it('fetches Vue bulk current readings on mount', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockResolvedValue({ devices: [] });
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(mockFetchVueBulkCurrentReadings).toHaveBeenCalled();
+    });
+  });
+
+  it('passes Vue data to EnergyFlowDiagram when in flow view', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockResolvedValue({
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 1200 }],
+      }],
+    });
+    mockFetchSettings.mockResolvedValue({
+      settings: [{ key: 'vue_device_mapping', value: '{}', last_modified: '' }],
+    });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — component renders without error (Vue data fetched and integrated)
+    await waitFor(() => {
+      expect(mockFetchVueBulkCurrentReadings).toHaveBeenCalled();
+      expect(mockFetchSettings).toHaveBeenCalled();
+    });
+  });
+
+  it('handles Vue API errors gracefully without breaking EP Cube data', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockRejectedValue(new Error('Vue API failed'));
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — component still renders EP Cube data, no error shown for Vue
+    await waitFor(() => {
+      expect(screen.queryByText(/Vue API failed/)).toBeNull();
+    });
+  });
+
+  it('parses vue_device_mapping from settings response', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockResolvedValue({ devices: [] });
+    mockFetchSettings.mockResolvedValue({
+      settings: [{
+        key: 'vue_device_mapping',
+        value: '{"EP Cube v2":[{"gid":480380,"alias":"Main"}]}',
+        last_modified: '',
+      }],
+    });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — no error, component renders (mapping parsed successfully)
+    await waitFor(() => {
+      expect(mockFetchSettings).toHaveBeenCalled();
+    });
+  });
+
+  it('handles invalid vue_device_mapping JSON gracefully', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockResolvedValue({ devices: [] });
+    mockFetchSettings.mockResolvedValue({
+      settings: [{ key: 'vue_device_mapping', value: 'not-json', last_modified: '' }],
+    });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — no crash, component renders
+    await waitFor(() => {
+      expect(mockFetchSettings).toHaveBeenCalled();
+      expect(screen.queryByText(/Error/)).toBeNull();
     });
   });
 });

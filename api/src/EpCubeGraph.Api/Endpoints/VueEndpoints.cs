@@ -18,6 +18,13 @@ public static class VueEndpoints
             .Produces<VueRangeReadingsResponse>()
             .Produces(404);
 
+        // Bulk readings
+        group.MapGet("/vue/readings/current", HandleGetBulkCurrentReadings)
+            .Produces<VueBulkCurrentReadingsResponse>();
+        group.MapGet("/vue/readings/daily", HandleGetDailyReadings)
+            .Produces<VueBulkDailyReadingsResponse>()
+            .Produces(400);
+
         // Panel Totals
         group.MapGet("/vue/panels/{deviceGid:long}/total", HandleGetPanelTotal)
             .Produces<PanelTotalResponse>()
@@ -116,6 +123,25 @@ public static class VueEndpoints
         if (stepErr is not null)
             return Results.BadRequest(new ErrorResponse("error", "bad_request", stepErr));
         var result = await store.GetHomeTotalRangeAsync(start, end, step, ct);
+        return Results.Ok(result);
+    }
+
+    // ── Bulk Readings ──
+
+    private static async Task<IResult> HandleGetBulkCurrentReadings(IVueStore store, CancellationToken ct)
+    {
+        var result = await store.GetBulkCurrentReadingsAsync(ct);
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleGetDailyReadings(
+        [FromQuery] string? date, IVueStore store, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(date))
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", "'date' query parameter is required"));
+        if (!DateOnly.TryParse(date, out var parsedDate))
+            return Results.BadRequest(new ErrorResponse("error", "bad_request", $"Invalid date format: '{date}'. Use ISO format (e.g. 2026-04-09)"));
+        var result = await store.GetDailyReadingsAsync(parsedDate, ct);
         return Results.Ok(result);
     }
 }

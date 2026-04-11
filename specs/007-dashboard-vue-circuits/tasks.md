@@ -43,24 +43,24 @@
 
 ### Tests (RED — write first, confirm they fail)
 
-- [ ] T008 [P] Unit tests for new VueEndpoints handlers (bulk current, daily) in `api/tests/EpCubeGraph.Api.Tests/Unit/VueEndpointsTests.cs`
-- [ ] T009 [P] Unit tests for Settings allowlist extension (vue_device_mapping validation, vue_daily_poll_interval_seconds) in `api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs`
-- [ ] T010 [P] Integration tests for `GET /vue/readings/current` (bulk) in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetBulkCurrentReadingsAsync tests)
-- [ ] T011 [P] Integration tests for `GET /vue/readings/daily` in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetDailyReadingsAsync tests — insert vue_readings_daily rows, query by date)
-- [ ] T012 [P] Integration tests for `PUT /settings/vue_device_mapping` in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` (valid JSON, invalid JSON, duplicate GIDs, non-array values)
-- [ ] T013 [P] Unit tests for new API client functions in `dashboard/tests/unit/api.test.ts` (add fetchVueBulkCurrentReadings, fetchVueDailyReadings tests)
-- [ ] T014 [P] Exporter tests for daily poll loop and vue_readings_daily upsert in `local/epcube-exporter/test_exporter.py` — include: upsert creates/updates rows, two readings on different dates produce separate rows (date boundary), configurable poll interval from settings
+- [X] T008 [P] Unit tests for new VueEndpoints handlers (bulk current, daily) in `api/tests/EpCubeGraph.Api.Tests/Unit/VueEndpointsTests.cs`
+- [X] T009 [P] Unit tests for Settings allowlist extension (vue_device_mapping validation, vue_daily_poll_interval_seconds) in `api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs`
+- [X] T010 [P] Integration tests for `GET /vue/readings/current` (bulk) in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetBulkCurrentReadingsAsync tests)
+- [X] T011 [P] Integration tests for `GET /vue/readings/daily` in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetDailyReadingsAsync tests — insert vue_readings_daily rows, query by date)
+- [X] T012 [P] Integration tests for `PUT /settings/vue_device_mapping` in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` (valid JSON, invalid JSON, duplicate GIDs, non-array values)
+- [X] T013 [P] Unit tests for new API client functions in `dashboard/tests/unit/api.test.ts` (add fetchVueBulkCurrentReadings, fetchVueDailyReadings tests)
+- [X] T014 [P] Exporter tests for daily poll loop and vue_readings_daily upsert in `local/epcube-exporter/test_exporter.py` — include: upsert creates/updates rows, two readings on different dates produce separate rows (date boundary), configurable poll interval from settings
 
 ### Implementation (GREEN — make tests pass)
 
-- [ ] T015 Add `GetBulkCurrentReadingsAsync` and `GetDailyReadingsAsync` to `api/src/EpCubeGraph.Api/Services/IVueStore.cs`
-- [ ] T016 Implement `GetBulkCurrentReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query latest vue_readings per channel across all devices, join display_name_overrides + vue_channels for name resolution)
-- [ ] T017 Implement `GetDailyReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query vue_readings_daily by date, join display names)
-- [ ] T018 Register `GET /vue/readings/current` and `GET /vue/readings/daily` endpoints in `api/src/EpCubeGraph.Api/Endpoints/VueEndpoints.cs`
-- [ ] T019 Extend Settings API allowlist in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — add `vue_device_mapping` (JSON structure validation: object with string keys, array-of-objects values with gid/alias/prefix, no duplicate GIDs) and `vue_daily_poll_interval_seconds` (integer 1–3600)
-- [ ] T020 Add `fetchVueBulkCurrentReadings()` and `fetchVueDailyReadings(date)` to `dashboard/src/api.ts`
-- [ ] T021 Implement daily poll loop in `local/epcube-exporter/exporter.py` — poll PyEmVue at daily scale on configurable interval (settings key `vue_daily_poll_interval_seconds`, default 300s), upsert per-circuit kWh to `vue_readings_daily` table
-- [ ] T022 Endpoint integration tests for bulk current + daily in `api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs` (full HTTP round-trip through the app)
+- [X] T015 Add `GetBulkCurrentReadingsAsync` and `GetDailyReadingsAsync` to `api/src/EpCubeGraph.Api/Services/IVueStore.cs`
+- [X] T016 Implement `GetBulkCurrentReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query latest vue_readings per channel across all devices, join display_name_overrides + vue_channels for name resolution)
+- [X] T017 Implement `GetDailyReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query vue_readings_daily by date, join display names)
+- [X] T018 Register `GET /vue/readings/current` and `GET /vue/readings/daily` endpoints in `api/src/EpCubeGraph.Api/Endpoints/VueEndpoints.cs`
+- [X] T019 Extend Settings API allowlist in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — add `vue_device_mapping` (JSON structure validation: object with string keys, array-of-objects values with gid/alias, no duplicate GIDs) and `vue_daily_poll_interval_seconds` (integer 1–3600)
+- [X] T020 Add `fetchVueBulkCurrentReadings()` and `fetchVueDailyReadings(date)` to `dashboard/src/api.ts`
+- [X] T021 Implement daily poll loop in `local/epcube-exporter/exporter.py` — poll PyEmVue at daily scale on configurable interval (settings key `vue_daily_poll_interval_seconds`, default 300s), upsert per-circuit kWh to `vue_readings_daily` table
+- [X] T022 Endpoint integration tests for bulk current + daily in `api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs` (full HTTP round-trip through the app)
 
 **Checkpoint**: API serves bulk current + daily readings. Exporter writes daily kWh. Dashboard can fetch data. All foundational tests pass at 100% coverage.
 
@@ -76,14 +76,14 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T022 [P] [US1] Component test for circuit list overlay in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: renders active circuits sorted by watts, excludes 0W and mains, shows Balance as "Unmonitored loads", hides circuit area when no active circuits, handles missing vue_device_mapping, two-column layout (left fills first), display name override takes priority over channel name, panel prefix shown when 2+ panels mapped to same EP Cube
-- [ ] T023 [P] [US1] Component test for Vue polling in `dashboard/tests/component/CurrentReadings.test.tsx` — add tests: fetches bulk current readings on 1s interval (separate from EP Cube 30s interval), passes Vue data to EnergyFlowDiagram, handles API errors gracefully
+- [X] T022 [P] [US1] Component test for circuit list overlay in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — add tests: renders active circuits sorted by watts, excludes 0W and mains, shows Balance as "Unmonitored loads", hides circuit area when no active circuits, handles missing vue_device_mapping, two-column layout (left fills first), display name override takes priority over channel name, circuits from multiple panels shown by display_name
+- [X] T023 [P] [US1] Component test for Vue polling in `dashboard/tests/component/CurrentReadings.test.tsx` — add tests: fetches bulk current readings on 1s interval (separate from EP Cube 30s interval), passes Vue data to EnergyFlowDiagram, handles API errors gracefully
 
 ### Implementation for User Story 1
 
-- [ ] T024 [US1] Add Vue circuit list rendering to `dashboard/src/components/EnergyFlowDiagram.tsx` — accept Vue current readings + device mapping props, filter active circuits (>0W, exclude mains "1,2,3"), sort by watts then name, render as two columns flanking Home node (0.75em, name left / watts right), prefix names when 2+ panels mapped to same EP Cube
-- [ ] T025 [US1] Add Vue bulk current polling loop to `dashboard/src/components/CurrentReadings.tsx` — separate 1s interval for `fetchVueBulkCurrentReadings`, pass results + vue_device_mapping to EnergyFlowDiagram, handle API errors without breaking EP Cube data display
-- [ ] T026 [US1] Wire Vue data flow in `dashboard/src/components/CurrentReadings.tsx` — read `vue_device_mapping` from settings response, pass device mapping to flow diagram for per-card circuit filtering
+- [X] T024 [US1] Add Vue circuit list rendering to `dashboard/src/components/EnergyFlowDiagram.tsx` — accept Vue current readings + device mapping props, filter active circuits (>0W, exclude mains "1,2,3"), sort by watts then name, render as two columns flanking Home node (0.75em, name left / watts right), show display_name directly without prefix
+- [X] T025 [US1] Add Vue bulk current polling loop to `dashboard/src/components/CurrentReadings.tsx` — separate 1s interval for `fetchVueBulkCurrentReadings`, pass results + vue_device_mapping to EnergyFlowDiagram, handle API errors without breaking EP Cube data display
+- [X] T026 [US1] Wire Vue data flow in `dashboard/src/components/CurrentReadings.tsx` — read `vue_device_mapping` from settings response, pass device mapping to flow diagram for per-card circuit filtering
 
 **Checkpoint**: Flow diagram cards show active circuits inline. 0W circuits hidden. Cards with no mapping look unchanged. US1 independently testable. `npm run typecheck && npm run test:coverage` passes at 100%.
 
@@ -142,12 +142,12 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T036 [P] Component test for mapping editor in `dashboard/tests/component/SettingsPage.test.tsx` — add tests: renders EP Cube devices with assigned Vue panels, renders unassigned Vue panel pool, assign panel to device updates mapping state, unassign panel returns to pool, save calls PUT /settings/vue_device_mapping with correct JSON, validation error displayed on save failure, auto-discovers devices from API, handles empty device lists
+- [X] T036 [P] Component test for mapping editor in `dashboard/tests/component/SettingsPage.test.tsx` — add tests: renders EP Cube devices with assigned Vue panels, renders unassigned Vue panel pool, assign panel to device updates mapping state, unassign panel returns to pool, save calls PUT /settings/vue_device_mapping with correct JSON, validation error displayed on save failure, auto-discovers devices from API, handles empty device lists
 
 ### Implementation for Phase 6
 
-- [ ] T037 Add mapping editor section to `dashboard/src/components/SettingsPage.tsx` — fetch EP Cube devices (`GET /devices`) and Vue devices (`GET /vue/devices`), read current mapping from settings, render EP Cube targets with assigned Vue panels, unassigned pool, dropdown assignment, save to `PUT /settings/vue_device_mapping`
-- [ ] T038 Add CSS for mapping editor in `dashboard/src/app.css` — device/panel assignment layout, unassigned pool styling
+- [X] T037 Add mapping editor section to `dashboard/src/components/SettingsPage.tsx` — fetch EP Cube devices (`GET /devices`) and Vue devices (`GET /vue/devices`), read current mapping from settings, render EP Cube targets with assigned Vue panels, unassigned pool, dropdown assignment, save to `PUT /settings/vue_device_mapping`
+- [X] T038 Add CSS for mapping editor in `dashboard/src/app.css` — device/panel assignment layout, unassigned pool styling
 
 **Checkpoint**: Settings page allows mapping Vue panels to EP Cubes. Mapping persists via API. `npm run typecheck && npm run test:coverage` passes at 100%.
 

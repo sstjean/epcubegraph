@@ -129,7 +129,7 @@ Two new keys are added to the settings allowlist:
 
 | Key | Validation | Notes |
 |-----|-----------|-------|
-| `vue_device_mapping` | Valid JSON object: keys are strings, values are arrays of objects with `gid` (number), `alias` (string), `prefix` (string). No duplicate GIDs across keys. | Maps EP Cube device IDs to Vue panels with display alias and flow card prefix |
+| `vue_device_mapping` | Valid JSON object: keys are strings, values are arrays of objects with `gid` (number) and `alias` (string). No duplicate GIDs across keys. | Maps EP Cube device IDs to Vue panels with display alias |
 | `vue_daily_poll_interval_seconds` | Integer 1–3600 | Exporter poll interval for daily kWh data |
 
 #### Example: Save Vue Device Mapping
@@ -139,13 +139,13 @@ PUT /api/v1/settings/vue_device_mapping
 Content-Type: application/json
 
 {
-  "value": "{\"epcube3483\":[{\"gid\":480380,\"alias\":\"Main Panel\",\"prefix\":\"M\"},{\"gid\":480544,\"alias\":\"Subpanel 1\",\"prefix\":\"S1\"}]}"
+  "value": "{\"epcube3483\":[{\"gid\":480380,\"alias\":\"Main Panel\"},{\"gid\":480544,\"alias\":\"Subpanel 1\"}]}"
 }
 ```
 
 **Validation errors**:
 - `400`: "Invalid JSON in vue_device_mapping value"
-- `400`: "vue_device_mapping values must be arrays of objects with gid, alias, and prefix"
+- `400`: "vue_device_mapping values must be arrays of objects with gid and alias"
 - `400`: "Vue device GID {gid} is mapped to multiple EP Cube devices"
 
 ---
@@ -163,7 +163,7 @@ Content-Type: application/json
 - Include Balance channels (shown as "Unmonitored loads")
 - Sort ascending by `value`, then alphabetical by `display_name`
 - Left column fills first, overflow to right column
-- If 2+ Vue panels mapped to same EP Cube, prefix circuit names with the panel's `prefix` field from the mapping (e.g., "M: Kitchen", "S1: Dryer")
+- If 2+ Vue panels mapped to same EP Cube, all circuits from all panels are shown by `display_name` without prefix
 - Style: 0.75em font, name left / watts right, tight line spacing
 
 ### Circuits Page

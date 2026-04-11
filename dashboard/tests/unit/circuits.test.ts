@@ -83,7 +83,7 @@ describe('circuits', () => {
   });
 
   describe('sortByWattsThenName', () => {
-    it('sorts ascending by watts', async () => {
+    it('sorts descending by watts (highest first)', async () => {
       // Arrange
       const { sortByWattsThenName } = await import('../../src/utils/circuits');
       const items = [
@@ -96,7 +96,7 @@ describe('circuits', () => {
       const result = [...items].sort(sortByWattsThenName);
 
       // Assert
-      expect(result.map((c) => c.value)).toEqual([120, 450, 850]);
+      expect(result.map((c) => c.value)).toEqual([850, 450, 120]);
     });
 
     it('sorts alphabetically by name when watts are equal', async () => {
@@ -210,9 +210,9 @@ describe('circuits', () => {
       // Arrange
       const { orderPanels } = await import('../../src/utils/circuits');
       const panels = [
-        { device_gid: 1, alias: 'Main Panel', prefix: 'M' },
-        { device_gid: 2, alias: 'Subpanel 1', prefix: 'S1' },
-        { device_gid: 3, alias: 'Workshop', prefix: 'W' },
+        { device_gid: 1, alias: 'Main Panel' },
+        { device_gid: 2, alias: 'Subpanel 1' },
+        { device_gid: 3, alias: 'Workshop' },
       ];
       const hierarchy = [{ parent_device_gid: 1, child_device_gid: 2 }];
 
@@ -231,8 +231,8 @@ describe('circuits', () => {
       // Arrange
       const { orderPanels } = await import('../../src/utils/circuits');
       const panels = [
-        { device_gid: 1, alias: 'Beta', prefix: 'B' },
-        { device_gid: 2, alias: 'Alpha', prefix: 'A' },
+        { device_gid: 1, alias: 'Beta' },
+        { device_gid: 2, alias: 'Alpha' },
       ];
 
       // Act
@@ -246,9 +246,9 @@ describe('circuits', () => {
       // Arrange
       const { orderPanels } = await import('../../src/utils/circuits');
       const panels = [
-        { device_gid: 1, alias: 'Main', prefix: 'M' },
-        { device_gid: 2, alias: 'Zebra Sub', prefix: 'Z' },
-        { device_gid: 3, alias: 'Alpha Sub', prefix: 'A' },
+        { device_gid: 1, alias: 'Main' },
+        { device_gid: 2, alias: 'Zebra Sub' },
+        { device_gid: 3, alias: 'Alpha Sub' },
       ];
       const hierarchy = [
         { parent_device_gid: 1, child_device_gid: 2 },

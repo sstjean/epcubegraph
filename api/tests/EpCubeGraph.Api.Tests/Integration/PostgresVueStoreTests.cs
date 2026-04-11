@@ -518,4 +518,150 @@ public class PostgresVueStoreTests : IClassFixture<PostgresFixture>, IAsyncLifet
         var dev = devices.First(d => d.DeviceGid == 100070);
         Assert.Equal("Device 100070", dev.DisplayName);
     }
+
+    // ── GetBulkCurrentReadingsAsync ──
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_ReturnsAllDevicesWithLatestReadings()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200001, "Panel A");
+        await _fixture.SeedVueDeviceAsync(200002, "Panel B");
+        await _fixture.SeedVueChannelAsync(200001, "1,2,3", "Main");
+        await _fixture.SeedVueChannelAsync(200001, "4", "Kitchen");
+        await _fixture.SeedVueChannelAsync(200002, "1,2,3", "Main");
+
+        var now = DateTimeOffset.UtcNow;
+        await _fixture.SeedVueReadingAsync(200001, "1,2,3", now.AddSeconds(-5), 8000.0);
+        await _fixture.SeedVueReadingAsync(200001, "4", now.AddSeconds(-3), 1200.0);
+        await _fixture.SeedVueReadingAsync(200002, "1,2,3", now.AddSeconds(-2), 3000.0);
+
+        // Act
+        var result = await _store.GetBulkCurrentReadingsAsync();
+
+        // Assert
+        Assert.Equal(2, result.Devices.Count);
+        var panelA = result.Devices.First(d => d.DeviceGid == 200001);
+        Assert.Equal(2, panelA.Channels.Count);
+        var kitchen = panelA.Channels.First(c => c.ChannelNum == "4");
+        Assert.Equal(1200.0, kitchen.Value);
+        Assert.Equal("Kitchen", kitchen.DisplayName);
+    }
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_ReturnsEmptyWhenNoDevices()
+    {
+        // Act
+        var result = await _store.GetBulkCurrentReadingsAsync();
+
+        // Assert
+        Assert.Empty(result.Devices);
+    }
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_ResolvesDisplayNameOverrides()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200003, "Panel");
+        await _fixture.SeedVueChannelAsync(200003, "4", "Raw Name");
+        await _fixture.SeedDisplayNameOverrideAsync(200003, "4", "Custom Name");
+        await _fixture.SeedVueReadingAsync(200003, "4", DateTimeOffset.UtcNow, 500.0);
+
+        // Act
+        var result = await _store.GetBulkCurrentReadingsAsync();
+
+        // Assert
+        var ch = result.Devices[0].Channels.First(c => c.ChannelNum == "4");
+        Assert.Equal("Custom Name", ch.DisplayName);
+    }
+
+    [Fact]
+    public async Task GetBulkCurrentReadings_DeviceWithNoReadingsIncludedWithEmptyChannels()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200004, "Empty Panel");
+
+        // Act
+        var result = await _store.GetBulkCurrentReadingsAsync();
+
+        // Assert
+        var dev = result.Devices.FirstOrDefault(d => d.DeviceGid == 200004);
+        Assert.NotNull(dev);
+        Assert.Empty(dev.Channels);
+    }
+
+    // ── GetDailyReadingsAsync ──
+
+    [Fact]
+    public async Task GetDailyReadings_ReturnsDataForDate()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200010, "Panel");
+        await _fixture.SeedVueChannelAsync(200010, "1,2,3", "Main");
+        await _fixture.SeedVueChannelAsync(200010, "4", "Kitchen");
+
+        var date = new DateOnly(2026, 4, 9);
+        await _fixture.SeedVueDailyReadingAsync(200010, "1,2,3", date, 42.5);
+        await _fixture.SeedVueDailyReadingAsync(200010, "4", date, 3.2);
+
+        // Act
+        var result = await _store.GetDailyReadingsAsync(date);
+
+        // Assert
+        Assert.Equal("2026-04-09", result.Date);
+        Assert.Single(result.Devices);
+        Assert.Equal(200010, result.Devices[0].DeviceGid);
+        Assert.Equal(2, result.Devices[0].Channels.Count);
+        var main = result.Devices[0].Channels.First(c => c.ChannelNum == "1,2,3");
+        Assert.Equal(42.5, main.Kwh);
+    }
+
+    [Fact]
+    public async Task GetDailyReadings_ReturnsEmptyWhenNoDataForDate()
+    {
+        // Act
+        var result = await _store.GetDailyReadingsAsync(new DateOnly(2026, 1, 1));
+
+        // Assert
+        Assert.Empty(result.Devices);
+    }
+
+    [Fact]
+    public async Task GetDailyReadings_ResolvesDisplayNameOverrides()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200011, "Panel");
+        await _fixture.SeedVueChannelAsync(200011, "4", "Raw Name");
+        await _fixture.SeedDisplayNameOverrideAsync(200011, "4", "Custom Daily");
+
+        var date = new DateOnly(2026, 4, 9);
+        await _fixture.SeedVueDailyReadingAsync(200011, "4", date, 5.0);
+
+        // Act
+        var result = await _store.GetDailyReadingsAsync(date);
+
+        // Assert
+        var ch = result.Devices[0].Channels[0];
+        Assert.Equal("Custom Daily", ch.DisplayName);
+    }
+
+    [Fact]
+    public async Task GetDailyReadings_FiltersByDate()
+    {
+        // Arrange
+        await _fixture.SeedVueDeviceAsync(200012, "Panel");
+        await _fixture.SeedVueChannelAsync(200012, "4", "Load");
+
+        var date1 = new DateOnly(2026, 4, 8);
+        var date2 = new DateOnly(2026, 4, 9);
+        await _fixture.SeedVueDailyReadingAsync(200012, "4", date1, 10.0);
+        await _fixture.SeedVueDailyReadingAsync(200012, "4", date2, 15.0);
+
+        // Act
+        var result = await _store.GetDailyReadingsAsync(date2);
+
+        // Assert
+        Assert.Single(result.Devices);
+        Assert.Equal(15.0, result.Devices[0].Channels[0].Kwh);
+    }
 }
