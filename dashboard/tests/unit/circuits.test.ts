@@ -310,8 +310,9 @@ describe('circuits', () => {
       // Act — should not hang or throw
       const result = orderPanels(panels, hierarchy);
 
-      // Assert — all panels present, no duplicates
-      expect(result.length).toBeLessThanOrEqual(3);
+      // Assert — all panels present exactly once, regardless of order
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.device_gid).sort((a, b) => a - b)).toEqual([1, 2, 3]);
     });
 
     it('handles orphaned hierarchy references gracefully', async () => {

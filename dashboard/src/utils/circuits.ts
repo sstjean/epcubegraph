@@ -95,5 +95,11 @@ export function orderPanels(
     result.push(...children);
   }
 
+  // Fallback: append any panels not yet in result (e.g., from multi-node cycles)
+  const seen = new Set(result.map((p) => p.device_gid));
+  for (const p of panels.sort((a, b) => a.alias.localeCompare(b.alias))) {
+    if (!seen.has(p.device_gid)) result.push(p);
+  }
+
   return result;
 }
