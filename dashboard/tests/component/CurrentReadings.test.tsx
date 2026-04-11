@@ -614,9 +614,29 @@ describe('CurrentReadings', () => {
     // Act
     render(<CurrentReadings />);
 
-    // Assert — component still renders EP Cube data, no error shown for Vue
+    // Assert — EP Cube data still renders, Vue error surfaced separately
     await waitFor(() => {
-      expect(screen.queryByText(/Vue API failed/)).toBeNull();
+      expect(screen.getByText(/Vue circuits:.*Vue API failed/)).toBeTruthy();
+    });
+  });
+
+  it('handles non-Error Vue rejection without crashing', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockRejectedValue('network timeout');
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — fallback message shown
+    await waitFor(() => {
+      expect(screen.getByText(/Vue circuits:.*Vue readings unavailable/)).toBeTruthy();
     });
   });
 

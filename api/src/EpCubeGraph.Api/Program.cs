@@ -65,13 +65,20 @@ if (!app.Environment.IsDevelopment())
     {
         appBuilder.Run(async context =>
         {
+            var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("UnhandledException");
+            var exceptionFeature = context.Features.Get<Microsoft.AspNetCore.Diagnostics.IExceptionHandlerFeature>();
+            if (exceptionFeature?.Error is not null)
+            {
+                logger.LogError(exceptionFeature.Error, "Unhandled exception on {Method} {Path}",
+                    context.Request.Method, context.Request.Path);
+            }
             context.Response.StatusCode = 500;
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsJsonAsync(new
             {
                 status = "error",
                 errorType = "internal",
-                error = "An unexpected error occurred"
+                error = "An unexpected error occurred while processing the request"
             });
         });
     });

@@ -8,6 +8,7 @@ import { createPollingInterval, clearPollingInterval } from '../utils/polling';
 import { formatRelativeTime } from '../utils/formatting';
 import { withRetry } from '../utils/retry';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
+import { trackException } from '../telemetry';
 
 export interface DeviceGroup {
   name: string;
@@ -46,6 +47,7 @@ export function CurrentReadings() {
   const retryingRef = useRef(false);
   const [vueCurrentReadings, setVueCurrentReadings] = useState<VueBulkCurrentReadingsResponse | undefined>();
   const [vueDeviceMapping, setVueDeviceMapping] = useState<VueDeviceMapping | undefined>();
+  const [vueError, setVueError] = useState<string | null>(null);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -135,8 +137,11 @@ export function CurrentReadings() {
     try {
       const vueReadings = await fetchVueBulkCurrentReadings();
       setVueCurrentReadings(vueReadings);
-    } catch {
-      // Vue errors don't break EP Cube display
+      setVueError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Vue readings unavailable';
+      setVueError(msg);
+      if (err instanceof Error) trackException(err);
     }
   };
 
@@ -153,14 +158,15 @@ export function CurrentReadings() {
       if (mappingSetting) {
         try {
           setVueDeviceMapping(JSON.parse(mappingSetting.value) as VueDeviceMapping);
-        } catch {
+        } catch (err) {
           setVueDeviceMapping(undefined);
+          if (err instanceof Error) trackException(err);
         }
       } else {
         setVueDeviceMapping(undefined);
       }
-    } catch {
-      // Settings errors don't break EP Cube display
+    } catch (err) {
+      if (err instanceof Error) trackException(err);
     }
   };
 
@@ -204,6 +210,7 @@ export function CurrentReadings() {
         </div>
       </div>
       {error && <p role="alert">Error: {error}</p>}
+      {vueError && <p role="status" class="vue-error-notice">Vue circuits: {vueError}</p>}
       {retryAttempt > 0 && !error && (
         <p role="status" class="retry-notice">Reconnecting… attempt {retryAttempt} of 10</p>
       )}
