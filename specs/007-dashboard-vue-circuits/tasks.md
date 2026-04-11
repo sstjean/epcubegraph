@@ -14,47 +14,53 @@
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
 
-## Phase 1: Setup (Shared Infrastructure)
+## Phase 1: Setup — Tests First
 
-**Purpose**: Database schema, shared types, and API models needed by all user stories
+**Purpose**: Write failing tests for shared infrastructure (types, utilities, schema), then implement
 
-- [ ] T001 Create `vue_readings_daily` table via SQL in exporter startup (`local/epcube-exporter/exporter.py` — add `CREATE TABLE IF NOT EXISTS` in DB init)
-- [ ] T002 [P] Add bulk current/daily response models to `api/src/EpCubeGraph.Api/Models/Vue.cs` (VueBulkCurrentReadingsResponse, VueDailyChannelReading, VueDeviceDailyReadings, VueBulkDailyReadingsResponse)
-- [ ] T003 [P] Add Vue dashboard TypeScript types to `dashboard/src/types.ts` (VueCurrentChannel, VueDeviceCurrentReadings, VueBulkCurrentReadingsResponse, VueDailyChannel, VueDeviceDailyReadings, VueBulkDailyReadingsResponse, VueDeviceMapping)
+### Tests (RED — write first, confirm they fail)
+
+- [ ] T001 [P] Unit tests for circuit utility functions in `dashboard/tests/unit/circuits.test.ts` (filterActiveCircuits, sortByWattsThenName, sortByCircuitNumber, orderPanels)
+- [ ] T002 [P] Unit tests for bulk current readings model serialization in `api/tests/EpCubeGraph.Api.Tests/Unit/ModelSerializationTests.cs` (add VueBulkCurrentReadingsResponse and VueBulkDailyReadingsResponse round-trip tests)
+- [ ] T003 [P] Exporter tests for vue_readings_daily schema creation in `local/epcube-exporter/test_exporter.py` — test: `_ensure_vue_schema()` creates vue_readings_daily table with expected columns
+
+### Implementation (GREEN — make tests pass)
+
 - [ ] T004 [P] Create circuit sorting/filtering utility module `dashboard/src/utils/circuits.ts` (filterActiveCircuits, sortByWattsThenName, sortByCircuitNumber — sort contract: mains "1,2,3" always first, numeric parse of channel_num, "Balance" always last — orderPanels — reuse existing `formatKwh` from `utils/formatting.ts`)
+- [ ] T005 [P] Add bulk current/daily response models to `api/src/EpCubeGraph.Api/Models/Vue.cs` (VueBulkCurrentReadingsResponse, VueDailyChannelReading, VueDeviceDailyReadings, VueBulkDailyReadingsResponse)
+- [ ] T006 [P] Add Vue dashboard TypeScript types to `dashboard/src/types.ts` (VueCurrentChannel, VueDeviceCurrentReadings, VueBulkCurrentReadingsResponse, VueDailyChannel, VueDeviceDailyReadings, VueBulkDailyReadingsResponse, VuePanelMapping, VueDeviceMapping)
+- [ ] T007 [P] Add `vue_readings_daily` table to exporter schema init (`local/epcube-exporter/exporter.py` — add `CREATE TABLE IF NOT EXISTS` in `_ensure_vue_schema()`)
+
+**Checkpoint**: All setup tests pass at 100% coverage. Types, utilities, and schema are in place.
 
 ---
 
-## Phase 2: Foundational (Blocking Prerequisites)
+## Phase 2: Foundational — API + Data Pipeline
 
-**Purpose**: API endpoints and data pipeline that MUST be complete before dashboard user stories can render data
+**Purpose**: API endpoints and exporter daily pipeline. MUST be complete before dashboard user stories.
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-### Tests for Foundational Phase
+### Tests (RED — write first, confirm they fail)
 
-> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
+- [ ] T008 [P] Unit tests for new VueEndpoints handlers (bulk current, daily) in `api/tests/EpCubeGraph.Api.Tests/Unit/VueEndpointsTests.cs`
+- [ ] T009 [P] Unit tests for Settings allowlist extension (vue_device_mapping validation, vue_daily_poll_interval_seconds) in `api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs`
+- [ ] T010 [P] Integration tests for `GET /vue/readings/current` (bulk) in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetBulkCurrentReadingsAsync tests)
+- [ ] T011 [P] Integration tests for `GET /vue/readings/daily` in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetDailyReadingsAsync tests — insert vue_readings_daily rows, query by date)
+- [ ] T012 [P] Integration tests for `PUT /settings/vue_device_mapping` in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` (valid JSON, invalid JSON, duplicate GIDs, non-array values)
+- [ ] T013 [P] Unit tests for new API client functions in `dashboard/tests/unit/api.test.ts` (add fetchVueBulkCurrentReadings, fetchVueDailyReadings tests)
+- [ ] T014 [P] Exporter tests for daily poll loop and vue_readings_daily upsert in `local/epcube-exporter/test_exporter.py` — include: upsert creates/updates rows, two readings on different dates produce separate rows (date boundary), configurable poll interval from settings
 
-- [ ] T005 [P] Unit tests for bulk current readings model serialization in `api/tests/EpCubeGraph.Api.Tests/Unit/ModelSerializationTests.cs` (add VueBulkCurrentReadingsResponse and VueBulkDailyReadingsResponse round-trip tests)
-- [ ] T006 [P] Unit tests for new VueEndpoints handlers (bulk current, daily) in `api/tests/EpCubeGraph.Api.Tests/Unit/VueEndpointsTests.cs`
-- [ ] T007 [P] Unit tests for Settings allowlist extension (vue_device_mapping validation, vue_daily_poll_interval_seconds) in `api/tests/EpCubeGraph.Api.Tests/Unit/ValidateTests.cs`
-- [ ] T008 [P] Integration tests for `GET /vue/readings/current` (bulk) in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetBulkCurrentReadingsAsync tests)
-- [ ] T009 [P] Integration tests for `GET /vue/readings/daily` in `api/tests/EpCubeGraph.Api.Tests/Integration/PostgresVueStoreTests.cs` (add GetDailyReadingsAsync tests — insert vue_readings_daily rows, query by date)
-- [ ] T010 [P] Integration tests for `PUT /settings/vue_device_mapping` in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` (valid JSON, invalid JSON, duplicate GIDs, non-array values)
-- [ ] T011 [P] Unit tests for circuit utility functions in `dashboard/tests/unit/circuits.test.ts` (filterActiveCircuits, sortByWattsThenName, sortByCircuitNumber, orderPanels)
-- [ ] T012 [P] Unit tests for new API client functions in `dashboard/tests/unit/api.test.ts` (add fetchVueBulkCurrentReadings, fetchVueDailyReadings tests)
-- [ ] T013 [P] Exporter tests for daily poll loop and vue_readings_daily upsert in `local/epcube-exporter/test_exporter.py` — include: upsert creates/updates rows, two readings on different dates produce separate rows (date boundary), configurable poll interval from settings
+### Implementation (GREEN — make tests pass)
 
-### Implementation for Foundational Phase
-
-- [ ] T014 Add `GetBulkCurrentReadingsAsync` and `GetDailyReadingsAsync` to `api/src/EpCubeGraph.Api/Services/IVueStore.cs`
-- [ ] T015 Implement `GetBulkCurrentReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query latest vue_readings per channel across all devices, join display_name_overrides + vue_channels for name resolution)
-- [ ] T016 Implement `GetDailyReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query vue_readings_daily by date, join display names)
-- [ ] T017 Register `GET /vue/readings/current` and `GET /vue/readings/daily` endpoints in `api/src/EpCubeGraph.Api/Endpoints/VueEndpoints.cs`
-- [ ] T018 Extend Settings API allowlist in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — add `vue_device_mapping` (JSON structure validation: object with string keys, array-of-number values, no duplicate GIDs) and `vue_daily_poll_interval_seconds` (integer 1–3600)
-- [ ] T019 Add `fetchVueBulkCurrentReadings()` and `fetchVueDailyReadings(date)` to `dashboard/src/api.ts`
-- [ ] T020 Implement daily poll loop in `local/epcube-exporter/exporter.py` — poll PyEmVue at daily scale on configurable interval (settings key `vue_daily_poll_interval_seconds`, default 300s), upsert per-circuit kWh to `vue_readings_daily` table
-- [ ] T021 Endpoint integration tests for bulk current + daily in `api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs` (full HTTP round-trip through the app)
+- [ ] T015 Add `GetBulkCurrentReadingsAsync` and `GetDailyReadingsAsync` to `api/src/EpCubeGraph.Api/Services/IVueStore.cs`
+- [ ] T016 Implement `GetBulkCurrentReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query latest vue_readings per channel across all devices, join display_name_overrides + vue_channels for name resolution)
+- [ ] T017 Implement `GetDailyReadingsAsync` in `api/src/EpCubeGraph.Api/Services/PostgresVueStore.cs` (query vue_readings_daily by date, join display names)
+- [ ] T018 Register `GET /vue/readings/current` and `GET /vue/readings/daily` endpoints in `api/src/EpCubeGraph.Api/Endpoints/VueEndpoints.cs`
+- [ ] T019 Extend Settings API allowlist in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — add `vue_device_mapping` (JSON structure validation: object with string keys, array-of-objects values with gid/alias/prefix, no duplicate GIDs) and `vue_daily_poll_interval_seconds` (integer 1–3600)
+- [ ] T020 Add `fetchVueBulkCurrentReadings()` and `fetchVueDailyReadings(date)` to `dashboard/src/api.ts`
+- [ ] T021 Implement daily poll loop in `local/epcube-exporter/exporter.py` — poll PyEmVue at daily scale on configurable interval (settings key `vue_daily_poll_interval_seconds`, default 300s), upsert per-circuit kWh to `vue_readings_daily` table
+- [ ] T022 Endpoint integration tests for bulk current + daily in `api/tests/EpCubeGraph.Api.Tests/Integration/EndpointTests.cs` (full HTTP round-trip through the app)
 
 **Checkpoint**: API serves bulk current + daily readings. Exporter writes daily kWh. Dashboard can fetch data. All foundational tests pass at 100% coverage.
 
@@ -178,50 +184,44 @@
 - **US3 (P3)**: Depends on US1 + US2. Hardens components created in both stories
 - **Settings Editor**: Depends on Foundational (T018 allowlist). Touches `SettingsPage.tsx` — **independent of US1/US2**
 
-### Within Each User Story
+### Within Each Phase
 
-- Tests MUST be written and FAIL before implementation
-- Utility functions before components
-- Components before integration
-- Story complete before moving to next priority
+- Tests MUST be written and confirmed to FAIL before implementation (Red-Green-Refactor)
+- No production code without a covering test
 - `npm run typecheck` after each dashboard change
+- Coverage verified at each checkpoint
 
 ### Parallel Opportunities
 
-**Phase 1** — All setup tasks (T001-T004) can run in parallel (different files/codebases)
+**Phase 1** — Test tasks T001-T003 parallel (different files). Then impl T004-T007 parallel.
 
-**Phase 2** — Test tasks T005-T013 all parallel (different test files). Implementation T014-T020 has dependencies:
-- T014 before T015/T016 (interface before implementation)
-- T015/T016 parallel (different methods in same file, but can be one commit)
-- T017 after T015/T016 (endpoints wire up store methods)
-- T018 independent (SettingsEndpoints.cs)
-- T019 independent (dashboard api.ts)
-- T020 independent (exporter.py)
+**Phase 2** — Test tasks T008-T014 all parallel (different test files). Implementation T015-T021 has dependencies:
+- T015 before T016/T017 (interface before implementation)
+- T016/T017 parallel (different methods in same file)
+- T018 after T016/T017 (endpoints wire up store methods)
+- T019 independent (SettingsEndpoints.cs)
+- T020 independent (dashboard api.ts)
+- T021 independent (exporter.py)
+- T022 after T018 (endpoint integration tests)
 
-**Phase 3-6** — US1, US2, and Settings Editor can run in parallel after Phase 2 (different component files)
+**Phase 3-6** — US1, US2, and Settings Editor can run in parallel after Phase 2 (different component files). Within each: tests first, then implementation.
 
 ---
 
-## Parallel Example: Foundational Phase
+## Parallel Example: Phase 1 (Setup)
 
 ```
-# All test tasks in parallel (different files):
-T005: Model serialization tests (Vue.cs models)
-T006: VueEndpoints unit tests
-T007: Settings validation tests
-T008: PostgresVueStore bulk current integration tests
-T009: PostgresVueStore daily integration tests
-T010: Settings endpoint integration tests
-T011: Circuit utility unit tests (dashboard)
-T012: API client unit tests (dashboard)
-T013: Exporter daily poll tests
+# RED — all test tasks in parallel (different test files):
+T001: Circuit utility unit tests (dashboard)
+T002: Model serialization tests (API)
+T003: Exporter schema creation tests
 
-# Implementation sequence:
-T014 → T015 + T016 (parallel) → T017
-T018 (parallel with T014-T017)
-T019 (parallel — dashboard)
-T020 (parallel — exporter)
-T021 (after T017 — endpoint integration tests)
+# GREEN — all impl tasks in parallel (different codebases):
+T004: circuits.ts (dashboard)
+T005: Vue.cs models (API)
+T006: types.ts (dashboard)
+T007: exporter schema (Python)
+```
 ```
 
 ## Parallel Example: User Stories (after Phase 2)
