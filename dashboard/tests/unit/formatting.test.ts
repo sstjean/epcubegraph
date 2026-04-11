@@ -89,6 +89,28 @@ describe('formatting', () => {
       // Assert
       expect(result).toBe('0 W');
     });
+
+    it('returns dash for Infinity', async () => {
+      // Arrange
+      const { formatWatts } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatWatts(Infinity);
+
+      // Assert
+      expect(result).toBe('—');
+    });
+
+    it('returns dash for negative Infinity', async () => {
+      // Arrange
+      const { formatWatts } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatWatts(-Infinity);
+
+      // Assert
+      expect(result).toBe('—');
+    });
   });
 
   describe('formatKw', () => {

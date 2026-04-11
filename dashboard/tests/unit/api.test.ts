@@ -181,6 +181,25 @@ describe('api', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
+  it('throws when getAccessToken returns null on retry', async () => {
+    // Arrange — token is valid initially, then null on retry
+    const { getAccessToken } = await setupAuth();
+    let callCount = 0;
+    getAccessToken.mockImplementation(() => {
+      callCount++;
+      return Promise.resolve(callCount === 1 ? 'valid-token' : null);
+    });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: () => Promise.resolve({ error: 'unauthorized' }),
+    });
+    const { fetchDevices } = await import('../../src/api');
+
+    // Act & Assert — should throw about authentication, not hang
+    await expect(fetchDevices()).rejects.toThrow('Authentication in progress');
+  });
+
   it('uses VITE_API_BASE_URL env var for base URL', async () => {
     // Arrange
     await setupAuth();

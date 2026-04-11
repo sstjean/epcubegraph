@@ -276,5 +276,59 @@ describe('circuits', () => {
       // Assert
       expect(result).toEqual([]);
     });
+
+    it('handles self-referencing hierarchy without infinite recursion', async () => {
+      // Arrange
+      const { orderPanels } = await import('../../src/utils/circuits');
+      const panels = [
+        { device_gid: 1, alias: 'Panel A' },
+      ];
+      const hierarchy = [{ parent_device_gid: 1, child_device_gid: 1 }];
+
+      // Act
+      const result = orderPanels(panels, hierarchy);
+
+      // Assert — panel appears once, self-reference ignored
+      expect(result).toHaveLength(1);
+      expect(result[0].alias).toBe('Panel A');
+    });
+
+    it('handles circular hierarchy without infinite recursion', async () => {
+      // Arrange
+      const { orderPanels } = await import('../../src/utils/circuits');
+      const panels = [
+        { device_gid: 1, alias: 'A' },
+        { device_gid: 2, alias: 'B' },
+        { device_gid: 3, alias: 'C' },
+      ];
+      const hierarchy = [
+        { parent_device_gid: 1, child_device_gid: 2 },
+        { parent_device_gid: 2, child_device_gid: 3 },
+        { parent_device_gid: 3, child_device_gid: 1 },
+      ];
+
+      // Act — should not hang or throw
+      const result = orderPanels(panels, hierarchy);
+
+      // Assert — all panels present exactly once, regardless of order
+      expect(result).toHaveLength(3);
+      expect(result.map((p) => p.device_gid).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    });
+
+    it('handles orphaned hierarchy references gracefully', async () => {
+      // Arrange — hierarchy references device_gid 999 that doesn't exist in panels
+      const { orderPanels } = await import('../../src/utils/circuits');
+      const panels = [
+        { device_gid: 1, alias: 'Main' },
+      ];
+      const hierarchy = [{ parent_device_gid: 1, child_device_gid: 999 }];
+
+      // Act
+      const result = orderPanels(panels, hierarchy);
+
+      // Assert — Main still appears, orphan ignored
+      expect(result).toHaveLength(1);
+      expect(result[0].alias).toBe('Main');
+    });
   });
 });

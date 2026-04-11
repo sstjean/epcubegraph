@@ -1,5 +1,5 @@
 export function formatWatts(watts: number): string {
-  if (watts == null || Number.isNaN(watts)) return '—';
+  if (watts == null || Number.isNaN(watts) || !Number.isFinite(watts)) return '—';
   const abs = Math.abs(watts);
   if (abs >= 1_000_000) return `${(watts / 1_000_000).toFixed(3)} MW`;
   if (abs >= 1_000) return `${(watts / 1_000).toFixed(3)} kW`;

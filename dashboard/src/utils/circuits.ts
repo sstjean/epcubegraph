@@ -60,10 +60,15 @@ export function orderPanels(
   panels: PanelInfo[],
   hierarchy: HierarchyEntry[],
 ): PanelInfo[] {
-  const childGids = new Set(hierarchy.map((h) => h.child_device_gid));
+  const panelGids = new Set(panels.map((p) => p.device_gid));
+  const safeHierarchy = hierarchy.filter(
+    (h) => panelGids.has(h.parent_device_gid) && panelGids.has(h.child_device_gid) && h.parent_device_gid !== h.child_device_gid,
+  );
+
+  const childGids = new Set(safeHierarchy.map((h) => h.child_device_gid));
   const childrenOf = new Map<number, PanelInfo[]>();
 
-  for (const h of hierarchy) {
+  for (const h of safeHierarchy) {
     const list = childrenOf.get(h.parent_device_gid) ?? [];
     const panel = panels.find((p) => p.device_gid === h.child_device_gid);
     if (panel) {
@@ -88,6 +93,12 @@ export function orderPanels(
       a.alias.localeCompare(b.alias),
     );
     result.push(...children);
+  }
+
+  // Fallback: append any panels not yet in result (e.g., from multi-node cycles)
+  const seen = new Set(result.map((p) => p.device_gid));
+  for (const p of panels.sort((a, b) => a.alias.localeCompare(b.alias))) {
+    if (!seen.has(p.device_gid)) result.push(p);
   }
 
   return result;
