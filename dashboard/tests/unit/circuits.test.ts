@@ -330,5 +330,31 @@ describe('circuits', () => {
       expect(result).toHaveLength(1);
       expect(result[0].alias).toBe('Main');
     });
+
+    it('sorts multiple parents alphabetically', async () => {
+      // Arrange — two parents with children
+      const { orderPanels } = await import('../../src/utils/circuits');
+      const panels = [
+        { device_gid: 1, alias: 'Zeta Panel' },
+        { device_gid: 2, alias: 'Sub A' },
+        { device_gid: 3, alias: 'Alpha Panel' },
+        { device_gid: 4, alias: 'Sub B' },
+      ];
+      const hierarchy = [
+        { parent_device_gid: 1, child_device_gid: 2 },
+        { parent_device_gid: 3, child_device_gid: 4 },
+      ];
+
+      // Act
+      const result = orderPanels(panels, hierarchy);
+
+      // Assert — Alpha Panel before Zeta Panel, each followed by their child
+      expect(result.map((p) => p.alias)).toEqual([
+        'Alpha Panel',
+        'Sub B',
+        'Zeta Panel',
+        'Sub A',
+      ]);
+    });
   });
 });

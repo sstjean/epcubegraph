@@ -11,12 +11,12 @@ describe('telemetry', () => {
       // Arrange
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockLoadAppInsights = vi.fn();
-      const MockAI = vi.fn().mockImplementation(() => ({
-        loadAppInsights: mockLoadAppInsights,
-        trackException: vi.fn(),
-        trackEvent: vi.fn(),
-        trackPageView: vi.fn(),
-      }));
+      const MockAI = vi.fn().mockImplementation(function () {
+        this.loadAppInsights = mockLoadAppInsights;
+        this.trackException = vi.fn();
+        this.trackEvent = vi.fn();
+        this.trackPageView = vi.fn();
+      });
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: MockAI,
       }));
@@ -74,12 +74,12 @@ describe('telemetry', () => {
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackException = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
-        ApplicationInsights: vi.fn().mockImplementation(() => ({
-          loadAppInsights: vi.fn(),
-          trackException: mockTrackException,
-          trackEvent: vi.fn(),
-          trackPageView: vi.fn(),
-        })),
+        ApplicationInsights: vi.fn().mockImplementation(function () {
+          this.loadAppInsights = vi.fn();
+          this.trackException = mockTrackException;
+          this.trackEvent = vi.fn();
+          this.trackPageView = vi.fn();
+        }),
       }));
 
       const { initTelemetry, trackException } = await import('../../src/telemetry');
@@ -111,12 +111,12 @@ describe('telemetry', () => {
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackEvent = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
-        ApplicationInsights: vi.fn().mockImplementation(() => ({
-          loadAppInsights: vi.fn(),
-          trackException: vi.fn(),
-          trackEvent: mockTrackEvent,
-          trackPageView: vi.fn(),
-        })),
+        ApplicationInsights: vi.fn().mockImplementation(function () {
+          this.loadAppInsights = vi.fn();
+          this.trackException = vi.fn();
+          this.trackEvent = mockTrackEvent;
+          this.trackPageView = vi.fn();
+        }),
       }));
 
       const { initTelemetry, trackApiError } = await import('../../src/telemetry');
@@ -150,12 +150,12 @@ describe('telemetry', () => {
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackPageView = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
-        ApplicationInsights: vi.fn().mockImplementation(() => ({
-          loadAppInsights: vi.fn(),
-          trackException: vi.fn(),
-          trackEvent: vi.fn(),
-          trackPageView: mockTrackPageView,
-        })),
+        ApplicationInsights: vi.fn().mockImplementation(function () {
+          this.loadAppInsights = vi.fn();
+          this.trackException = vi.fn();
+          this.trackEvent = vi.fn();
+          this.trackPageView = mockTrackPageView;
+        }),
       }));
 
       const { initTelemetry, trackPageLoad } = await import('../../src/telemetry');

@@ -654,4 +654,176 @@ describe('EnergyFlowDiagram', () => {
     // Assert — Balance should not appear
     expect(circuits.find((c) => c.display_name.includes('Unmonitored'))).toBeUndefined();
   });
+
+  it('returns circuits without hierarchy when hierarchyEntries is undefined', () => {
+    // Arrange
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: '1', display_name: 'Kitchen', value: 500 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+
+    // Act — no hierarchyEntries argument
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, undefined);
+
+    // Assert — mains (1,2,3) filtered out, only Kitchen remains
+    expect(circuits).toHaveLength(1);
+    expect(circuits[0].display_name).toBe('Kitchen');
+  });
+
+  it('skips child device not present in readings during Balance deduplication', () => {
+    // Arrange — hierarchy says 222 is child of 111, but 222 is not in readings
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: 'Balance', display_name: 'M: Unmonitored', value: 1000 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — Balance remains at 1000 (no deduction since child not in readings)
+    const balance = circuits.find((c) => c.display_name.includes('Unmonitored'));
+    expect(balance).toBeDefined();
+    expect(balance!.value).toBe(1000);
+  });
+
+  it('skips child device without mains channel during Balance deduplication', () => {
+    // Arrange — child 222 exists but has no '1,2,3' channel
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: 'Balance', display_name: 'M: Unmonitored', value: 1000 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1', display_name: 'Office', value: 200 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — Balance remains at 1000 (child has no mains to deduct)
+    const balance = circuits.find((c) => c.display_name.includes('Unmonitored'));
+    expect(balance).toBeDefined();
+    expect(balance!.value).toBe(1000);
+  });
+
+  it('deduplicates Balance with multiple children under the same parent', () => {
+    // Arrange — parent 111 has two children (222 and 333)
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 3000 },
+            { channel_num: 'Balance', display_name: 'M: Unmonitored', value: 2000 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub A Main', value: 400 },
+            { channel_num: '1', display_name: 'Office', value: 200 },
+          ],
+        },
+        {
+          device_gid: 333,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub B Main', value: 600 },
+            { channel_num: '1', display_name: 'Garage', value: 300 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+      { id: 2, parent_device_gid: 111, child_device_gid: 333 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — Balance should be 2000 - 400 - 600 = 1000W
+    const balance = circuits.find((c) => c.display_name.includes('Unmonitored'));
+    expect(balance).toBeDefined();
+    expect(balance!.value).toBe(1000);
+    // Both children's circuits should appear
+    expect(circuits.find((c) => c.display_name === 'Office')).toBeDefined();
+    expect(circuits.find((c) => c.display_name === 'Garage')).toBeDefined();
+  });
+
+  it('ignores hierarchy entries for unmapped parent GIDs', () => {
+    // Arrange — hierarchy has entry for GID 999 which is not in the mapping
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: '1', display_name: 'Kitchen', value: 500 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 999, child_device_gid: 888 },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
+
+    // Assert — hierarchy entry ignored, only Kitchen appears
+    expect(circuits).toHaveLength(1);
+    expect(circuits[0].display_name).toBe('Kitchen');
+  });
 });

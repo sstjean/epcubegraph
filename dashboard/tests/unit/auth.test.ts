@@ -8,13 +8,13 @@ vi.mock('@azure/msal-browser', () => {
   const mockHandleRedirectPromise = vi.fn();
   const mockInitialize = vi.fn();
   return {
-    PublicClientApplication: vi.fn().mockImplementation(() => ({
-      initialize: mockInitialize,
-      acquireTokenSilent: mockAcquireTokenSilent,
-      loginRedirect: mockLoginRedirect,
-      getAllAccounts: mockGetAllAccounts,
-      handleRedirectPromise: mockHandleRedirectPromise,
-    })),
+    PublicClientApplication: vi.fn().mockImplementation(function () {
+      this.initialize = mockInitialize;
+      this.acquireTokenSilent = mockAcquireTokenSilent;
+      this.loginRedirect = mockLoginRedirect;
+      this.getAllAccounts = mockGetAllAccounts;
+      this.handleRedirectPromise = mockHandleRedirectPromise;
+    }),
     InteractionRequiredAuthError: class InteractionRequiredAuthError extends Error {
       constructor(msg?: string) {
         super(msg);

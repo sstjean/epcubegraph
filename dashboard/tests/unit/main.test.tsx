@@ -67,4 +67,36 @@ describe('main', () => {
     const appDiv = document.getElementById('app');
     expect(appDiv?.children.length).toBeGreaterThan(0);
   });
+
+  it('skips MSAL when VITE_DISABLE_AUTH is true', async () => {
+    // Arrange — stub env and clear mocks before resetting modules
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    vi.clearAllMocks();
+    vi.resetModules();
+
+    // Act — import main (picks up VITE_DISABLE_AUTH=true at module level)
+    await import('../../src/main');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Assert — re-import auth to get the same mock instance, verify not called
+    const { initializeMsal } = await import('../../src/auth') as any;
+    expect(initializeMsal).not.toHaveBeenCalled();
+    const appDiv = document.getElementById('app');
+    expect(appDiv?.children.length).toBeGreaterThan(0);
+  });
+
+  it('does not crash when #app element is missing', async () => {
+    // Arrange
+    document.body.innerHTML = '';
+    const { initializeMsal, isAuthenticated } = await import('../../src/auth') as any;
+    initializeMsal.mockResolvedValue({});
+    isAuthenticated.mockReturnValue(true);
+
+    // Act
+    await import('../../src/main');
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Assert — no crash, no render
+    expect(document.getElementById('app')).toBeNull();
+  });
 });

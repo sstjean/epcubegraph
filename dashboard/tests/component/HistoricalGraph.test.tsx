@@ -478,6 +478,40 @@ describe('HistoricalGraph', () => {
     expect(document.querySelector('.uplot')).toBeNull();
   });
 
+  it('does not update retry count when unmounted during retry', async () => {
+    // Arrange — onRetry fires, then promise hangs
+    let onRetryCb: ((n: number) => void) | undefined;
+    mockWithRetry.mockImplementation((_fn: () => Promise<unknown>, options?: { onRetry?: (n: number) => void }) => {
+      onRetryCb = options?.onRetry;
+      return new Promise(() => {}); // never resolves
+    });
+
+    const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Act — unmount, then fire onRetry
+    unmount();
+    onRetryCb?.(3);
+
+    // Assert — no crash (state update on unmounted component would warn)
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it('does not update error state when unmounted during fetch failure', async () => {
+    // Arrange — fetch rejects after unmount
+    let rejectFetch!: (err: Error) => void;
+    mockWithRetry.mockReturnValue(new Promise((_resolve, reject) => { rejectFetch = reject; }));
+
+    const { unmount } = render(<HistoricalGraph timeRange={defaultTimeRange} />);
+
+    // Act — unmount, then reject
+    unmount();
+    rejectFetch(new Error('Late failure'));
+
+    // Assert — no crash
+    await new Promise((r) => setTimeout(r, 10));
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('shows retry count during reconnection attempts', async () => {
     // Arrange
     setupTwoDeviceMocks();
@@ -757,6 +791,21 @@ describe('powerAxisSize', () => {
     } as unknown as import('uplot').default;
 
     expect(powerAxisSize(mockU, null)).toBe(60);
+  });
+
+  it('does not set font when axis font is undefined', () => {
+    // Arrange — axes[1] has no font property
+    const mockMeasureText = vi.fn((text: string) => ({ width: text.length * 8 }));
+    const mockU = {
+      ctx: { font: 'original', measureText: mockMeasureText },
+      axes: [null, {}],
+    } as unknown as import('uplot').default;
+
+    // Act
+    powerAxisSize(mockU, ['100 W']);
+
+    // Assert — ctx.font unchanged
+    expect(mockU.ctx.font).toBe('original');
   });
 });
 
