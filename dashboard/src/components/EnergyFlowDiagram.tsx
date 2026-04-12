@@ -1,5 +1,5 @@
 import { formatKw, formatPercent, formatKwh, formatWatts } from '../utils/formatting';
-import { filterActiveCircuits, sortByWattsThenName } from '../utils/circuits';
+import { filterActiveCircuits, sortByWattsThenName, derivePanelPrefix } from '../utils/circuits';
 import type { CircuitEntry } from '../utils/circuits';
 import type { DeviceGroup } from './CurrentReadings';
 import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
@@ -256,9 +256,8 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
               <foreignObject x={0} y={HOME.y - 60} width={HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
                 <div class="circuit-column circuit-column-left">
                   {left.map((c) => (
-                    <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
+                    <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry" title={`${c.display_name} — ${formatWatts(c.value)}`}>
                       <span class="circuit-name">{c.display_name}</span>
-                      <span class="circuit-sep"> - </span>
                       <span class="circuit-watts">{formatWatts(c.value)}</span>
                     </div>
                   ))}
@@ -268,9 +267,8 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
                 <foreignObject x={HOME.x + 40} y={HOME.y - 60} width={WIDTH - HOME.x - 40} height={circuitBoxHeight} class="circuit-fo">
                   <div class="circuit-column circuit-column-right">
                     {right.map((c) => (
-                      <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry">
+                      <div key={`${c.device_gid}-${c.channel_num}`} class="circuit-entry" title={`${c.display_name} — ${formatWatts(c.value)}`}>
                         <span class="circuit-name">{c.display_name}</span>
-                        <span class="circuit-sep"> - </span>
                         <span class="circuit-watts">{formatWatts(c.value)}</span>
                       </div>
                     ))}
@@ -316,6 +314,10 @@ export function getCircuitsForGroup(
     }
   }
 
+  // Build alias lookup for Balance renaming
+  const gidToAlias = new Map(panels.map((p) => [p.gid, p.alias]));
+  const multiPanel = resolvedGids.size > 1;
+
   for (const gid of resolvedGids) {
     const device = vueCurrentReadings.devices.find((d) => d.device_gid === gid);
     if (!device) continue;
@@ -323,6 +325,14 @@ export function getCircuitsForGroup(
     const active = filterActiveCircuits(device.channels);
     for (const ch of active) {
       let value = ch.value;
+      let displayName = ch.display_name;
+
+      // Rename Balance to "Unmonitored", with panel prefix when multi-panel
+      if (ch.channel_num === 'Balance') {
+        const alias = gidToAlias.get(gid);
+        const prefix = multiPanel && alias ? `${derivePanelPrefix(alias)}: ` : '';
+        displayName = `${prefix}Unmonitored`;
+      }
 
       // Deduplicate Balance: subtract children's mains from parent's Balance
       if (ch.channel_num === 'Balance' && childGidsOf.has(gid)) {
@@ -340,7 +350,7 @@ export function getCircuitsForGroup(
       entries.push({
         device_gid: gid,
         channel_num: ch.channel_num,
-        display_name: ch.display_name,
+        display_name: displayName,
         value,
       });
     }

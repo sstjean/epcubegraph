@@ -10,6 +10,13 @@ export interface CircuitEntry {
   value: number;
 }
 
+/** Derive a short prefix from a panel alias: first letter + any digits. */
+export function derivePanelPrefix(alias: string): string {
+  if (!alias) return '';
+  const digits = alias.replace(/\D/g, '');
+  return alias[0].toUpperCase() + digits;
+}
+
 export function filterActiveCircuits(
   channels: VueCurrentChannel[],
 ): VueCurrentChannel[] {

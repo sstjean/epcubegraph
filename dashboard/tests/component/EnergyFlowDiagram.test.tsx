@@ -322,13 +322,13 @@ describe('EnergyFlowDiagram', () => {
       <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
     );
 
-    // Assert — mains excluded, sorted by watts descending: HVAC (3000) > Kitchen (1200) > Unmonitored loads (320.5)
+    // Assert — mains excluded, sorted by watts descending: HVAC (3000) > Kitchen (1200) > Unmonitored (320.5)
     const circuitItems = container.querySelectorAll('.circuit-entry');
     expect(circuitItems.length).toBe(3);
     const names = Array.from(circuitItems).map((el) => el.querySelector('.circuit-name')?.textContent);
     expect(names[0]).toBe('HVAC');
     expect(names[1]).toBe('Kitchen');
-    expect(names[2]).toBe('Unmonitored loads');
+    expect(names[2]).toBe('Unmonitored');
   });
 
   it('excludes 0W circuits from flow card', () => {
@@ -825,5 +825,71 @@ describe('EnergyFlowDiagram', () => {
     // Assert — hierarchy entry ignored, only Kitchen appears
     expect(circuits).toHaveLength(1);
     expect(circuits[0].display_name).toBe('Kitchen');
+  });
+
+  it('renames Balance to "Unmonitored" for single-panel setup', () => {
+    // Arrange
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 2000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 500 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping);
+
+    // Assert
+    const balance = circuits.find((c) => c.channel_num === 'Balance');
+    expect(balance).toBeDefined();
+    expect(balance!.display_name).toBe('Unmonitored');
+  });
+
+  it('prefixes Unmonitored with panel alias when multi-panel', () => {
+    // Arrange — two mapped panels, both with Balance
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 3000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 1500 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub Main', value: 1000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 300 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: [
+        { gid: 111, alias: 'Main Panel' },
+        { gid: 222, alias: 'Subpanel 1' },
+      ],
+    };
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping);
+
+    // Assert
+    const balances = circuits.filter((c) => c.channel_num === 'Balance');
+    expect(balances).toHaveLength(2);
+    expect(balances.find((b) => b.device_gid === 111)!.display_name).toBe('M: Unmonitored');
+    expect(balances.find((b) => b.device_gid === 222)!.display_name).toBe('S1: Unmonitored');
   });
 });
