@@ -401,6 +401,93 @@ describe('EnergyFlowDiagram', () => {
     expect(container.querySelector('.circuit-column')).toBeNull();
   });
 
+  it('hides circuit area when API returns empty devices array', () => {
+    // Arrange — Vue data with no devices
+    const vueData: VueBulkCurrentReadingsResponse = { devices: [] };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert
+    expect(container.querySelector('.circuit-column')).toBeNull();
+  });
+
+  it('hides circuit area when vue_device_mapping is empty object', () => {
+    // Arrange — mapping exists but is empty
+    const vueData: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 1200.0 }],
+      }],
+    };
+    const mapping: VueDeviceMapping = {};
+
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert
+    expect(container.querySelector('.circuit-column')).toBeNull();
+  });
+
+  it('renders flow card normally when Vue data is undefined (API failure)', () => {
+    // Arrange — no Vue data at all (simulates API failure / not yet loaded)
+    // Act
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} />,
+    );
+
+    // Assert — flow card renders with all expected nodes, no circuit area, no errors
+    expect(container.querySelector('.energy-flow-svg')).toBeTruthy();
+    expect(container.querySelector('.circuit-column')).toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('maintains consistent card height when circuits appear and disappear', () => {
+    // Arrange — render first without circuits, then with
+    const vueDataEmpty: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 0 }],
+      }],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+    };
+
+    // Act — render without active circuits
+    const { container, rerender } = render(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueDataEmpty} vueDeviceMapping={mapping} />,
+    );
+    const svgWithout = container.querySelector('.energy-flow-svg');
+    expect(svgWithout).toBeTruthy();
+    expect(container.querySelector('.circuit-column')).toBeNull();
+
+    // Rerender with active circuits
+    const vueDataActive: VueBulkCurrentReadingsResponse = {
+      devices: [{
+        device_gid: 480380,
+        timestamp: 1712592000,
+        channels: [{ channel_num: '4', display_name: 'Kitchen', value: 500 }],
+      }],
+    };
+    rerender(
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueDataActive} vueDeviceMapping={mapping} />,
+    );
+
+    // Assert — SVG still present, now with circuits, no crash
+    expect(container.querySelector('.energy-flow-svg')).toBeTruthy();
+    expect(container.querySelector('.circuit-column')).toBeTruthy();
+  });
+
   it('renders two-column layout with left filling first', () => {
     // Arrange — 4 circuits
     const vueData: VueBulkCurrentReadingsResponse = {

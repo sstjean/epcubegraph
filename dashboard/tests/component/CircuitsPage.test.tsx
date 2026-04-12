@@ -583,4 +583,54 @@ describe('CircuitsPage', () => {
       expect(hvac?.querySelector('.circuit-row-kwh')?.textContent).toContain('0.000');
     });
   });
+
+  it('preserves last-known data when API fails mid-session', async () => {
+    // Arrange — first load succeeds, then API starts failing
+    vi.useFakeTimers();
+    setupMocks();
+
+    const { container } = render(<CircuitsPage />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Verify initial data loaded
+    await waitFor(() => {
+      expect(container.querySelectorAll('.panel-section').length).toBe(2);
+    });
+
+    // Make all APIs fail on next polls
+    mockFetchCurrentReadings.mockRejectedValue(new Error('Transient failure'));
+    mockFetchDailyReadings.mockRejectedValue(new Error('Transient failure'));
+    mockFetchSettings.mockRejectedValue(new Error('Transient failure'));
+
+    // Advance 5 seconds (5 failed polls) — still within tolerance
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+
+    // Assert — panels still shown (stale data preserved)
+    expect(container.querySelectorAll('.panel-section').length).toBe(2);
+    expect(container.querySelector('.panel-name')?.textContent).toBe('Main Panel');
+
+    vi.useRealTimers();
+  });
+
+  it('shows error after sustained failures exceed threshold', async () => {
+    // Arrange — first load succeeds, then API fails for 10+ seconds
+    vi.useFakeTimers();
+    setupMocks();
+
+    render(<CircuitsPage />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Make all APIs fail
+    mockFetchCurrentReadings.mockRejectedValue(new Error('Down'));
+    mockFetchDailyReadings.mockRejectedValue(new Error('Down'));
+    mockFetchSettings.mockRejectedValue(new Error('Down'));
+
+    // Advance 11 seconds (11 failed polls at 1s interval — exceeds 10s threshold)
+    await act(() => vi.advanceTimersByTimeAsync(11000));
+
+    // Assert — error shown, stale data cleared
+    expect(screen.getByRole('alert')).toBeTruthy();
+
+    vi.useRealTimers();
+  });
 });

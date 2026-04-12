@@ -106,6 +106,9 @@ function circuitDisplayName(channelNum: string, displayName: string): string {
   return displayName;
 }
 
+const POLL_INTERVAL_MS = 1000;
+const ERROR_THRESHOLD = Math.max(2, Math.ceil(10_000 / POLL_INTERVAL_MS));
+
 export function CircuitsPage() {
   const [panels, setPanels] = useState<PanelData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,6 +116,8 @@ export function CircuitsPage() {
   const [noMapping, setNoMapping] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const consecutiveErrorsRef = useRef(0);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => () => { mountedRef.current = false; }, []);
 
@@ -158,21 +163,28 @@ export function CircuitsPage() {
       setError(null);
       setNoMapping(false);
       setLoading(false);
+      consecutiveErrorsRef.current = 0;
+      hasLoadedRef.current = true;
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(errorMessage(err, 'Vue data is not yet available'));
+      consecutiveErrorsRef.current += 1;
+      const msg = errorMessage(err, 'Vue data is not yet available');
+      if (!hasLoadedRef.current || consecutiveErrorsRef.current >= ERROR_THRESHOLD) {
+        setError(msg);
+        setPanels([]);
+      }
       setLoading(false);
     }
   };
 
   useEffect(() => {
     loadData();
-    pollingRef.current = setInterval(loadData, 1000);
+    pollingRef.current = setInterval(loadData, POLL_INTERVAL_MS);
     return () => clearInterval(pollingRef.current!);
   }, []);
 
   if (loading) return <section><h2>Circuits</h2><p>Loading...</p></section>;
-  if (error) return <section><h2>Circuits</h2><p role="alert">{error}</p></section>;
+  if (error && panels.length === 0) return <section><h2>Circuits</h2><p role="alert">{error}</p></section>;
   if (noMapping) return <section><h2>Circuits</h2><p>Configure Vue device mapping in Settings to see circuits.</p></section>;
 
   return (
