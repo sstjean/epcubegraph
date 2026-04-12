@@ -6,6 +6,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    chunkSizeWarningLimit: 600,
   },
   server: {
     proxy: {

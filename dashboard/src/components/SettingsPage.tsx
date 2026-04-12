@@ -2,6 +2,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy } from '../api';
 import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../types';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
+import { errorMessage, toTrackedError } from '../utils/errors';
 
 const POLL_SETTINGS = [
   { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', disabled: false },
@@ -70,13 +71,13 @@ export function SettingsPage() {
                 initMapping[key] = panels;
               }
             }
-          } catch {
-            // Malformed JSON — treat as empty mapping
+          } catch (err) {
+            toTrackedError(err, 'Malformed vue_device_mapping JSON');
           }
         }
         setMapping(initMapping);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load settings');
+        if (!cancelled) setError(errorMessage(err, 'Failed to load settings'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -120,7 +121,7 @@ export function SettingsPage() {
       }
       setPollingMessage({ type: 'success', text: 'Polling intervals saved' });
     } catch (err) {
-      setPollingMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save' });
+      setPollingMessage({ type: 'error', text: errorMessage(err, 'Failed to save') });
     } finally {
       setSaving(false);
     }
@@ -178,7 +179,7 @@ export function SettingsPage() {
       await updateSetting('vue_device_mapping', JSON.stringify(filtered));
       setMappingMessage({ type: 'success', text: 'Device mapping saved' });
     } catch (err) {
-      setMappingMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save' });
+      setMappingMessage({ type: 'error', text: errorMessage(err, 'Failed to save') });
     } finally {
       setSavingMapping(false);
     }

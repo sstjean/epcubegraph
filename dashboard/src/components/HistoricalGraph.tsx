@@ -5,6 +5,7 @@ import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../api';
 import type { Device, RangeReadingsResponse, TimeSeries, TimeRangeValue } from '../types';
 import { withRetry } from '../utils/retry';
 import { groupDevicesByAlias, getDisplayName } from '../utils/devices';
+import { errorMessage } from '../utils/errors';
 import { formatWatts, formatWattsAxis, formatPercent } from '../utils/formatting';
 
 interface HistoricalGraphProps {
@@ -219,7 +220,7 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
         setRetryAttempt(0);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load data');
+          setError(errorMessage(err, 'Failed to load data'));
           setRetryAttempt(0);
           setLoading(false);
         }

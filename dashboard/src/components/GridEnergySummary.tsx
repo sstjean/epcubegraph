@@ -3,6 +3,7 @@ import { fetchGridPower } from '../api';
 import { computeGridEnergy } from '../utils/gridEnergy';
 import { formatKwh } from '../utils/formatting';
 import { withRetry } from '../utils/retry';
+import { errorMessage } from '../utils/errors';
 import type { TimeRangeValue } from '../types';
 import type { GridEnergySummary as GridEnergySummaryData } from '../utils/gridEnergy';
 
@@ -36,7 +37,7 @@ export function GridEnergySummary({ timeRange }: GridEnergySummaryProps) {
         setData(summary);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load grid energy data');
+          setError(errorMessage(err, 'Failed to load grid energy data'));
         }
       } finally {
         if (!cancelled) setLoading(false);

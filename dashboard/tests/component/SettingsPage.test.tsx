@@ -659,6 +659,30 @@ describe('SettingsPage — Vue Device Mapping', () => {
     });
   });
 
+  it('ignores saved mapping keys that do not match any EP Cube group', async () => {
+    // Arrange — mapping has an extra key "unknown_device" not in EP Cube groups
+    setupMocks({
+      settings: [{
+        key: 'vue_device_mapping',
+        value: JSON.stringify({
+          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          unknown_device: [{ gid: 999, alias: 'Ghost' }],
+        }),
+        last_modified: '',
+      }],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert — epcube3483 mapping loaded (input with alias value), unknown_device silently ignored
+    await waitFor(() => {
+      const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
+      expect(aliasInput).toBeTruthy();
+      expect(screen.queryByDisplayValue('Ghost')).toBeNull();
+    });
+  });
+
   it('assigned panel not shown in other device dropdowns', async () => {
     // Arrange — one panel mapped to epcube3483
     setupMocks({

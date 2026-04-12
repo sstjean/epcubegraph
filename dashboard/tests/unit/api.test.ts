@@ -113,6 +113,25 @@ describe('api', () => {
     );
   });
 
+  it('fetchGridPower omits query params when arguments are undefined', async () => {
+    // Arrange
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ metric: 'grid_power_watts', series: [] }),
+    });
+    const { fetchGridPower } = await import('../../src/api');
+
+    // Act
+    await fetchGridPower();
+
+    // Assert — URL should end with /grid? (empty params)
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    const queryString = calledUrl.split('?')[1] ?? '';
+    expect(queryString).toBe('');
+  });
+
   it('parses error responses (400/401/403/404/422/503)', async () => {
     // Arrange
     await setupAuth();

@@ -70,11 +70,9 @@ export function orderPanels(
 
   for (const h of safeHierarchy) {
     const list = childrenOf.get(h.parent_device_gid) ?? [];
-    const panel = panels.find((p) => p.device_gid === h.child_device_gid);
-    if (panel) {
-      list.push({ ...panel, parentGid: h.parent_device_gid });
-      childrenOf.set(h.parent_device_gid, list);
-    }
+    const panel = panels.find((p) => p.device_gid === h.child_device_gid)!;
+    list.push({ ...panel, parentGid: h.parent_device_gid });
+    childrenOf.set(h.parent_device_gid, list);
   }
 
   const topLevel = panels.filter((p) => !childGids.has(p.device_gid));

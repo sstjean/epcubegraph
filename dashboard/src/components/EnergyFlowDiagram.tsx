@@ -289,7 +289,7 @@ export function getCircuitsForGroup(
   baseDeviceId: string,
   vueCurrentReadings?: VueBulkCurrentReadingsResponse,
   vueDeviceMapping?: VueDeviceMapping,
-  hierarchyEntries?: PanelHierarchyEntry[],
+  hierarchyEntries: PanelHierarchyEntry[] = [],
 ): CircuitEntry[] {
   if (!vueCurrentReadings || !vueDeviceMapping) return [];
   const panels = vueDeviceMapping[baseDeviceId];
@@ -298,11 +298,9 @@ export function getCircuitsForGroup(
   // Resolve mapped GIDs + their children from the hierarchy
   const mappedGids = new Set(panels.map((p) => p.gid));
   const resolvedGids = new Set(mappedGids);
-  if (hierarchyEntries) {
-    for (const h of hierarchyEntries) {
-      if (mappedGids.has(h.parent_device_gid)) {
-        resolvedGids.add(h.child_device_gid);
-      }
+  for (const h of hierarchyEntries) {
+    if (mappedGids.has(h.parent_device_gid)) {
+      resolvedGids.add(h.child_device_gid);
     }
   }
 
@@ -310,13 +308,11 @@ export function getCircuitsForGroup(
 
   // Build a set of child GIDs per parent for Balance deduplication
   const childGidsOf = new Map<number, Set<number>>();
-  if (hierarchyEntries) {
-    for (const h of hierarchyEntries) {
-      if (resolvedGids.has(h.parent_device_gid)) {
-        const children = childGidsOf.get(h.parent_device_gid) ?? new Set();
-        children.add(h.child_device_gid);
-        childGidsOf.set(h.parent_device_gid, children);
-      }
+  for (const h of hierarchyEntries) {
+    if (resolvedGids.has(h.parent_device_gid)) {
+      const children = childGidsOf.get(h.parent_device_gid) ?? new Set();
+      children.add(h.child_device_gid);
+      childGidsOf.set(h.parent_device_gid, children);
     }
   }
 

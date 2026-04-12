@@ -753,6 +753,7 @@ public class PostgresVueStore : IVueStore
             LEFT JOIN vue_channels vc ON vc.device_gid = vr.device_gid AND vc.channel_num = vr.channel_num
             LEFT JOIN display_name_overrides dno ON dno.device_gid = vr.device_gid AND dno.channel_number = vr.channel_num
             WHERE vr.device_gid = ANY(@gids)
+              AND vr.timestamp > NOW() - INTERVAL '30 seconds'
             ORDER BY vr.device_gid, vr.channel_num, vr.timestamp DESC
             """;
 
