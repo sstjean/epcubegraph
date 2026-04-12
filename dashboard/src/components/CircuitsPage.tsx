@@ -51,6 +51,7 @@ function buildPanelData(
 
     let dedupWatts = mainsWatts;
     let childMainsTotal = 0;
+    let childMainsDailyTotal = 0;
     const childGids = childGidsOf.get(panel.device_gid);
     if (childGids) {
       for (const childGid of childGids) {
@@ -59,6 +60,11 @@ function buildPanelData(
         if (childMains) {
           dedupWatts -= childMains.value;
           childMainsTotal += childMains.value;
+        }
+        const childDailyDevice = dailyReadings.devices.find((d) => d.device_gid === childGid);
+        const childDailyMains = childDailyDevice?.channels.find((c) => c.channel_num === MAINS_CHANNEL);
+        if (childDailyMains) {
+          childMainsDailyTotal += childDailyMains.kwh;
         }
       }
     }
@@ -71,17 +77,26 @@ function buildPanelData(
       return ch;
     });
 
+    // Dedup daily Balance kWh the same way
+    const dedupDailyChannels = dailyChannels.map((ch) => {
+      if (ch.channel_num === BALANCE_CHANNEL && childMainsDailyTotal > 0) {
+        return { ...ch, kwh: Math.max(0, ch.kwh - childMainsDailyTotal) };
+      }
+      return ch;
+    });
+
     const mainsDailyKwh = dailyChannels.find((c) => c.channel_num === MAINS_CHANNEL)?.kwh ?? 0;
+    const dedupDailyKwh = Math.max(0, mainsDailyKwh - childMainsDailyTotal);
 
     return {
       alias: panel.alias,
       device_gid: panel.device_gid,
       parentGid: panel.parentGid,
       channels: dedupChannels,
-      dailyChannels,
+      dailyChannels: dedupDailyChannels,
       mainsWatts,
       dedupWatts,
-      dailyKwh: mainsDailyKwh,
+      dailyKwh: childGids ? dedupDailyKwh : mainsDailyKwh,
     };
   });
 }

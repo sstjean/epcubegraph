@@ -1457,13 +1457,17 @@ def cleanup_old_vue_readings(writer):
 
 def downsampling_loop(writer, interval_seconds=3600):
     """Background thread: runs downsampling + cleanup periodically."""
+    log.info("Vue downsampling thread started (interval=%ds)", interval_seconds)
     while True:
         try:
             downsample_vue_readings(writer)
             cleanup_old_vue_readings(writer)
         except Exception:
             log.exception("Vue downsampling/cleanup failed")
-        time.sleep(interval_seconds)
+        try:
+            time.sleep(interval_seconds)
+        except Exception:
+            log.exception("Vue downsampling sleep interrupted")
 
 
 # ---------------------------------------------------------------------------
@@ -1763,6 +1767,39 @@ class VueCollector:
                 "channel_names": dict(self._channel_names),
             }
 
+    def poll_daily(self):
+        """Fetch daily kWh totals from Vue API and write to PostgreSQL."""
+        log.info("Vue daily: starting poll")
+        if not self._authenticated:
+            return
+        if not self._device_gids:
+            return
+
+        try:
+            usage = self._vue.get_device_list_usage(
+                deviceGids=self._device_gids,
+                instant=datetime.now(timezone.utc),
+                scale="1D",
+                unit="KilowattHours",
+                max_retry_attempts=1,
+            )
+
+            today = datetime.now().strftime("%Y-%m-%d")
+            readings = []
+            for device_gid, device_usage in usage.items():
+                for ch_num, ch_usage in device_usage.channels.items():
+                    if ch_usage.usage is None:
+                        continue
+                    readings.append((device_gid, ch_num, today, ch_usage.usage))
+
+            log.info("Vue daily: collected %d readings for %s", len(readings), today)
+            if readings and self._pg_writer:
+                self._pg_writer.upsert_daily_readings(readings)
+                log.info("Vue daily: wrote %d readings for %s", len(readings), today)
+
+        except Exception:
+            log.exception("Vue daily poll failed")
+
 
 def _render_vue_debug_page(vue_status):
     """Render a full HTML debug page for Vue collector status with per-circuit data."""
@@ -1921,19 +1958,32 @@ setInterval(async () => {{
 
 def vue_poll_loop(collector):
     """Background thread: polls Vue API on schedule."""
+    log.info("Vue poll thread started")
     while True:
-        current_interval = _read_vue_poll_interval_from_db()
-        with collector._lock:
-            collector._poll_interval = current_interval
-            collector._next_poll_at = time.time() + current_interval
-        time.sleep(current_interval)
         try:
+            current_interval = _read_vue_poll_interval_from_db()
+            with collector._lock:
+                collector._poll_interval = current_interval
+                collector._next_poll_at = time.time() + current_interval
+            time.sleep(current_interval)
             collector.poll()
         except Exception:
-            log.exception("Vue poll failed")
+            log.exception("Vue poll loop error")
             with collector._lock:
                 collector._poll_errors += 1
                 collector._consecutive_errors += 1
+
+
+def vue_daily_poll_loop(collector):
+    """Background thread: polls Vue API for daily kWh on schedule."""
+    log.info("Vue daily poll thread started")
+    while True:
+        try:
+            current_interval = _read_vue_daily_poll_interval_from_db()
+            time.sleep(current_interval)
+            collector.poll_daily()
+        except Exception:
+            log.exception("Vue daily poll loop error")
 
 
 # ---------------------------------------------------------------------------
@@ -1966,16 +2016,17 @@ def _read_poll_interval_from_db():
 
 def poll_loop(collector):
     """Background thread: polls API on schedule. Reads interval from DB each cycle."""
+    log.info("EP Cube poll thread started")
     while True:
-        current_interval = _read_poll_interval_from_db()
-        with collector._lock:
-            collector._poll_interval = current_interval
-            collector._next_poll_at = time.time() + current_interval
-        time.sleep(current_interval)
         try:
+            current_interval = _read_poll_interval_from_db()
+            with collector._lock:
+                collector._poll_interval = current_interval
+                collector._next_poll_at = time.time() + current_interval
+            time.sleep(current_interval)
             collector.poll()
         except Exception:
-            log.exception("Poll failed")
+            log.exception("EP Cube poll loop error")
             with collector._lock:
                 collector._poll_errors += 1
                 collector._consecutive_errors += 1
@@ -2025,6 +2076,8 @@ def main():
         if vue_pg_writer:
             ds_thread = threading.Thread(target=downsampling_loop, args=(vue_pg_writer,), daemon=True)
             ds_thread.start()
+            daily_thread = threading.Thread(target=vue_daily_poll_loop, args=(vue_collector,), daemon=True)
+            daily_thread.start()
     else:
         log.warning("EMPORIA_USERNAME/PASSWORD not set — Vue collector disabled")
 

@@ -2758,5 +2758,157 @@ class TestReadVueDailyPollInterval(unittest.TestCase):
         self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
 
+class TestVueCollectorPollDaily(unittest.TestCase):
+    """Tests for VueCollector.poll_daily() — fetches daily kWh from Vue API."""
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_calls_api_with_1DAY_scale(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+
+        # Act
+        collector.poll_daily()
+
+        # Assert
+        calls = mock_vue.get_device_list_usage.call_args_list
+        # poll() called during __init__ discovery, poll_daily adds another
+        daily_call = calls[-1]
+        self.assertEqual(daily_call[1].get("scale", daily_call[0][2] if len(daily_call[0]) > 2 else None), "1D")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_writes_kwh_to_pg_writer(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_writer = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+
+        # Act
+        collector.poll_daily()
+
+        # Assert
+        mock_writer.upsert_daily_readings.assert_called_once()
+        readings = mock_writer.upsert_daily_readings.call_args[0][0]
+        # Should have 2 channels: "1,2,3" and "1"
+        self.assertEqual(len(readings), 2)
+        # Each reading is (device_gid, channel_num, date_str, kwh)
+        gids = [r[0] for r in readings]
+        self.assertTrue(all(g == 12345 for g in gids))
+        channels = sorted([r[1] for r in readings])
+        self.assertEqual(channels, ["1", "1,2,3"])
+        # kwh values should be raw (no multiplier)
+        kwh_values = {r[1]: r[3] for r in readings}
+        self.assertAlmostEqual(kwh_values["1,2,3"], 0.002347, places=6)
+        self.assertAlmostEqual(kwh_values["1"], 0.000333, places=6)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_uses_today_date(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_writer = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+
+        # Act
+        collector.poll_daily()
+
+        # Assert
+        readings = mock_writer.upsert_daily_readings.call_args[0][0]
+        today = datetime.now().strftime("%Y-%m-%d")
+        dates = [r[2] for r in readings]
+        self.assertTrue(all(d == today for d in dates))
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_skips_null_usage(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        # Set kitchen usage to None
+        mock_vue.get_device_list_usage.return_value[12345].channels["1"].usage = None
+        mock_pyemvue_cls.return_value = mock_vue
+        mock_writer = MagicMock()
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+
+        # Act
+        collector.poll_daily()
+
+        # Assert — only mains written
+        readings = mock_writer.upsert_daily_readings.call_args[0][0]
+        self.assertEqual(len(readings), 1)
+        self.assertEqual(readings[0][1], "1,2,3")
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_handles_api_error(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        mock_vue.get_device_list_usage.side_effect = Exception("API down")
+
+        # Act — should not raise
+        collector.poll_daily()
+
+        # Assert — error logged, no crash
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_skips_when_not_authenticated(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        collector._authenticated = False
+
+        # Act
+        collector.poll_daily()
+
+        # Assert — no API calls for daily (poll retries login but daily should skip)
+        # get_device_list_usage should not be called again for daily
+        initial_calls = mock_vue.get_device_list_usage.call_count
+        collector.poll_daily()
+        self.assertEqual(mock_vue.get_device_list_usage.call_count, initial_calls)
+
+    @patch("exporter.PyEmVue")
+    def test_poll_daily_no_write_without_pg_writer(self, mock_pyemvue_cls):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=None)
+
+        # Act — should not raise
+        collector.poll_daily()
+
+
+class TestVueDailyPollLoop(unittest.TestCase):
+    """Tests for vue_daily_poll_loop function."""
+
+    @patch("exporter._read_vue_daily_poll_interval_from_db", return_value=30)
+    @patch("exporter.time")
+    @patch("exporter.PyEmVue")
+    def test_loop_calls_poll_daily_on_interval(self, mock_pyemvue_cls, mock_time, mock_read_interval):
+        # Arrange
+        mock_vue = _mock_pyemvue()
+        mock_pyemvue_cls.return_value = mock_vue
+        collector = exporter.VueCollector("user@test.com", "password")
+        call_count = 0
+
+        def sleep_side_effect(secs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                raise KeyboardInterrupt()  # break loop after 2 iterations
+
+        mock_time.sleep.side_effect = sleep_side_effect
+        mock_time.time.return_value = 1000.0
+
+        # Act
+        with self.assertRaises(KeyboardInterrupt):
+            exporter.vue_daily_poll_loop(collector)
+
+        # Assert
+        mock_time.sleep.assert_called_with(30)
+        self.assertEqual(mock_read_interval.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

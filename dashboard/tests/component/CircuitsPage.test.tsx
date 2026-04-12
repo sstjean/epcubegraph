@@ -241,10 +241,8 @@ describe('CircuitsPage', () => {
     });
   });
 
-  it('deduplicates Unmonitored value by subtracting children mains', async () => {
-    // Arrange — parent 111 (Balance=800) has child 222 (mains=1500)
-    // Dedup Balance: 800 - 1500 = negative → should show 0 or hide
-    // Use higher Balance so it stays positive
+  it('deduplicates Unmonitored value and daily kWh by subtracting children mains', async () => {
+    // Arrange — parent 111 (Balance=2800, Balance daily=15kWh) has child 222 (mains=1500, mains daily=8kWh)
     setupMocks({
       current: {
         devices: [
@@ -267,18 +265,43 @@ describe('CircuitsPage', () => {
           },
         ],
       },
+      daily: {
+        date: '2026-04-12',
+        devices: [
+          {
+            device_gid: 111,
+            channels: [
+              { channel_num: '1,2,3', display_name: 'Main', kwh: 25.0 },
+              { channel_num: '1', display_name: 'Kitchen', kwh: 6.0 },
+              { channel_num: 'Balance', display_name: 'Unmonitored loads', kwh: 15.0 },
+            ],
+          },
+          {
+            device_gid: 222,
+            channels: [
+              { channel_num: '1,2,3', display_name: 'Sub Main', kwh: 8.0 },
+              { channel_num: '1', display_name: 'Office', kwh: 3.0 },
+            ],
+          },
+        ],
+      },
     });
 
     // Act
     const { container } = render(<CircuitsPage />);
 
-    // Assert — Unmonitored on parent: 2800 - 1500 = 1300
+    // Assert — Unmonitored watts: 2800 - 1500 = 1300
     await waitFor(() => {
       const panels = container.querySelectorAll('.panel-section');
       const rows = panels[0].querySelectorAll('.circuit-row');
       const unmon = Array.from(rows).find((r) => r.querySelector('.circuit-row-name')?.textContent === 'Unmonitored');
       expect(unmon).toBeTruthy();
       expect(unmon?.querySelector('.circuit-row-watts')?.textContent).toContain('1.300');
+      // Unmonitored daily kWh: 15.0 - 8.0 = 7.0
+      expect(unmon?.querySelector('.circuit-row-kwh')?.textContent).toContain('7.000');
+      // Panel header daily kWh: 25.0 - 8.0 = 17.0
+      const header = panels[0].querySelector('.panel-header');
+      expect(header?.textContent).toContain('17.000');
     });
   });
 
@@ -475,7 +498,7 @@ describe('CircuitsPage', () => {
   });
 
   it('handles child panel with no mains channel during dedup', async () => {
-    // Arrange — child 222 has no 1,2,3 channel
+    // Arrange — child 222 has no 1,2,3 channel (neither current nor daily)
     setupMocks({
       current: {
         devices: [
@@ -492,6 +515,24 @@ describe('CircuitsPage', () => {
             timestamp: 1000,
             channels: [
               { channel_num: '1', display_name: 'Office', value: 500 },
+            ],
+          },
+        ],
+      },
+      daily: {
+        date: '2026-04-12',
+        devices: [
+          {
+            device_gid: 111,
+            channels: [
+              { channel_num: '1,2,3', display_name: 'Main', kwh: 20.0 },
+              { channel_num: '1', display_name: 'Kitchen', kwh: 5.0 },
+            ],
+          },
+          {
+            device_gid: 222,
+            channels: [
+              { channel_num: '1', display_name: 'Office', kwh: 2.0 },
             ],
           },
         ],
