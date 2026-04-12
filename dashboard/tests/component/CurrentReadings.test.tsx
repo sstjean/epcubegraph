@@ -5,6 +5,7 @@ import { fetchDevices, fetchCurrentReadings, fetchVueBulkCurrentReadings, fetchS
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
 import { withRetry } from '../../src/utils/retry';
 import { CurrentReadings } from '../../src/components/CurrentReadings';
+import { trackException } from '../../src/telemetry';
 
 // Mock external dependencies
 vi.mock('../../src/api', () => ({
@@ -34,6 +35,14 @@ vi.mock('../../src/utils/retry', () => ({
   isRetryableError: vi.fn(),
 }));
 
+vi.mock('../../src/telemetry', () => ({
+  trackException: vi.fn(),
+  trackApiError: vi.fn(),
+  trackPageLoad: vi.fn(),
+  initTelemetry: vi.fn(),
+}));
+
+const mockTrackException = trackException as ReturnType<typeof vi.fn>;
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchCurrentReadings = fetchCurrentReadings as ReturnType<typeof vi.fn>;
 const mockFetchVueBulkCurrentReadings = fetchVueBulkCurrentReadings as ReturnType<typeof vi.fn>;
@@ -614,9 +623,71 @@ describe('CurrentReadings', () => {
     // Act
     render(<CurrentReadings />);
 
-    // Assert — component still renders EP Cube data, no error shown for Vue
+    // Assert — EP Cube data still renders, Vue error surfaced separately
     await waitFor(() => {
-      expect(screen.queryByText(/Vue API failed/)).toBeNull();
+      expect(screen.getByText(/Vue circuits:.*Vue API failed/)).toBeTruthy();
+    });
+  });
+
+  it('handles non-Error Vue rejection without crashing', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockRejectedValue('network timeout');
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — fallback message shown
+    await waitFor(() => {
+      expect(screen.getByText(/Vue circuits:.*Vue readings unavailable/)).toBeTruthy();
+    });
+  });
+
+  it('sends Vue API errors to telemetry via trackException', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockRejectedValue(new Error('Vue 500'));
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — trackException called with the error
+    await waitFor(() => {
+      expect(mockTrackException).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  it('wraps non-Error Vue rejections for telemetry', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [{ device: 'epcube_battery', class: 'storage_battery', online: true }],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockFetchVueBulkCurrentReadings.mockRejectedValue('string error');
+    mockFetchSettings.mockResolvedValue({ settings: [] });
+    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — non-Error wrapped and sent to telemetry
+    await waitFor(() => {
+      expect(mockTrackException).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Vue readings unavailable' }),
+      );
     });
   });
 

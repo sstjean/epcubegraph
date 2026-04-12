@@ -189,3 +189,15 @@ jobs:
       - name: Build
         working-directory: dashboard
         run: npm run build
+
+  # ── Deploy: call CD workflow as reusable workflow ──
+  # Uses the branch's cd.yml (not main's), enabling CD testing on branches.
+  # See: https://docs.github.com/en/actions/using-workflows/reusing-workflows
+  deploy:
+    needs: [build-and-test, exporter-tests, docker-local, docker-api, validate-infra, validate-tools, dashboard]
+    if: success()
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/cd.yml
+    secrets: inherit

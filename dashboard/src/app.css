@@ -261,6 +261,14 @@ section > h2 {
   padding: 1rem;
 }
 
+.vue-error-notice {
+  color: var(--warning, #f59e0b);
+  text-align: center;
+  padding: 0.25rem 1rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
 /* Energy Flow Diagram */
 .energy-flow-diagram {
   display: flex;

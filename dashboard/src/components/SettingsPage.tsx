@@ -20,7 +20,8 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savingMapping, setSavingMapping] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [pollingMessage, setPollingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [mappingMessage, setMappingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [epcubeGroups, setEpcubeGroups] = useState<EpCubeGroup[]>([]);
   const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
@@ -86,7 +87,7 @@ export function SettingsPage() {
 
   function handleChange(key: string, val: string) {
     setValues((prev) => ({ ...prev, [key]: val }));
-    setSuccess(null);
+    setPollingMessage(null);
   }
 
   function validate(val: string): string | null {
@@ -98,15 +99,15 @@ export function SettingsPage() {
   }
 
   async function handleSavePolling() {
+    setPollingMessage(null);
     setError(null);
-    setSuccess(null);
 
     // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
       if (ps.disabled) continue;
       const err = validate(values[ps.key] ?? ps.default);
       if (err) {
-        setError(`${ps.label}: ${err}`);
+        setPollingMessage({ type: 'error', text: `${ps.label}: ${err}` });
         return;
       }
     }
@@ -117,9 +118,9 @@ export function SettingsPage() {
         if (ps.disabled) continue;
         await updateSetting(ps.key, values[ps.key] ?? ps.default);
       }
-      setSuccess('Polling intervals saved');
+      setPollingMessage({ type: 'success', text: 'Polling intervals saved' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      setPollingMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save' });
     } finally {
       setSaving(false);
     }
@@ -143,7 +144,7 @@ export function SettingsPage() {
       ...prev,
       [deviceId]: [...prev[deviceId], { gid, alias: vue.display_name }],
     }));
-    setSuccess(null);
+    setMappingMessage(null);
   }
 
   function handleRemovePanel(deviceId: string, gid: number) {
@@ -151,7 +152,7 @@ export function SettingsPage() {
       ...prev,
       [deviceId]: prev[deviceId].filter((p) => p.gid !== gid),
     }));
-    setSuccess(null);
+    setMappingMessage(null);
   }
 
   function handleMappingFieldChange(deviceId: string, gid: number, field: 'alias', value: string) {
@@ -161,12 +162,12 @@ export function SettingsPage() {
         p.gid === gid ? { ...p, [field]: value } : p,
       ),
     }));
-    setSuccess(null);
+    setMappingMessage(null);
   }
 
   async function handleSaveMapping() {
+    setMappingMessage(null);
     setError(null);
-    setSuccess(null);
     setSavingMapping(true);
     try {
       // Only include devices with assigned panels
@@ -175,9 +176,9 @@ export function SettingsPage() {
         if (panels.length > 0) filtered[key] = panels;
       }
       await updateSetting('vue_device_mapping', JSON.stringify(filtered));
-      setSuccess('Device mapping saved');
+      setMappingMessage({ type: 'success', text: 'Device mapping saved' });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      setMappingMessage({ type: 'error', text: err instanceof Error ? err.message : 'Failed to save' });
     } finally {
       setSavingMapping(false);
     }
@@ -190,7 +191,6 @@ export function SettingsPage() {
       <h2>Settings</h2>
 
       {error && <p role="alert" class="settings-error">{error}</p>}
-      {success && <p role="status" class="settings-success">{success}</p>}
 
       <div class="settings-section">
         <h3>Polling Intervals</h3>
@@ -221,6 +221,11 @@ export function SettingsPage() {
         >
           {saving ? 'Saving...' : 'Save Polling Intervals'}
         </button>
+        {pollingMessage && (
+          <p role={pollingMessage.type === 'error' ? 'alert' : 'status'} class={pollingMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
+            {pollingMessage.text}
+          </p>
+        )}
       </div>
 
       <div class="settings-section">
@@ -282,6 +287,11 @@ export function SettingsPage() {
             >
               {savingMapping ? 'Saving...' : 'Save Mapping'}
             </button>
+            {mappingMessage && (
+              <p role={mappingMessage.type === 'error' ? 'alert' : 'status'} class={mappingMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
+                {mappingMessage.text}
+              </p>
+            )}
           </>
         )}
       </div>

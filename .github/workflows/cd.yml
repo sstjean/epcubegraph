@@ -1,16 +1,9 @@
 name: CD
 
 on:
-  # Deploy after CI passes — staging for branches, production for main.
-  # No push trigger: workflow_run fires once after CI, preventing duplicate
-  # CD runs. Path filtering (specs, docs, .gitignore) lives in CI's
-  # paths-ignore — if CI doesn't run, workflow_run never fires.
-  # Use workflow_dispatch to test cd.yml changes on branches.
-  # (Fixes #47)
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: ['**']
+  # Called by CI after all jobs pass — uses the branch's version of this file.
+  # See: https://docs.github.com/en/actions/using-workflows/reusing-workflows
+  workflow_call:
 
   # Manual trigger for any environment
   workflow_dispatch:
@@ -36,7 +29,7 @@ on:
 
 # Limit to one deployment at a time per environment
 concurrency:
-  group: deploy-${{ (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main') && 'production' || github.event.workflow_run.head_branch || github.event.inputs.environment || 'staging' }}
+  group: deploy-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || (github.ref_name == 'main' && 'production' || github.ref_name) }}
   cancel-in-progress: false
 
 env:
@@ -56,7 +49,7 @@ jobs:
   check-ci:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch != 'main') ||
+      (github.event_name != 'workflow_dispatch' && github.ref_name != 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' && github.event.inputs.destroy != 'true')
     outputs:
       env_name: ${{ steps.env.outputs.env_name }}
@@ -65,7 +58,7 @@ jobs:
       - name: Compute branch-specific environment name
         id: env
         run: |
-          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name || 'staging' }}"
+          BRANCH="${{ github.ref_name || 'staging' }}"
           # Sanitize: lowercase, replace non-alphanumeric with hyphens, collapse,
           # strip leading/trailing hyphens, prefix with 'b' if starts with digit,
           # truncate to fit epcubegraph-{branch} ≤ 21 chars (Terraform limit)
@@ -95,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Azure Login (OIDC)
         uses: azure/login@v3
@@ -217,7 +210,7 @@ jobs:
       - name: Build & Push API image
         id: api-image
         run: |
-          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          DEPLOY_SHA="${{ github.sha }}"
           IMAGE="${{ steps.acr.outputs.server }}/epcubegraph-api:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file api/Dockerfile api/
           docker push "$IMAGE"
@@ -226,7 +219,7 @@ jobs:
       - name: Build & Push exporter image
         id: exporter-image
         run: |
-          DEPLOY_SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          DEPLOY_SHA="${{ github.sha }}"
           IMAGE="${{ steps.acr.outputs.server }}/epcube-exporter:${DEPLOY_SHA}"
           docker build --tag "$IMAGE" --file local/epcube-exporter/Dockerfile local/epcube-exporter/
           docker push "$IMAGE"
@@ -445,21 +438,10 @@ jobs:
           fi
 
   # ── Production: deploy on push to main or manual dispatch ──
-  # Block deployment if CI failed
-  ci-failed:
-    runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'failure'
-    steps:
-      - run: |
-          echo "::error::CI failed on ${{ github.event.workflow_run.head_branch }} — deployment blocked"
-          exit 1
-
   check-ci-prod:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') ||
+      (github.event_name != 'workflow_dispatch' && github.ref_name == 'main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' && github.event.inputs.destroy != 'true')
     steps:
       - run: echo "Production deployment — CI passed on main or manual dispatch"
@@ -482,16 +464,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       - name: Determine commit SHA
         id: commit
         run: |
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            SHA="${{ github.event.workflow_run.head_sha }}"
-          else
-            SHA="${{ github.sha }}"
-          fi
+          SHA="${{ github.sha }}"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "✓ Deploying commit: $SHA"
 
