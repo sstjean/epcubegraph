@@ -74,3 +74,9 @@ resource "azurerm_key_vault_secret" "exporter_postgres_dsn" {
   value        = "postgresql://${var.postgres_admin_login}:${random_password.postgres_password.result}@${azurerm_postgresql_flexible_server.main.fqdn}:5432/${var.postgres_database_name}?sslmode=require"
   key_vault_id = data.azurerm_key_vault.main.id
 }
+
+resource "azurerm_key_vault_secret" "appinsights_connection_string" {
+  name         = "appinsights-connection-string"
+  value        = azurerm_application_insights.dashboard.connection_string
+  key_vault_id = data.azurerm_key_vault.main.id
+}
