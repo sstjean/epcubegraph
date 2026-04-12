@@ -63,7 +63,7 @@ describe('SettingsPage — Polling Intervals', () => {
     });
   });
 
-  it('Vue polling input is disabled with "Coming in Feature 005" label', async () => {
+  it('Vue polling inputs are enabled and editable', async () => {
     // Arrange
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
@@ -72,10 +72,10 @@ describe('SettingsPage — Polling Intervals', () => {
 
     // Assert
     await waitFor(() => {
-      const vueInput = screen.getByLabelText(/Emporia Vue Polling Interval/i) as HTMLInputElement;
-      expect(vueInput.disabled).toBe(true);
-      const labels = screen.getAllByText(/Coming in Feature 005/i);
-      expect(labels.length).toBeGreaterThanOrEqual(1);
+      const vueInput = screen.getByLabelText(/Emporia Vue Current Polling/i) as HTMLInputElement;
+      expect(vueInput.disabled).toBe(false);
+      const dailyInput = screen.getByLabelText(/Emporia Vue Daily Polling/i) as HTMLInputElement;
+      expect(dailyInput.disabled).toBe(false);
     });
   });
 
@@ -269,8 +269,8 @@ describe('SettingsPage — Polling Intervals', () => {
       expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
       expect(screen.getByText('Display Names')).toBeTruthy();
       const comingSoon = screen.getAllByText(/Coming in Feature 005/i);
-      // 3 total: Vue polling + hierarchy + display names
-      expect(comingSoon.length).toBe(3);
+      // 2 total: hierarchy + display names (Vue polling now enabled)
+      expect(comingSoon.length).toBe(2);
     });
   });
 

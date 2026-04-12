@@ -11,6 +11,10 @@ vi.mock('../../src/components/HistoryView', () => ({
   HistoryView: () => <div data-testid="history-view">MockedHistoryView</div>,
 }));
 
+vi.mock('../../src/components/CircuitsPage', () => ({
+  CircuitsPage: () => <div data-testid="circuits-page">MockedCircuitsPage</div>,
+}));
+
 import { App } from '../../src/App';
 
 describe('App', () => {
@@ -75,5 +79,32 @@ describe('App', () => {
 
     // Assert — ErrorBoundary wraps the content (it renders children normally)
     expect(container.querySelector('nav')).toBeTruthy();
+  });
+
+  it('route "/circuits" renders CircuitsPage', () => {
+    // Arrange
+    history.pushState({}, '', '/circuits');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    expect(screen.getByTestId('circuits-page')).toBeTruthy();
+  });
+
+  it('nav shows Circuits link as third item between History and Settings', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    const links = screen.getAllByRole('link');
+    const linkTexts = links.map((l) => l.textContent?.trim());
+    const circuitsIndex = linkTexts.indexOf('Circuits');
+    const historyIndex = linkTexts.indexOf('History');
+    expect(circuitsIndex).toBeGreaterThan(historyIndex);
+    expect(circuitsIndex).toBeLessThan(links.length - 1); // before Settings (last)
   });
 });
