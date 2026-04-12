@@ -12,3 +12,6 @@ psycopg2-binary==2.9.11
 
 # Emporia Vue cloud API
 pyemvue==0.18.9
+
+# Azure Monitor telemetry (optional — sends logs/exceptions to Application Insights)
+azure-monitor-opentelemetry==1.6.8
