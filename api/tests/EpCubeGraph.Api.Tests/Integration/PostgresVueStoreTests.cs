@@ -590,6 +590,28 @@ public class PostgresVueStoreTests : IClassFixture<PostgresFixture>, IAsyncLifet
         Assert.Empty(dev.Channels);
     }
 
+    [Fact]
+    public async Task GetBulkCurrentReadings_ExcludesReadingsOlderThan30Seconds()
+    {
+        // Arrange — one recent reading, one stale reading (60s old)
+        await _fixture.SeedVueDeviceAsync(200005, "Panel C");
+        await _fixture.SeedVueChannelAsync(200005, "1,2,3", "Main");
+        await _fixture.SeedVueChannelAsync(200005, "4", "Kitchen");
+
+        var now = DateTimeOffset.UtcNow;
+        await _fixture.SeedVueReadingAsync(200005, "1,2,3", now.AddSeconds(-2), 5000.0);
+        await _fixture.SeedVueReadingAsync(200005, "4", now.AddSeconds(-60), 800.0);
+
+        // Act
+        var result = await _store.GetBulkCurrentReadingsAsync();
+
+        // Assert — only the recent reading should appear
+        var dev = result.Devices.First(d => d.DeviceGid == 200005);
+        Assert.Single(dev.Channels);
+        Assert.Equal("1,2,3", dev.Channels[0].ChannelNum);
+        Assert.Equal(5000.0, dev.Channels[0].Value);
+    }
+
     // ── GetDailyReadingsAsync ──
 
     [Fact]
