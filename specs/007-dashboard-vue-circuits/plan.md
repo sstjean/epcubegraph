@@ -82,18 +82,21 @@ api/
 dashboard/
 ├── src/
 │   ├── types.ts                     # Add Vue dashboard types
-│   ├── api.ts                       # Add fetchVueCurrentReadings, fetchVueDailyReadings
+│   ├── api.ts                       # Add fetchVueBulkCurrentReadings, fetchVueDailyReadings
 │   ├── App.tsx                      # Add /circuits route, update nav
 │   ├── components/
 │   │   ├── EnergyFlowDiagram.tsx    # Add circuit list overlay
 │   │   ├── CircuitsPage.tsx         # NEW — dedicated circuits-by-panel page
-│   │   ├── CurrentReadings.tsx      # Add Vue data polling loop
+│   │   ├── CurrentReadings.tsx      # Consumes useVueData hook for Vue polling
 │   │   └── SettingsPage.tsx         # Add mapping editor section
+│   ├── hooks/
+│   │   └── useVueData.ts            # NEW — Vue data polling hook (1s current, 60s settings)
 │   └── utils/
-│       └── circuits.ts              # NEW — circuit sorting/filtering helpers
+│       ├── circuits.ts              # NEW — circuit sorting/filtering/ordering helpers
+│       └── errors.ts                # NEW — toTrackedError, errorMessage utilities
 └── tests/
     ├── component/                   # Component tests for CircuitsPage, flow overlay
-    └── unit/                        # Unit tests for circuit utils
+    └── unit/                        # Unit tests for circuit utils, useVueData, errors
 
 local/epcube-exporter/
 ├── exporter.py                      # Add daily poll loop, vue_readings_daily writes
