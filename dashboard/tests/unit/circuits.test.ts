@@ -205,6 +205,30 @@ describe('circuits', () => {
     });
   });
 
+  describe('derivePanelPrefix', () => {
+    it('derives first letter for simple names', async () => {
+      const { derivePanelPrefix } = await import('../../src/utils/circuits');
+      expect(derivePanelPrefix('Main Panel')).toBe('M');
+      expect(derivePanelPrefix('Workshop Panel')).toBe('W');
+    });
+
+    it('appends digits from alias', async () => {
+      const { derivePanelPrefix } = await import('../../src/utils/circuits');
+      expect(derivePanelPrefix('Subpanel 1')).toBe('S1');
+      expect(derivePanelPrefix('Subpanel 2')).toBe('S2');
+    });
+
+    it('handles single-word alias', async () => {
+      const { derivePanelPrefix } = await import('../../src/utils/circuits');
+      expect(derivePanelPrefix('Garage')).toBe('G');
+    });
+
+    it('handles empty string', async () => {
+      const { derivePanelPrefix } = await import('../../src/utils/circuits');
+      expect(derivePanelPrefix('')).toBe('');
+    });
+  });
+
   describe('orderPanels', () => {
     it('puts standalone panels first alphabetically, then parents with children', async () => {
       // Arrange

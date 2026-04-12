@@ -881,6 +881,7 @@ section > h2 {
 
 .circuit-entry {
   display: flex;
+  justify-content: space-between;
   align-items: baseline;
   font-size: 0.65em;
   line-height: 1.3;
@@ -896,11 +897,8 @@ section > h2 {
   min-width: 0;
 }
 
-.circuit-sep {
-  flex-shrink: 0;
-}
-
 .circuit-watts {
   flex-shrink: 0;
   color: var(--text-primary, #e2e8f0);
+  margin-left: 0.5em;
 }
