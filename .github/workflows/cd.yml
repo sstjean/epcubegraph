@@ -307,6 +307,10 @@ jobs:
           skip_app_build: true
           skip_api_build: true
 
+      - name: Clean workspace
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE"/*
+
   validate-staging:
     needs: deploy-staging
     runs-on: ubuntu-latest
@@ -468,7 +472,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
-          clean: true
 
       - name: Determine commit SHA
         id: commit
@@ -686,6 +689,10 @@ jobs:
           app_location: dashboard/dist
           skip_app_build: true
           skip_api_build: true
+
+      - name: Clean workspace
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE"/*
 
   validate-prod:
     needs: deploy-prod
@@ -1003,3 +1010,7 @@ jobs:
             az network dns record-set txt delete --zone-name "$ZONE" --resource-group "$ZONE_RG" --name "$name" --yes
             echo "✓ Deleted TXT $name"
           done
+
+      - name: Clean workspace
+        if: always()
+        run: rm -rf "$GITHUB_WORKSPACE"/*
