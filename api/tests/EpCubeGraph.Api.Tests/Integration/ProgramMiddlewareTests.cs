@@ -5,6 +5,7 @@ using EpCubeGraph.Api.Tests.Fixtures;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EpCubeGraph.Api.Tests.Integration;
@@ -161,5 +162,45 @@ public class NoAuthBypassTests : IDisposable
             response.StatusCode == HttpStatusCode.OK ||
             response.StatusCode == HttpStatusCode.ServiceUnavailable,
             $"Expected OK or 503 but got {response.StatusCode}");
+    }
+}
+
+/// <summary>
+/// Tests that the app starts with default connection string when
+/// ConnectionStrings:DefaultConnection is not configured.
+/// </summary>
+public class ProgramDefaultConnectionTests
+{
+
+    [Fact]
+    public void GetRequiredConnectionString_ReturnsValue_WhenPresent()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=test;Database=db",
+            })
+            .Build();
+
+        // Act
+        var result = Startup.GetRequiredConnectionString(config);
+
+        // Assert
+        Assert.Equal("Host=test;Database=db", result);
+    }
+
+    [Fact]
+    public void GetRequiredConnectionString_Throws_WhenMissing()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        // Act + Assert
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Startup.GetRequiredConnectionString(config));
+        Assert.Contains("ConnectionStrings:DefaultConnection", ex.Message);
     }
 }

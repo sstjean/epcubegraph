@@ -26,6 +26,7 @@ coverage/
 coveragereport/
 **/coverage.cobertura.xml
 **/TestResults/
+**/CoverageMerged/
 
 # IDE
 .vs/
