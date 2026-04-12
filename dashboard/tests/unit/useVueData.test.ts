@@ -247,4 +247,70 @@ describe('useVueData', () => {
     expect(mockFetchVueReadings).not.toHaveBeenCalled();
     expect(mockFetchSettings).not.toHaveBeenCalled();
   });
+
+  it('does not track errors when readings reject after unmount', async () => {
+    // Arrange — readings reject after unmount
+    let rejectReadings!: (err: Error) => void;
+    mockFetchVueReadings.mockReturnValue(new Promise((_r, rej) => { rejectReadings = rej; }));
+
+    const { unmount } = renderHook(() => useVueData());
+
+    // Act — unmount, then reject the in-flight fetch
+    unmount();
+    vi.clearAllMocks();
+    rejectReadings(new Error('late failure'));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Assert — toTrackedError should not be called post-unmount
+    expect(mockTrackException).not.toHaveBeenCalled();
+  });
+
+  it('does not update state when readings resolve after unmount', async () => {
+    // Arrange — readings resolve after unmount
+    let resolveReadings!: (v: typeof vueReadingsResponse) => void;
+    mockFetchVueReadings.mockReturnValue(new Promise((r) => { resolveReadings = r; }));
+
+    const { result, unmount } = renderHook(() => useVueData());
+
+    // Act — unmount, then resolve
+    unmount();
+    resolveReadings(vueReadingsResponse);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Assert — readings not applied
+    expect(result.current.vueCurrentReadings).toBeUndefined();
+  });
+
+  it('does not update state when settings resolve after unmount', async () => {
+    // Arrange — settings resolve after unmount
+    let resolveSettings!: (v: typeof settingsResponse) => void;
+    mockFetchSettings.mockReturnValue(new Promise((r) => { resolveSettings = r; }));
+
+    const { result, unmount } = renderHook(() => useVueData());
+
+    // Act — unmount, then resolve settings
+    unmount();
+    resolveSettings(settingsResponse);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Assert — mapping not applied
+    expect(result.current.vueDeviceMapping).toBeUndefined();
+  });
+
+  it('does not track errors when settings reject after unmount', async () => {
+    // Arrange — settings reject after unmount
+    let rejectSettings!: (err: Error) => void;
+    mockFetchSettings.mockReturnValue(new Promise((_r, rej) => { rejectSettings = rej; }));
+
+    const { unmount } = renderHook(() => useVueData());
+
+    // Act — unmount, then reject settings
+    unmount();
+    vi.clearAllMocks();
+    rejectSettings(new Error('late settings failure'));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+
+    // Assert — toTrackedError should not be called post-unmount
+    expect(mockTrackException).not.toHaveBeenCalled();
+  });
 });

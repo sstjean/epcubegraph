@@ -17,13 +17,18 @@ export function useVueData(): UseVueDataResult {
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const loadVueReadings = async () => {
     try {
       const vueReadings = await fetchVueBulkCurrentReadings();
+      if (!mountedRef.current) return;
       setVueCurrentReadings(vueReadings);
       setVueError(null);
     } catch (err) {
+      if (!mountedRef.current) return;
       setVueError(errorMessage(err, 'Vue readings unavailable'));
       toTrackedError(err, 'Vue readings unavailable');
     }
@@ -35,6 +40,7 @@ export function useVueData(): UseVueDataResult {
         fetchSettings(),
         fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
       ]);
+      if (!mountedRef.current) return;
       setHierarchyEntries(hierarchyResp.entries);
 
       const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
@@ -49,6 +55,7 @@ export function useVueData(): UseVueDataResult {
         setVueDeviceMapping(undefined);
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       toTrackedError(err, 'Vue settings load failed');
     }
   };
