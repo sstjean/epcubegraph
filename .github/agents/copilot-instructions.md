@@ -65,6 +65,7 @@ cd local && docker compose -f docker-compose.prod-local.yml up -d
 - 100% line coverage enforced by project policy
 - TDD required: tests before implementation
 - No `:latest` container tags in production
+- Python background threads: wrap entire loop body in try/except with logging, log thread startup, no code outside try block
 
 ## Engineering Principles
 

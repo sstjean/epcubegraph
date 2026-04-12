@@ -446,6 +446,8 @@ public class ValidateTests
     [InlineData("-1s")]
     [InlineData("0m")]
     [InlineData("s")]
+    [InlineData("abcs")]
+    [InlineData("xyz.h")]
     public void VueStep_InvalidInputs_ReturnsError(string step)
     {
         // Act

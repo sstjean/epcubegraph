@@ -5,8 +5,9 @@ import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/d
 import { errorMessage, toTrackedError } from '../utils/errors';
 
 const POLL_SETTINGS = [
-  { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', disabled: false },
-  { key: 'vue_poll_interval_seconds', label: 'Emporia Vue Polling Interval', default: '1', disabled: true },
+  { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', group: 'EP Cube' },
+  { key: 'vue_poll_interval_seconds', label: 'Emporia Vue Current Polling', default: '1', group: 'Emporia Vue' },
+  { key: 'vue_daily_poll_interval_seconds', label: 'Emporia Vue Daily Polling', default: '300', group: 'Emporia Vue' },
 ] as const;
 
 interface EpCubeGroup {
@@ -105,7 +106,6 @@ export function SettingsPage() {
 
     // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
-      if (ps.disabled) continue;
       const err = validate(values[ps.key] ?? ps.default);
       if (err) {
         setPollingMessage({ type: 'error', text: `${ps.label}: ${err}` });
@@ -116,7 +116,6 @@ export function SettingsPage() {
     setSaving(true);
     try {
       for (const ps of POLL_SETTINGS) {
-        if (ps.disabled) continue;
         await updateSetting(ps.key, values[ps.key] ?? ps.default);
       }
       setPollingMessage({ type: 'success', text: 'Polling intervals saved' });
@@ -200,7 +199,6 @@ export function SettingsPage() {
             <div class="settings-field" key={ps.key}>
               <label for={ps.key}>
                 {ps.label} (seconds)
-                {ps.disabled && <span class="settings-coming-soon"> — Coming in Feature 005</span>}
               </label>
               <input
                 id={ps.key}
@@ -208,7 +206,6 @@ export function SettingsPage() {
                 min="1"
                 max="3600"
                 value={values[ps.key] ?? ps.default}
-                disabled={ps.disabled}
                 onInput={(e) => handleChange(ps.key, (e.target as HTMLInputElement).value)}
               />
             </div>

@@ -145,7 +145,7 @@ As a homeowner, when no Vue circuits are drawing power (e.g., everything is off 
 - Q: How should the mapping editor discover devices? → A: Auto-discover from existing API endpoints (`GET /devices` for EP Cube, `GET /vue/devices` for Vue). Show dropdowns/drag-drop, no manual GID entry.
 - Q: Should child panels be nested under parents on the Circuits page? → A: Flat layout, all panels at same level. Ordering: top-level panels without children first (alphabetical), then parent panels each followed immediately by their children (alphabetical).
 - Q: Should vue_device_mapping be added to the Settings API allowlist? → A: Yes — add to allowlisted keys so the Settings page can save it.
-- Q: How should flow card circuit entries be sized? → A: Small text (0.75em), name left-aligned / watts right-aligned on same line, tight spacing.
+- Q: How should flow card circuit entries be sized? → A: Small text (0.65em), name left-aligned / watts right-aligned on same line, tight spacing.
 - Q: What happens when vue_device_mapping is empty/unconfigured? → A: Flow card shows no circuits (same as no Vue data, FR-007). Circuits page shows "Configure Vue device mapping in Settings to see circuits."
 
 ## Out of Scope

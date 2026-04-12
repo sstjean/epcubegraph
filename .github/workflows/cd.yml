@@ -39,6 +39,9 @@ env:
   ARM_USE_OIDC: 'true'
   TFSTATE_STORAGE_ACCOUNT: 'tfstateepcubegraph'
   TFSTATE_RESOURCE_GROUP: 'tfstate-rg'
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: 'init.defaultBranch'
+  GIT_CONFIG_VALUE_0: 'main'
 
 permissions:
   id-token: write   # OIDC token for Azure login
@@ -465,6 +468,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.sha }}
+          clean: true
 
       - name: Determine commit SHA
         id: commit

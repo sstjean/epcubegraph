@@ -156,11 +156,11 @@ interface VueDailyChannel {
 
 interface VueDeviceDailyReadings {
   device_gid: number;
-  date: string;
   channels: VueDailyChannel[];
 }
 
 interface VueBulkDailyReadingsResponse {
+  date: string;
   devices: VueDeviceDailyReadings[];
 }
 
@@ -187,7 +187,12 @@ interface VueDevicesResponse {
 }
 
 // Vue device mapping (settings)
-type VueDeviceMapping = Record<string, number[]>;
+interface VuePanelMapping {
+  gid: number;
+  alias: string;
+}
+
+type VueDeviceMapping = Record<string, VuePanelMapping[]>;
 ```
 
 ## Volume Estimates (Circuits Page)

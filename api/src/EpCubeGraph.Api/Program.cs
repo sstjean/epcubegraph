@@ -37,8 +37,7 @@ else
 }
 
 // PostgreSQL data store
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? "Host=localhost;Port=5432;Database=epcubegraph;Username=epcube;Password=epcube_local";
+var connectionString = Startup.GetRequiredConnectionString(builder.Configuration);
 builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connectionString));
 builder.Services.AddSingleton<ISettingsStore>(new PostgresSettingsStore(connectionString));
 builder.Services.AddSingleton<IVueStore>(new PostgresVueStore(connectionString));
