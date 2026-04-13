@@ -12,6 +12,7 @@ describe('telemetry', () => {
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockLoadAppInsights = vi.fn();
       const MockAI = vi.fn().mockImplementation(function () {
+        this.addTelemetryInitializer = vi.fn();
         this.loadAppInsights = mockLoadAppInsights;
         this.trackException = vi.fn();
         this.trackEvent = vi.fn();
@@ -34,6 +35,33 @@ describe('telemetry', () => {
         }),
       );
       expect(mockLoadAppInsights).toHaveBeenCalled();
+    });
+
+    it('sets cloud role name via telemetry initializer', async () => {
+      // Arrange
+      vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
+      let capturedInitializer: ((item: { tags?: Record<string, string> }) => void) | null = null;
+      const MockAI = vi.fn().mockImplementation(function () {
+        this.addTelemetryInitializer = vi.fn((fn: (item: { tags?: Record<string, string> }) => void) => { capturedInitializer = fn; });
+        this.loadAppInsights = vi.fn();
+        this.trackException = vi.fn();
+        this.trackEvent = vi.fn();
+        this.trackPageView = vi.fn();
+      });
+      vi.doMock('@microsoft/applicationinsights-web', () => ({
+        ApplicationInsights: MockAI,
+      }));
+
+      // Act
+      const { initTelemetry } = await import('../../src/telemetry');
+      initTelemetry();
+
+      // Assert — initializer was registered and sets the role name
+      expect(capturedInitializer).not.toBeNull();
+      const item: { tags?: Record<string, string> } = {};
+      capturedInitializer!(item);
+      expect(item.tags).toBeDefined();
+      expect(item.tags!['ai.cloud.role']).toBe('epcubegraph-dashboard');
     });
 
     it('is a no-op when connection string is empty', async () => {
@@ -75,7 +103,8 @@ describe('telemetry', () => {
       const mockTrackException = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn().mockImplementation(function () {
-          this.loadAppInsights = vi.fn();
+          this.addTelemetryInitializer = vi.fn();
+        this.loadAppInsights = vi.fn();
           this.trackException = mockTrackException;
           this.trackEvent = vi.fn();
           this.trackPageView = vi.fn();
@@ -112,7 +141,8 @@ describe('telemetry', () => {
       const mockTrackEvent = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn().mockImplementation(function () {
-          this.loadAppInsights = vi.fn();
+          this.addTelemetryInitializer = vi.fn();
+        this.loadAppInsights = vi.fn();
           this.trackException = vi.fn();
           this.trackEvent = mockTrackEvent;
           this.trackPageView = vi.fn();
@@ -151,7 +181,8 @@ describe('telemetry', () => {
       const mockTrackPageView = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn().mockImplementation(function () {
-          this.loadAppInsights = vi.fn();
+          this.addTelemetryInitializer = vi.fn();
+        this.loadAppInsights = vi.fn();
           this.trackException = vi.fn();
           this.trackEvent = vi.fn();
           this.trackPageView = mockTrackPageView;

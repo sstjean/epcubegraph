@@ -112,6 +112,11 @@ resource "azurerm_container_app" "api" {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
       }
+
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "epcubegraph-api"
+      }
     }
   }
 }
@@ -271,6 +276,11 @@ resource "azurerm_container_app" "exporter" {
       env {
         name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
         secret_name = "appinsights-connection-string"
+      }
+
+      env {
+        name  = "OTEL_SERVICE_NAME"
+        value = "epcubegraph-exporter"
       }
     }
   }
