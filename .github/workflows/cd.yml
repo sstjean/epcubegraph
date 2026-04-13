@@ -309,7 +309,7 @@ jobs:
 
       - name: Clean workspace
         if: always()
-        run: rm -rf "$GITHUB_WORKSPACE"/*
+        run: rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[^.]*
 
   validate-staging:
     needs: deploy-staging
@@ -692,7 +692,7 @@ jobs:
 
       - name: Clean workspace
         if: always()
-        run: rm -rf "$GITHUB_WORKSPACE"/*
+        run: rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[^.]*
 
   validate-prod:
     needs: deploy-prod
@@ -1013,4 +1013,4 @@ jobs:
 
       - name: Clean workspace
         if: always()
-        run: rm -rf "$GITHUB_WORKSPACE"/*
+        run: rm -rf "$GITHUB_WORKSPACE"/* "$GITHUB_WORKSPACE"/.[^.]*
