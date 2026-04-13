@@ -13,6 +13,10 @@ export function initTelemetry(): void {
       disableTelemetry: false,
     },
   });
+  appInsights.addTelemetryInitializer((item) => {
+    item.tags = item.tags || [];
+    item.tags['ai.cloud.role'] = 'epcubegraph-dashboard';
+  });
   appInsights.loadAppInsights();
 }
 
