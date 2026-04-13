@@ -257,7 +257,7 @@ describe('SettingsPage — Polling Intervals', () => {
     });
   });
 
-  it('renders deferred sections for hierarchy and display names', async () => {
+  it('renders deferred panel hierarchy section', async () => {
     // Arrange
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
@@ -267,10 +267,8 @@ describe('SettingsPage — Polling Intervals', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
-      expect(screen.getByText('Display Names')).toBeTruthy();
-      const comingSoon = screen.getAllByText(/Coming in Feature 005/i);
-      // 2 total: hierarchy + display names (Vue polling now enabled)
-      expect(comingSoon.length).toBe(2);
+      expect(screen.getByText(/Coming soon/)).toBeTruthy();
+      expect(screen.queryByText('Display Names')).toBeNull();
     });
   });
 
