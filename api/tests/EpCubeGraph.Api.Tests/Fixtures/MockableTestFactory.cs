@@ -26,6 +26,7 @@ public class MockableTestFactory : WebApplicationFactory<Program>
     public ConfigurableMockVueStore MockVueStore { get; } = new();
 
     public string? EnvironmentOverride { get; set; }
+    public Dictionary<string, string?>? AdditionalConfig { get; set; }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -34,15 +35,21 @@ public class MockableTestFactory : WebApplicationFactory<Program>
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
-            config.AddInMemoryCollection(new Dictionary<string, string?>
+            var baseConfig = new Dictionary<string, string?>
             {
                 ["AzureAd:Instance"] = "https://login.microsoftonline.com/",
                 ["AzureAd:TenantId"] = "00000000-0000-0000-0000-000000000000",
                 ["AzureAd:ClientId"] = "00000000-0000-0000-0000-000000000001",
                 ["AzureAd:Audience"] = "api://00000000-0000-0000-0000-000000000001",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Port=0;Database=test",
-                ["Cors:AllowedOrigin"] = "https://test-dashboard.example.com"
-            });
+                ["Cors:AllowedOrigin"] = "https://test-dashboard.example.com",
+            };
+            if (AdditionalConfig is not null)
+            {
+                foreach (var kv in AdditionalConfig)
+                    baseConfig[kv.Key] = kv.Value;
+            }
+            config.AddInMemoryCollection(baseConfig);
         });
 
         builder.ConfigureTestServices(services =>

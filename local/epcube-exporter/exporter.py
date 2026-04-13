@@ -46,6 +46,23 @@ import numpy as np
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
+# Azure Monitor telemetry (optional — only when connection string is set)
+_azure_monitor_configure = None
+try:
+    from azure.monitor.opentelemetry import configure_azure_monitor as _azure_monitor_configure
+except ImportError:
+    pass
+
+
+def _configure_azure_monitor():
+    """Enable Azure Monitor telemetry if APPLICATIONINSIGHTS_CONNECTION_STRING is set."""
+    conn_str = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
+    if not conn_str or _azure_monitor_configure is None:
+        return
+    _azure_monitor_configure(logger_name="exporter")
+    log.info("Azure Monitor telemetry enabled")
+
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -2033,6 +2050,8 @@ def poll_loop(collector):
 
 
 def main():
+    _configure_azure_monitor()
+
     epcube_username = os.environ.get("EPCUBE_USERNAME")
     epcube_password = os.environ.get("EPCUBE_PASSWORD")
     emporia_username = os.environ.get("EMPORIA_USERNAME")

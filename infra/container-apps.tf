@@ -51,6 +51,12 @@ resource "azurerm_container_app" "api" {
     identity            = azurerm_user_assigned_identity.main.id
   }
 
+  secret {
+    name                = "appinsights-connection-string"
+    key_vault_secret_id = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
   ingress {
     external_enabled = true
     target_port      = var.api_port
@@ -100,6 +106,11 @@ resource "azurerm_container_app" "api" {
       env {
         name  = "Cors__AllowedOrigin"
         value = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? "https://${var.dashboard_subdomain}.${var.custom_domain_zone_name}" : "https://${azurerm_static_web_app.dashboard.default_host_name}"
+      }
+
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection-string"
       }
     }
   }
@@ -165,6 +176,12 @@ resource "azurerm_container_app" "exporter" {
   secret {
     name                = "emporia-password"
     key_vault_secret_id = azurerm_key_vault_secret.emporia_password.versionless_id
+    identity            = azurerm_user_assigned_identity.main.id
+  }
+
+  secret {
+    name                = "appinsights-connection-string"
+    key_vault_secret_id = azurerm_key_vault_secret.appinsights_connection_string.versionless_id
     identity            = azurerm_user_assigned_identity.main.id
   }
 
@@ -249,6 +266,11 @@ resource "azurerm_container_app" "exporter" {
       env {
         name  = "AZURE_REDIRECT_URI"
         value = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" ? "https://${var.exporter_subdomain}.${var.custom_domain_zone_name}/.auth/callback" : "https://${var.environment_name}-exporter.${azurerm_container_app_environment.main.default_domain}/.auth/callback"
+      }
+
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = "appinsights-connection-string"
       }
     }
   }

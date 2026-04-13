@@ -42,6 +42,9 @@ builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connection
 builder.Services.AddSingleton<ISettingsStore>(new PostgresSettingsStore(connectionString));
 builder.Services.AddSingleton<IVueStore>(new PostgresVueStore(connectionString));
 
+// Application Insights telemetry (auto-reads APPLICATIONINSIGHTS_CONNECTION_STRING)
+Startup.AddApplicationInsightsIfConfigured(builder.Services, builder.Configuration);
+
 // CORS
 builder.Services.AddCors();
 

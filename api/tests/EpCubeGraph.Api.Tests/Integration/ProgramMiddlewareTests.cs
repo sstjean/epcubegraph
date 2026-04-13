@@ -204,3 +204,65 @@ public class ProgramDefaultConnectionTests
         Assert.Contains("ConnectionStrings:DefaultConnection", ex.Message);
     }
 }
+
+/// <summary>
+/// Tests that Application Insights telemetry is wired when connection string is configured.
+/// </summary>
+public class ProgramAppInsightsTests
+{
+    [Fact]
+    public void AddApplicationInsightsIfConfigured_Adds_WhenConnectionStringPresent()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = "InstrumentationKey=00000000-0000-0000-0000-000000000000",
+            })
+            .Build();
+
+        // Act
+        Startup.AddApplicationInsightsIfConfigured(services, config);
+
+        // Assert — at least one AppInsights service registered
+        Assert.True(services.Count > 0);
+    }
+
+    [Fact]
+    public void AddApplicationInsightsIfConfigured_Skips_WhenConnectionStringMissing()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+        var countBefore = services.Count;
+
+        // Act
+        Startup.AddApplicationInsightsIfConfigured(services, config);
+
+        // Assert — no services added
+        Assert.Equal(countBefore, services.Count);
+    }
+
+    [Fact]
+    public void AddApplicationInsightsIfConfigured_Skips_WhenConnectionStringEmpty()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = "",
+            })
+            .Build();
+        var countBefore = services.Count;
+
+        // Act
+        Startup.AddApplicationInsightsIfConfigured(services, config);
+
+        // Assert — no services added
+        Assert.Equal(countBefore, services.Count);
+    }
+}

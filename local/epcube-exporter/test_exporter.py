@@ -2910,5 +2910,31 @@ class TestVueDailyPollLoop(unittest.TestCase):
         self.assertEqual(mock_read_interval.call_count, 2)
 
 
+class TestConfigureAzureMonitor(unittest.TestCase):
+    """Tests for _configure_azure_monitor — conditional AppInsights setup."""
+
+    @patch.dict(os.environ, {"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=00000000-0000-0000-0000-000000000000"})
+    @patch("exporter._azure_monitor_configure")
+    def test_calls_configure_when_connection_string_set(self, mock_configure):
+        # Act
+        exporter._configure_azure_monitor()
+
+        # Assert
+        mock_configure.assert_called_once()
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_skips_when_connection_string_missing(self):
+        # Ensure no APPLICATIONINSIGHTS_CONNECTION_STRING
+        os.environ.pop("APPLICATIONINSIGHTS_CONNECTION_STRING", None)
+
+        # Act — should not raise
+        exporter._configure_azure_monitor()
+
+    @patch.dict(os.environ, {"APPLICATIONINSIGHTS_CONNECTION_STRING": ""})
+    def test_skips_when_connection_string_empty(self):
+        # Act — should not raise
+        exporter._configure_azure_monitor()
+
+
 if __name__ == "__main__":
     unittest.main()
