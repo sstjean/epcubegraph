@@ -7,6 +7,7 @@ const mockUpdateSetting = vi.fn();
 const mockFetchDevices = vi.fn();
 const mockFetchVueDevices = vi.fn();
 const mockFetchHierarchy = vi.fn();
+const mockUpdateHierarchy = vi.fn();
 
 vi.mock('../../src/api', () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
@@ -14,6 +15,7 @@ vi.mock('../../src/api', () => ({
   fetchDevices: (...args: unknown[]) => mockFetchDevices(...args),
   fetchVueDevices: (...args: unknown[]) => mockFetchVueDevices(...args),
   fetchHierarchy: (...args: unknown[]) => mockFetchHierarchy(...args),
+  updateHierarchy: (...args: unknown[]) => mockUpdateHierarchy(...args),
   fetchCurrentReadings: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
@@ -257,7 +259,7 @@ describe('SettingsPage — Polling Intervals', () => {
     });
   });
 
-  it('renders deferred panel hierarchy section', async () => {
+  it('renders panel hierarchy section with heading', async () => {
     // Arrange
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
@@ -267,7 +269,6 @@ describe('SettingsPage — Polling Intervals', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
-      expect(screen.getByText(/Coming soon/)).toBeTruthy();
       expect(screen.queryByText('Display Names')).toBeNull();
     });
   });
@@ -571,7 +572,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No Vue devices available/i)).toBeTruthy();
+      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -634,7 +635,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert — section renders without crash, shows no vue devices
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No Vue devices available/i)).toBeTruthy();
+      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -891,6 +892,243 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert — renders normally without hierarchy filtering
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
+    });
+  });
+});
+
+describe('SettingsPage — Panel Hierarchy Editor', () => {
+  const EP_CUBE_DEVICES = [
+    { device: 'epcube3483_battery', class: 'storage_battery', online: true },
+  ];
+
+  const VUE_DEVICES = [
+    { device_gid: 480380, device_name: 'Vue 1', display_name: 'Main Panel' },
+    { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+    { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(cleanup);
+
+  function setupMocks(overrides?: {
+    settings?: object[];
+    epcubeDevices?: object[];
+    vueDevices?: object[];
+    hierarchy?: object[];
+  }) {
+    mockFetchSettings.mockResolvedValue({
+      settings: overrides?.settings ?? [],
+    });
+    mockFetchDevices.mockResolvedValue({
+      devices: overrides?.epcubeDevices ?? EP_CUBE_DEVICES,
+    });
+    mockFetchVueDevices.mockResolvedValue({
+      devices: overrides?.vueDevices ?? VUE_DEVICES,
+    });
+    mockFetchHierarchy.mockResolvedValue({
+      entries: overrides?.hierarchy ?? [],
+    });
+  }
+
+  it('shows "No Vue devices" when no Vue devices exist', async () => {
+    // Arrange
+    setupMocks({ vueDevices: [] });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      const section = screen.getByText('Panel Hierarchy').closest('.settings-section')!;
+      expect(section.textContent).toContain('No Vue devices available');
+    });
+  });
+
+  it('renders existing hierarchy entries with device display names', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
+      expect(screen.getByLabelText(/Remove hierarchy entry.*480544/i)).toBeTruthy();
+    });
+  });
+
+  it('renders parent and child dropdowns for adding entries', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Parent panel/i)).toBeTruthy();
+      expect(screen.getByLabelText(/Child panel/i)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Add/i })).toBeTruthy();
+    });
+  });
+
+  it('adds a hierarchy entry via dropdowns and Add button', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — new entry appears in the list
+    await waitFor(() => {
+      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
+    });
+  });
+
+  it('does not add entry when dropdowns are empty', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — no entry added, no error
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Remove hierarchy entry/i)).toBeNull();
+    });
+  });
+
+  it('removes a hierarchy entry via Remove button', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Remove hierarchy entry.*480544/i));
+    fireEvent.click(screen.getByLabelText(/Remove hierarchy entry.*480544/i));
+
+    // Assert — entry removed
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Remove hierarchy entry.*480544/i)).toBeNull();
+    });
+  });
+
+  it('prevents adding self-reference (same parent and child)', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480380' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — no entry added, error shown
+    await waitFor(() => {
+      expect(screen.getByText(/cannot be its own child/i)).toBeTruthy();
+    });
+  });
+
+  it('prevents adding duplicate edge', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — error shown
+    await waitFor(() => {
+      expect(screen.getByText(/already exists/i)).toBeTruthy();
+    });
+  });
+
+  it('saves hierarchy via PUT on Save button click', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+    mockUpdateHierarchy.mockResolvedValue({
+      entries: [{ id: 1, parent_device_gid: 480380, child_device_gid: 480544 }],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
+
+    // Assert
+    await waitFor(() => {
+      expect(mockUpdateHierarchy).toHaveBeenCalledWith([
+        { parent_device_gid: 480380, child_device_gid: 480544 },
+      ]);
+      expect(screen.getByText(/Hierarchy saved/i)).toBeTruthy();
+    });
+  });
+
+  it('shows API error message on save failure', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+        { id: 2, parent_device_gid: 480544, child_device_gid: 480380 },
+      ],
+    });
+    mockUpdateHierarchy.mockRejectedValue(new Error('Panel hierarchy contains a circular reference'));
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/circular reference/i)).toBeTruthy();
+    });
+  });
+
+  it('shows device_gid as fallback when device not found in vueDevices', async () => {
+    // Arrange — hierarchy references a gid not in vueDevices list
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 999999, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert — shows gid as fallback
+    await waitFor(() => {
+      expect(screen.getByText(/999999 → Subpanel 1/)).toBeTruthy();
     });
   });
 });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'preact/hooks';
-import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy } from '../api';
+import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy, updateHierarchy } from '../api';
 import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../types';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
 import { errorMessage, toTrackedError } from '../utils/errors';
@@ -28,6 +28,10 @@ export function SettingsPage() {
   const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const [mapping, setMapping] = useState<Record<string, VuePanelMapping[]>>({});
+  const [savingHierarchy, setSavingHierarchy] = useState(false);
+  const [hierarchyMessage, setHierarchyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [addParentGid, setAddParentGid] = useState('');
+  const [addChildGid, setAddChildGid] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +188,65 @@ export function SettingsPage() {
     }
   }
 
+  // ── Hierarchy editor handlers ──
+
+  function getVueDisplayName(gid: number): string {
+    const device = vueDevices.find((v) => v.device_gid === gid);
+    return device ? device.display_name : String(gid);
+  }
+
+  function handleAddHierarchyEntry() {
+    setHierarchyMessage(null);
+    const parentGid = Number(addParentGid);
+    const childGid = Number(addChildGid);
+    if (!parentGid || !childGid) return;
+
+    if (parentGid === childGid) {
+      setHierarchyMessage({ type: 'error', text: 'A panel cannot be its own child' });
+      return;
+    }
+
+    const duplicate = hierarchyEntries.some(
+      (e) => e.parent_device_gid === parentGid && e.child_device_gid === childGid,
+    );
+    if (duplicate) {
+      setHierarchyMessage({ type: 'error', text: 'This relationship already exists' });
+      return;
+    }
+
+    setHierarchyEntries((prev) => [
+      ...prev,
+      { id: 0, parent_device_gid: parentGid, child_device_gid: childGid },
+    ]);
+    setAddParentGid('');
+    setAddChildGid('');
+  }
+
+  function handleRemoveHierarchyEntry(parentGid: number, childGid: number) {
+    setHierarchyEntries((prev) =>
+      prev.filter((e) => !(e.parent_device_gid === parentGid && e.child_device_gid === childGid)),
+    );
+    setHierarchyMessage(null);
+  }
+
+  async function handleSaveHierarchy() {
+    setHierarchyMessage(null);
+    setSavingHierarchy(true);
+    try {
+      const input = hierarchyEntries.map((e) => ({
+        parent_device_gid: e.parent_device_gid,
+        child_device_gid: e.child_device_gid,
+      }));
+      const result = await updateHierarchy(input);
+      setHierarchyEntries(result.entries);
+      setHierarchyMessage({ type: 'success', text: 'Hierarchy saved' });
+    } catch (err) {
+      setHierarchyMessage({ type: 'error', text: errorMessage(err, 'Failed to save hierarchy') });
+    } finally {
+      setSavingHierarchy(false);
+    }
+  }
+
   if (loading) return <section aria-busy="true"><h2>Settings</h2><p>Loading...</p></section>;
 
   return (
@@ -296,7 +359,73 @@ export function SettingsPage() {
 
       <div class="settings-section">
         <h3>Panel Hierarchy</h3>
-        <p class="settings-coming-soon">Coming soon — see issue #113</p>
+        {vueDevices.length === 0 && <p class="settings-coming-soon">No Vue devices available</p>}
+        {vueDevices.length > 0 && (
+          <>
+            {hierarchyEntries.length > 0 && (
+              <div class="hierarchy-entries">
+                {hierarchyEntries.map((e) => (
+                  <div class="hierarchy-entry-row" key={`${e.parent_device_gid}-${e.child_device_gid}`}>
+                    <span>{getVueDisplayName(e.parent_device_gid)} → {getVueDisplayName(e.child_device_gid)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove hierarchy entry ${e.child_device_gid}`}
+                      class="mapping-remove-btn"
+                      onClick={() => handleRemoveHierarchyEntry(e.parent_device_gid, e.child_device_gid)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div class="hierarchy-add-row">
+              <select
+                aria-label="Parent panel"
+                value={addParentGid}
+                onChange={(e) => setAddParentGid((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Parent…</option>
+                {vueDevices.map((v) => (
+                  <option key={v.device_gid} value={String(v.device_gid)}>
+                    {v.display_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Child panel"
+                value={addChildGid}
+                onChange={(e) => setAddChildGid((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Child…</option>
+                {vueDevices.map((v) => (
+                  <option key={v.device_gid} value={String(v.device_gid)}>
+                    {v.display_name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAddHierarchyEntry}
+              >
+                Add
+              </button>
+            </div>
+            <button
+              type="button"
+              class="settings-save"
+              onClick={handleSaveHierarchy}
+              disabled={savingHierarchy}
+            >
+              {savingHierarchy ? 'Saving...' : 'Save Hierarchy'}
+            </button>
+            {hierarchyMessage && (
+              <p role={hierarchyMessage.type === 'error' ? 'alert' : 'status'} class={hierarchyMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
+                {hierarchyMessage.text}
+              </p>
+            )}
+          </>
+        )}
       </div>
     </section>
   );

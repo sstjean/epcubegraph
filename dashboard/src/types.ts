@@ -135,6 +135,11 @@ export interface PanelHierarchyEntry {
   child_device_gid: number;
 }
 
+export interface PanelHierarchyInputEntry {
+  parent_device_gid: number;
+  child_device_gid: number;
+}
+
 export interface PanelHierarchyResponse {
   entries: PanelHierarchyEntry[];
 }

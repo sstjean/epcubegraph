@@ -10,6 +10,7 @@ import type {
   VueBulkDailyReadingsResponse,
   VueDevicesResponse,
   PanelHierarchyResponse,
+  PanelHierarchyInputEntry,
 } from './types';
 
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
@@ -154,5 +155,10 @@ export async function fetchVueDailyReadings(date: string): Promise<VueBulkDailyR
 
 export async function fetchHierarchy(): Promise<PanelHierarchyResponse> {
   const response = await authFetch(`${getBaseUrl()}/settings/hierarchy`);
+  return response.json();
+}
+
+export async function updateHierarchy(entries: PanelHierarchyInputEntry[]): Promise<PanelHierarchyResponse> {
+  const response = await authFetchWrite(`${getBaseUrl()}/settings/hierarchy`, 'PUT', { entries });
   return response.json();
 }
