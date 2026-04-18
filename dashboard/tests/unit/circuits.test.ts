@@ -380,5 +380,67 @@ describe('circuits', () => {
         'Sub A',
       ]);
     });
+
+    it('returns empty array for empty panels and empty hierarchy', async () => {
+      // Arrange
+      const { orderPanels } = await import('../../src/utils/circuits');
+
+      // Act
+      const result = orderPanels([], []);
+
+      // Assert
+      expect(result).toEqual([]);
+    });
+
+    it('filters out self-loop hierarchy entries', async () => {
+      // Arrange
+      const { orderPanels } = await import('../../src/utils/circuits');
+      const panels = [
+        { device_gid: 1, alias: 'Main' },
+        { device_gid: 2, alias: 'Sub' },
+      ];
+      const hierarchy = [
+        { parent_device_gid: 1, child_device_gid: 1 }, // self-loop
+        { parent_device_gid: 1, child_device_gid: 2 },
+      ];
+
+      // Act
+      const result = orderPanels(panels, hierarchy);
+
+      // Assert — self-loop ignored, Main is parent of Sub
+      expect(result.map((p) => p.alias)).toEqual(['Main', 'Sub']);
+      expect(result[0].parentGid).toBeUndefined();
+      expect(result[1].parentGid).toBe(1);
+    });
+  });
+
+  describe('derivePanelPrefix edge cases', () => {
+    it('handles digits-only alias', async () => {
+      // Arrange
+      const { derivePanelPrefix } = await import('../../src/utils/circuits');
+
+      // Act
+      const result = derivePanelPrefix('123');
+
+      // Assert — first char uppercased + all digits
+      expect(result).toBe('1123');
+    });
+  });
+
+  describe('sortByCircuitNumber edge cases', () => {
+    it('handles empty string channel_num as non-numeric', async () => {
+      // Arrange
+      const { sortByCircuitNumber } = await import('../../src/utils/circuits');
+      const items = [
+        { channel_num: '', display_name: 'Empty', value: 0 },
+        { channel_num: '1', display_name: 'Ch1', value: 0 },
+      ];
+
+      // Act
+      const result = [...items].sort(sortByCircuitNumber);
+
+      // Assert — numeric '1' sorts before non-numeric ''
+      expect(result.map((c) => c.channel_num)).toEqual(['1', '']);
+    });
   });
 });

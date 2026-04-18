@@ -467,4 +467,23 @@ describe('isValidVueDeviceMapping', () => {
     // Assert
     expect(result).toBe(false);
   });
+
+  it('returns true when panel has extra properties (ignored)', () => {
+    // Arrange — extra fields beyond gid/alias are tolerated
+    const input = { epcube3483: { gid: 480380, alias: 'Main Panel', extra: 'ignored' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(true);
+  });
+
+  it('returns false for undefined input', () => {
+    // Act
+    const result = isValidVueDeviceMapping(undefined);
+
+    // Assert
+    expect(result).toBe(false);
+  });
 });

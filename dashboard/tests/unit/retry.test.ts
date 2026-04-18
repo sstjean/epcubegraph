@@ -228,4 +228,19 @@ describe('retry', () => {
     expect(error).toBeInstanceOf(ApiError);
     expect(fn).toHaveBeenCalledTimes(11); // 1 initial + 10 retries
   });
+
+  it('with maxRetries=0 attempts once then throws', async () => {
+    // Arrange
+    const { withRetry, ApiError } = await import('../../src/utils/retry');
+    const fn = vi.fn().mockRejectedValue(new ApiError('fail', 500));
+
+    // Act
+    const caught = withRetry(fn, { maxRetries: 0 }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Assert — one attempt, no retries
+    const error = await caught;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
 });
