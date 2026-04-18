@@ -1,15 +1,14 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.17.0 → 1.18.0
-  Bump rationale: MINOR — new principle added under
-    Development Workflow.
+  Version change: 1.18.0 → 1.19.0
+  Bump rationale: MINOR — new core principle added.
   Added sub-sections:
-    - Development Workflow — Local Type-Checking Parity
-      (NON-NEGOTIABLE): Mandates local type-check commands
-      matching CI for every statically typed language in the
-      project.
-  Modified sections: none
+    - Core Principles — III. Single Responsibility Principle:
+      Every function, class, and module MUST have one reason
+      to change. Extract untestable parts into testable units.
+  Modified sections:
+    - Core Principles — TDD renumbered III → IV
   Removed sections: none
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
@@ -52,7 +51,21 @@ maintenance burden without proportional benefit.
 **Rationale**: Premature features create dead code, widen the
 test surface, and obscure the intent of the codebase.
 
-### III. Test-Driven Development (NON-NEGOTIABLE)
+### III. Single Responsibility Principle
+
+- Every function, class, and module MUST have one reason to
+  change. If a unit does two things, split it.
+- Helper functions that combine "get the data" and "decide
+  what to do with it" MUST be separated so each half is
+  independently testable.
+- When a function is hard to test, that is a design signal —
+  extract the untestable part into a unit that CAN be tested.
+
+**Rationale**: SRP keeps units small, testable, and
+composable. Violations surface as untestable branches,
+mock complexity, and tests that break for unrelated reasons.
+
+### IV. Test-Driven Development (NON-NEGOTIABLE)
 
 - All new functionality MUST follow the Red-Green-Refactor
   cycle: write a failing test, implement the minimum code to
