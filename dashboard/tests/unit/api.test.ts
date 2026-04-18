@@ -631,4 +631,35 @@ describe('Settings API', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('Panel hierarchy contains a circular reference');
   });
+
+  it('resolveAuthHeaders throws when getAccessToken rejects', async () => {
+    // Arrange — auth enabled, getAccessToken rejects
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    vi.doMock('../../src/auth', () => ({
+      getAccessToken: vi.fn().mockRejectedValue(new Error('MSAL interaction required')),
+      initializeMsal: vi.fn(),
+      isAuthenticated: vi.fn(),
+    }));
+    const { resolveAuthHeaders } = await import('../../src/api');
+
+    // Act & Assert
+    await expect(resolveAuthHeaders()).rejects.toThrow('MSAL interaction required');
+  });
+
+  it('handles HTTP 204 No Content response', async () => {
+    // Arrange — 204 is ok=true, body may be empty
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: () => Promise.resolve(null),
+    });
+    const { fetchDevices } = await import('../../src/api');
+
+    // Act — .json() returns null
+    const result = await fetchDevices();
+
+    // Assert — returns null (caller must handle)
+    expect(result).toBeNull();
+  });
 });

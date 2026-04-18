@@ -16,7 +16,7 @@ import type {
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
 const authDisabled = import.meta.env.VITE_DISABLE_AUTH === 'true';
 
-async function authFetch(url: string, isRetry = false): Promise<Response> {
+export async function resolveAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
@@ -28,6 +28,12 @@ async function authFetch(url: string, isRetry = false): Promise<Response> {
     }
     headers.Authorization = `Bearer ${token}`;
   }
+
+  return headers;
+}
+
+async function authFetch(url: string, isRetry = false): Promise<Response> {
+  const headers = await resolveAuthHeaders();
 
   const response = await fetch(url, { headers });
 

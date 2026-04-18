@@ -229,4 +229,27 @@ describe('computeGridEnergy', () => {
     // Assert — (0.333 + 0.333 + 0.334) = 1.0 kWh (exact in IEEE 754)
     expect(result.importKwh).toBeCloseTo(1, 10);
   });
+
+  it('returns zero energy when stepSeconds is 0 (division by zero safe)', () => {
+    // Arrange — stepSeconds=0 means hoursPerStep=0, all kWh=0
+    const response: RangeReadingsResponse = {
+      metric: 'grid_power_watts',
+      series: [{
+        device_id: 'grid',
+        values: [
+          { timestamp: 1000, value: 5000 },
+          { timestamp: 2000, value: -3000 },
+        ],
+      }],
+    };
+
+    // Act
+    const result = computeGridEnergy(response, 0);
+
+    // Assert — no energy accumulated, but data exists
+    expect(result.importKwh).toBe(0);
+    expect(result.exportKwh).toBe(0);
+    expect(result.netKwh).toBe(0);
+    expect(result.hasData).toBe(true);
+  });
 });
