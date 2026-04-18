@@ -3,6 +3,7 @@ import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHiera
 import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../types';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
 import { errorMessage, toTrackedError } from '../utils/errors';
+import { isValidVueDeviceMapping } from '../hooks/useVueData';
 
 const POLL_SETTINGS = [
   { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', group: 'EP Cube' },
@@ -27,7 +28,7 @@ export function SettingsPage() {
   const [epcubeGroups, setEpcubeGroups] = useState<EpCubeGroup[]>([]);
   const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
-  const [mapping, setMapping] = useState<Record<string, VuePanelMapping[]>>({});
+  const [mapping, setMapping] = useState<Record<string, VuePanelMapping | undefined>>({});
   const [savingHierarchy, setSavingHierarchy] = useState(false);
   const [hierarchyMessage, setHierarchyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [addParentGid, setAddParentGid] = useState('');
@@ -65,16 +66,20 @@ export function SettingsPage() {
         setEpcubeGroups(groups);
 
         // Initialize mapping with all EP Cube groups, then overlay saved values
-        const initMapping: Record<string, VuePanelMapping[]> = {};
-        for (const g of groups) initMapping[g.baseDeviceId] = [];
+        const initMapping: Record<string, VuePanelMapping | undefined> = {};
+        for (const g of groups) initMapping[g.baseDeviceId] = undefined;
         const rawMapping = vals.vue_device_mapping;
         if (rawMapping) {
           try {
-            const parsed = JSON.parse(rawMapping) as Record<string, VuePanelMapping[]>;
-            for (const [key, panels] of Object.entries(parsed)) {
-              if (key in initMapping) {
-                initMapping[key] = panels;
+            const parsed: unknown = JSON.parse(rawMapping);
+            if (isValidVueDeviceMapping(parsed)) {
+              for (const [key, panel] of Object.entries(parsed)) {
+                if (key in initMapping) {
+                  initMapping[key] = panel;
+                }
               }
+            } else {
+              toTrackedError(new Error('vue_device_mapping uses legacy array format'), 'Invalid vue_device_mapping format');
             }
           } catch (err) {
             toTrackedError(err, 'Malformed vue_device_mapping JSON');
@@ -134,38 +139,33 @@ export function SettingsPage() {
 
   function getAllAssignedGids(): Set<number> {
     const gids = new Set<number>();
-    for (const panels of Object.values(mapping)) {
-      for (const p of panels) gids.add(p.gid);
+    for (const panel of Object.values(mapping)) {
+      if (panel) gids.add(panel.gid);
     }
     return gids;
   }
 
-  function handleAssignPanel(deviceId: string, gidStr: string) {
+  function handleSelectDevice(deviceId: string, gidStr: string) {
     const gid = Number(gidStr);
-    if (!gid) return;
+    if (!gid) {
+      setMapping((prev) => ({ ...prev, [deviceId]: undefined }));
+      setMappingMessage(null);
+      return;
+    }
     const vue = vueDevices.find((v) => v.device_gid === gid)!;
     setMapping((prev) => ({
       ...prev,
-      [deviceId]: [...prev[deviceId], { gid, alias: vue.display_name }],
+      [deviceId]: { gid, alias: vue.display_name },
     }));
     setMappingMessage(null);
   }
 
-  function handleRemovePanel(deviceId: string, gid: number) {
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: prev[deviceId].filter((p) => p.gid !== gid),
-    }));
-    setMappingMessage(null);
-  }
-
-  function handleMappingFieldChange(deviceId: string, gid: number, field: 'alias', value: string) {
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: prev[deviceId].map((p) =>
-        p.gid === gid ? { ...p, [field]: value } : p,
-      ),
-    }));
+  function handleMappingFieldChange(deviceId: string, field: 'alias', value: string) {
+    setMapping((prev) => {
+      const panel = prev[deviceId];
+      if (!panel) return prev;
+      return { ...prev, [deviceId]: { ...panel, [field]: value } };
+    });
     setMappingMessage(null);
   }
 
@@ -175,9 +175,9 @@ export function SettingsPage() {
     setSavingMapping(true);
     try {
       // Only include devices with assigned panels
-      const filtered: Record<string, VuePanelMapping[]> = {};
-      for (const [key, panels] of Object.entries(mapping)) {
-        if (panels.length > 0) filtered[key] = panels;
+      const filtered: Record<string, VuePanelMapping> = {};
+      for (const [key, panel] of Object.entries(mapping)) {
+        if (panel) filtered[key] = panel;
       }
       await updateSetting('vue_device_mapping', JSON.stringify(filtered));
       setMappingMessage({ type: 'success', text: 'Device mapping saved' });
@@ -298,45 +298,35 @@ export function SettingsPage() {
             {epcubeGroups.map((group) => {
               const assignedGids = getAllAssignedGids();
               const childGids = new Set(hierarchyEntries.map((h) => h.child_device_gid));
-              const unassigned = vueDevices.filter(
-                (v) => !assignedGids.has(v.device_gid) && !childGids.has(v.device_gid),
+              const panel = mapping[group.baseDeviceId];
+              const eligible = vueDevices.filter(
+                (v) => !childGids.has(v.device_gid) && (!assignedGids.has(v.device_gid) || v.device_gid === panel?.gid),
               );
-              const panels = mapping[group.baseDeviceId];
               return (
                 <div class="mapping-device" key={group.baseDeviceId}>
                   <h4>{group.displayName}</h4>
-                  <div class="mapping-assigned">
-                    {panels.map((p) => (
-                      <div class="mapping-panel-row" key={p.gid}>
-                        <input
-                          type="text"
-                          aria-label={`Alias for panel ${p.gid}`}
-                          value={p.alias}
-                          onInput={(e) => handleMappingFieldChange(group.baseDeviceId, p.gid, 'alias', (e.target as HTMLInputElement).value)}
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Remove panel ${p.gid}`}
-                          class="mapping-remove-btn"
-                          onClick={() => handleRemovePanel(group.baseDeviceId, p.gid)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
                   <select
-                    aria-label={`Add Vue panel to ${group.displayName}`}
-                    value=""
-                    onChange={(e) => handleAssignPanel(group.baseDeviceId, (e.target as HTMLSelectElement).value)}
+                    aria-label={`Select Vue device for ${group.displayName}`}
+                    value={panel ? String(panel.gid) : ''}
+                    onChange={(e) => handleSelectDevice(group.baseDeviceId, (e.target as HTMLSelectElement).value)}
                   >
-                    <option value="">Add Vue panel…</option>
-                    {unassigned.map((v) => (
+                    <option value="">None</option>
+                    {eligible.map((v) => (
                       <option key={v.device_gid} value={String(v.device_gid)}>
                         {v.display_name}
                       </option>
                     ))}
                   </select>
+                  {panel && (
+                    <div class="mapping-panel-row">
+                      <input
+                        type="text"
+                        aria-label={`Alias for panel ${panel.gid}`}
+                        value={panel.alias}
+                        onInput={(e) => handleMappingFieldChange(group.baseDeviceId, 'alias', (e.target as HTMLInputElement).value)}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

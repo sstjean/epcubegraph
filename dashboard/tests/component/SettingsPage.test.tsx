@@ -365,7 +365,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
       expect(screen.getByText('EP Cube 3483')).toBeTruthy();
-      expect(screen.getByDisplayValue('Main Panel')).toBeTruthy();
+      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
+      expect(aliasInput.value).toBe('Main Panel');
     });
   });
 
@@ -388,13 +389,14 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Act
     render(<SettingsPage />);
 
-    // Assert
+    // Assert — dropdown includes all eligible devices; currently selected appears as selected value
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
+      expect(options).toContain('Main Panel');
       expect(options).toContain('Subpanel 1');
       expect(options).toContain('Garage');
-      expect(options).not.toContain('Main Panel');
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -411,12 +413,13 @@ describe('SettingsPage — Vue Device Mapping', () => {
     render(<SettingsPage />);
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
     // Assert — panel now shows as assigned with display_name as default alias
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Main Panel')).toBeTruthy();
+      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
+      expect(aliasInput.value).toBe('Main Panel');
     });
   });
 
@@ -438,16 +441,14 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
-    fireEvent.click(screen.getByLabelText(/Remove panel 480380/i));
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — panel removed from assigned list, back in dropdown
+    // Assert — alias input disappears, dropdown reset to None
     await waitFor(() => {
-      expect(screen.queryByDisplayValue('Main Panel')).toBeNull();
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
-      const options = Array.from(select.options).map((o) => o.text);
-      expect(options).toContain('Main Panel');
+      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
     });
   });
 
@@ -470,7 +471,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -594,9 +595,9 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
-    const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
+    const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
     fireEvent.input(aliasInput, { target: { value: 'Updated Name' } });
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -676,9 +677,9 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Assert — epcube3483 mapping loaded (input with alias value), unknown_device silently ignored
     await waitFor(() => {
-      const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
-      expect(aliasInput).toBeTruthy();
-      expect(screen.queryByDisplayValue('Ghost')).toBeNull();
+      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
+      expect(aliasInput.value).toBe('Main Panel');
+      expect(screen.queryByLabelText(/Alias for panel 999/i)).toBeNull();
     });
   });
 
@@ -699,7 +700,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Assert — epcube7891 dropdown should not contain Main Panel
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 7891/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 7891/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
       expect(options).not.toContain('Main Panel');
       expect(options).toContain('Subpanel 1');
@@ -717,10 +718,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
     // Assign one panel to epcube3483 only
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -767,11 +768,11 @@ describe('SettingsPage — Vue Device Mapping', () => {
     render(<SettingsPage />);
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — no panel assigned
-    expect(screen.queryByLabelText(/Remove panel/i)).toBeNull();
+    // Assert — no panel assigned (no alias input visible)
+    expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
   });
 
   it('removes panel from device with no prior mapping entry', async () => {
@@ -787,16 +788,16 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
     // Assign a panel
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
-    // Remove it
-    fireEvent.click(screen.getByLabelText(/Remove panel 480380/i));
+    // Deselect by choosing None
+    fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — panel removed successfully
+    // Assert — panel removed, alias input disappears
     await waitFor(() => {
-      expect(screen.queryByDisplayValue('Main Panel')).toBeNull();
+      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
     });
   });
 
@@ -818,9 +819,9 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
 
-    const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
+    const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
     fireEvent.input(aliasInput, { target: { value: 'Updated Panel' } });
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -848,7 +849,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Assert — dropdown should show Main Panel and Garage, but NOT Subpanel 1 (it's a child)
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
       expect(options).toContain('Main Panel');
       expect(options).toContain('Garage');
