@@ -456,4 +456,15 @@ describe('isValidVueDeviceMapping', () => {
     // Assert
     expect(result).toBe(false);
   });
+
+  it('returns false when gid is a float', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 480380.5, alias: 'Main Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
 });

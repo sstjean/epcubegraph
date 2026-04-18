@@ -9,7 +9,7 @@ export function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMap
     if (Array.isArray(value)) return false;
     if (typeof value !== 'object' || value === null) return false;
     const panel = value as Record<string, unknown>;
-    if (typeof panel.gid !== 'number' || typeof panel.alias !== 'string') return false;
+    if (typeof panel.gid !== 'number' || !Number.isInteger(panel.gid) || typeof panel.alias !== 'string') return false;
   }
   return true;
 }
