@@ -575,4 +575,46 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_ZeroGid_Returns400()
+    {
+        // Arrange — gid must be positive
+        var json = "{\"epcube1\":{\"gid\":0,\"alias\":\"Panel\"}}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_NegativeGid_Returns400()
+    {
+        // Arrange — negative gid invalid
+        var json = "{\"epcube1\":{\"gid\":-1,\"alias\":\"Panel\"}}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateSetting_VueDeviceMapping_EmptyAlias_Returns400()
+    {
+        // Arrange — empty string alias invalid
+        var json = "{\"epcube1\":{\"gid\":480380,\"alias\":\"\"}}";
+        var request = new SettingUpdateRequest(json);
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
 }

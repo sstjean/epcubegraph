@@ -124,10 +124,16 @@ public static class SettingsEndpoints
                         "error", "validation", "Invalid vue_device_mapping: each EP Cube must map to a single object with 'gid' (number) and 'alias' (string)"));
                 }
 
-                if (!gidProp.TryGetInt64(out var gid))
+                if (!gidProp.TryGetInt64(out var gid) || gid <= 0)
                 {
                     return Results.BadRequest(new ErrorResponse(
-                        "error", "validation", "Invalid vue_device_mapping: each EP Cube must map to a single object with 'gid' (number) and 'alias' (string)"));
+                        "error", "validation", "Invalid vue_device_mapping: gid must be a positive integer"));
+                }
+
+                if (aliasProp.GetString() is not { Length: > 0 })
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "Invalid vue_device_mapping: alias must be a non-empty string"));
                 }
 
                 if (!seenGids.Add(gid))

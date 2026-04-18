@@ -51,7 +51,8 @@ public static class ReadingsEndpoints
             ?? Validate.Required(step, "step")
             ?? Validate.Timestamp(start, "start")
             ?? Validate.Timestamp(end, "end")
-            ?? Validate.StepSeconds(step, "step");
+            ?? Validate.StepSeconds(step, "step")
+            ?? Validate.TimeRange(start, end);
         if (error is not null)
             return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
 
