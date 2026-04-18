@@ -61,13 +61,12 @@ specs/010-simplify-vue-mapping/
 dashboard/
 ├── src/
 │   ├── types.ts                      # VueDeviceMapping type: [] → single object
-│   ├── api.ts                        # Save mapping format change
 │   ├── components/
 │   │   ├── SettingsPage.tsx           # Editor UI: multi-panel → single select
 │   │   ├── EnergyFlowDiagram.tsx      # Parse new mapping format
 │   │   └── CircuitsPage.tsx           # Parse new mapping format
 │   └── hooks/
-│       └── useVueData.ts             # Parse + validate mapping format
+│       └── useVueData.ts             # Parse + validate mapping format + isValidVueDeviceMapping type guard
 └── tests/
     ├── component/                     # Updated component tests
     └── unit/                          # Updated utility tests
@@ -84,7 +83,4 @@ api/
 
 No constitution violations. No complexity justification needed.
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+No violations to track.

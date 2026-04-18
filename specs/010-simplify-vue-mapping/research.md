@@ -67,11 +67,11 @@
 
 ### RQ-5: What format validation should the frontend add?
 
-**Decision**: Add a type guard function `isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping` that:
+**Decision**: Add a type guard function `isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping` in `useVueData.ts` that:
 1. Checks each value is an object (not an array) with `gid` (number) and `alias` (string)
 2. Returns false for old array format, triggering the reconfiguration prompt
 
-**Rationale**: Currently the frontend does `JSON.parse(value) as VueDeviceMapping` with no structural validation. A type guard prevents silent acceptance of the old format and provides a single source of truth for format checks across `useVueData.ts`, `CircuitsPage.tsx`, and any future consumers.
+**Rationale**: Currently the frontend does `JSON.parse(value) as VueDeviceMapping` with no structural validation. A type guard prevents silent acceptance of the old format and provides a single source of truth for format checks. Placing it in `useVueData.ts` co-locates it with the hook that parses the mapping — the primary consumer. The guard is exported so `CircuitsPage.tsx` and `SettingsPage.tsx` (which have their own independent parse paths) can import it rather than duplicating validation logic.
 
 **Alternatives considered**:
 - Inline checks at each parse site: rejected — duplicated logic across 3 files.

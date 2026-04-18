@@ -70,7 +70,7 @@ interface VuePanelMapping {
 | Duplicate GID check | No GID in multiple EP Cube arrays | No GID in multiple EP Cube objects |
 | Old format detection | N/A | If value is array, return 400 with migration message |
 
-### Client-Side (type guard)
+### Client-Side (type guard in useVueData.ts)
 
 ```typescript
 function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping {

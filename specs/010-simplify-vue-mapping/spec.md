@@ -88,7 +88,7 @@ As a homeowner viewing the Flow diagram with multiple panels, I want each panel'
 
 #### New — Requires Implementation
 
-- **FR-001**: The `vue_device_mapping` setting MUST store a single parent Vue device GID per EP Cube device, replacing the current array-of-panels format. New format: `{"epcube3483": {"gid": 480380, "alias": "Main Panel"}}`. Changes required in: `types.ts` (type definition), `SettingsPage.tsx` (editor UI), `useVueData.ts` (parser), `CircuitsPage.tsx` (parser), `EnergyFlowDiagram.tsx` (parser), `SettingsEndpoints.cs` (server-side validation), `api.ts` (if any save logic).
+- **FR-001**: The `vue_device_mapping` setting MUST store a single parent Vue device GID per EP Cube device, replacing the current array-of-panels format. New format: `{"epcube3483": {"gid": 480380, "alias": "Main Panel"}}`. Changes required in: `types.ts` (type definition), `SettingsPage.tsx` (editor UI), `useVueData.ts` (parser + type guard), `CircuitsPage.tsx` (parser), `EnergyFlowDiagram.tsx` (parser), `SettingsEndpoints.cs` (server-side validation). Note: `api.ts` uses a generic `updateSetting(key, value)` string PUT — no change needed.
 - **FR-008**: If a stored `vue_device_mapping` value uses the old array format, the system MUST treat it as invalid and display a prompt to reconfigure. No silent fallback to broken behavior. Validation needed in both frontend parse paths and backend validation.
 
 #### Already Implemented — No Changes Required
