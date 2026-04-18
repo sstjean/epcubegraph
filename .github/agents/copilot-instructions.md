@@ -33,6 +33,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - PostgreSQL 17 (existing instance — same `epcubegraph` database) (005-emporia-vue)
 - TypeScript 5.8 / Preact 10.x (dashboard), C# / .NET 10 (API), Python 3.12 (exporter) + Preact, preact-router, uPlot (dashboard); ASP.NET Core Minimal API, Npgsql (API); PyEmVue, psycopg2 (exporter) (007-dashboard-vue-circuits)
 - PostgreSQL 17 — existing `epcubegraph` database. New table: `vue_readings_daily`. New settings keys: `vue_device_mapping`, `vue_daily_poll_interval_seconds` (007-dashboard-vue-circuits)
+- TypeScript 5.8 (dashboard), C# / .NET 10 (API) + Preact 10.x, Vitest 4.x (dashboard); ASP.NET Core Minimal API, Npgsql (API) (010-simplify-vue-mapping)
+- PostgreSQL 17 — existing `settings` table, `vue_device_mapping` key (jsonb value) (010-simplify-vue-mapping)
 
 ## Project Structure
 
@@ -91,5 +93,6 @@ Before writing any code, trace the impact through the full stack:
 ````
 
 ## Recent Changes
+- 010-simplify-vue-mapping: Added TypeScript 5.8 (dashboard), C# / .NET 10 (API) + Preact 10.x, Vitest 4.x (dashboard); ASP.NET Core Minimal API, Npgsql (API)
 - 007-dashboard-vue-circuits: Added TypeScript 5.8 / Preact 10.x (dashboard), C# / .NET 10 (API), Python 3.12 (exporter) + Preact, preact-router, uPlot (dashboard); ASP.NET Core Minimal API, Npgsql (API); PyEmVue, psycopg2 (exporter)
 - 005-emporia-vue: Added Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + PyEmVue (exporter), Npgsql (API), uPlot (dashboard), psycopg2 (exporter)
