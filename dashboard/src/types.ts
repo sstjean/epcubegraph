@@ -102,7 +102,7 @@ export interface VuePanelMapping {
   alias: string;
 }
 
-export type VueDeviceMapping = Record<string, VuePanelMapping[]>;
+export type VueDeviceMapping = Record<string, VuePanelMapping>;
 
 // Vue device discovery types (from GET /vue/devices)
 
