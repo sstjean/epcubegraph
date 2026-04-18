@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, act } from '@testing-library/preact';
 import { h } from 'preact';
-import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy } from '../../src/api';
+import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../../src/api';
 
 vi.mock('../../src/api', () => ({
   fetchVueBulkCurrentReadings: vi.fn(),
   fetchVueDailyReadings: vi.fn(),
   fetchSettings: vi.fn(),
   fetchHierarchy: vi.fn(),
+  fetchVueDevices: vi.fn(),
 }));
 
 vi.mock('../../src/telemetry', () => ({
@@ -23,6 +24,7 @@ const mockFetchCurrentReadings = fetchVueBulkCurrentReadings as ReturnType<typeo
 const mockFetchDailyReadings = fetchVueDailyReadings as ReturnType<typeof vi.fn>;
 const mockFetchSettings = fetchSettings as ReturnType<typeof vi.fn>;
 const mockFetchHierarchy = fetchHierarchy as ReturnType<typeof vi.fn>;
+const mockFetchVueDevices = fetchVueDevices as ReturnType<typeof vi.fn>;
 
 const currentReadings = {
   devices: [
@@ -90,16 +92,25 @@ const hierarchyWithChild = {
   entries: [{ id: 1, parent_device_gid: 111, child_device_gid: 222 }],
 };
 
+const vueDevicesResponse = {
+  devices: [
+    { device_gid: 111, device_name: 'Vue 1', display_name: 'Main Panel' },
+    { device_gid: 222, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+  ],
+};
+
 function setupMocks(opts?: {
   settings?: typeof settingsWithMapping;
   hierarchy?: typeof hierarchyWithChild;
   current?: typeof currentReadings;
   daily?: typeof dailyReadings;
+  vueDevices?: typeof vueDevicesResponse;
 }) {
   mockFetchCurrentReadings.mockResolvedValue(opts?.current ?? currentReadings);
   mockFetchDailyReadings.mockResolvedValue(opts?.daily ?? dailyReadings);
   mockFetchSettings.mockResolvedValue(opts?.settings ?? settingsWithMapping);
   mockFetchHierarchy.mockResolvedValue(opts?.hierarchy ?? hierarchyWithChild);
+  mockFetchVueDevices.mockResolvedValue(opts?.vueDevices ?? vueDevicesResponse);
 }
 
 describe('CircuitsPage', () => {

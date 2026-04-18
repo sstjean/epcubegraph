@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy } from '../api';
+import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../api';
 import { sortByCircuitNumber, orderPanels } from '../utils/circuits';
 import type { PanelInfo } from '../utils/circuits';
 import { formatWatts, formatKwh } from '../utils/formatting';
 import { errorMessage, toTrackedError } from '../utils/errors';
+import { isValidVueDeviceMapping } from '../hooks/useVueData';
 import type {
   VueBulkCurrentReadingsResponse,
   VueBulkDailyReadingsResponse,
   VueDeviceMapping,
   VueCurrentChannel,
   VueDailyChannel,
+  VueDeviceInfo,
   PanelHierarchyEntry,
 } from '../types';
 
@@ -123,11 +125,12 @@ export function CircuitsPage() {
 
   const loadData = async () => {
     try {
-      const [settingsResp, hierarchyResp, currentResp, dailyResp] = await Promise.all([
+      const [settingsResp, hierarchyResp, currentResp, dailyResp, vueDevicesResp] = await Promise.all([
         fetchSettings(),
         fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
         fetchVueBulkCurrentReadings(),
         fetchVueDailyReadings(new Date().toISOString().slice(0, 10)),
+        fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
       ]);
 
       if (!mountedRef.current) return;
@@ -141,7 +144,14 @@ export function CircuitsPage() {
 
       let mapping: VueDeviceMapping;
       try {
-        mapping = JSON.parse(mappingSetting.value) as VueDeviceMapping;
+        const parsed: unknown = JSON.parse(mappingSetting.value);
+        if (!isValidVueDeviceMapping(parsed)) {
+          toTrackedError(new Error('vue_device_mapping uses invalid or legacy array format'), 'Invalid vue_device_mapping format');
+          setNoMapping(true);
+          setLoading(false);
+          return;
+        }
+        mapping = parsed;
       } catch (err) {
         toTrackedError(err, 'Malformed vue_device_mapping JSON');
         setNoMapping(true);
@@ -150,9 +160,19 @@ export function CircuitsPage() {
       }
 
       const allPanels: PanelInfo[] = [];
-      for (const panels of Object.values(mapping)) {
-        for (const p of panels) {
-          allPanels.push({ device_gid: p.gid, alias: p.alias });
+      for (const panel of Object.values(mapping)) {
+        allPanels.push({ device_gid: panel.gid, alias: panel.alias });
+      }
+
+      // Resolve children from hierarchy and add with display names from Vue devices
+      const mappedGids = new Set(allPanels.map((p) => p.device_gid));
+      for (const h of hierarchyResp.entries) {
+        if (mappedGids.has(h.parent_device_gid) && !mappedGids.has(h.child_device_gid)) {
+          const vueDevice = vueDevicesResp.devices.find((d: VueDeviceInfo) => d.device_gid === h.child_device_gid);
+          allPanels.push({
+            device_gid: h.child_device_gid,
+            alias: vueDevice?.display_name ?? String(h.child_device_gid),
+          });
         }
       }
 
