@@ -290,11 +290,11 @@ export function getCircuitsForGroup(
   hierarchyEntries: PanelHierarchyEntry[] = [],
 ): CircuitEntry[] {
   if (!vueCurrentReadings || !vueDeviceMapping) return [];
-  const panels = vueDeviceMapping[baseDeviceId];
-  if (!panels || panels.length === 0) return [];
+  const panel = vueDeviceMapping[baseDeviceId];
+  if (!panel) return [];
 
-  // Resolve mapped GIDs + their children from the hierarchy
-  const mappedGids = new Set(panels.map((p) => p.gid));
+  // Resolve mapped GID + its children from the hierarchy
+  const mappedGids = new Set([panel.gid]);
   const resolvedGids = new Set(mappedGids);
   for (const h of hierarchyEntries) {
     if (mappedGids.has(h.parent_device_gid)) {
@@ -314,8 +314,8 @@ export function getCircuitsForGroup(
     }
   }
 
-  // Build alias lookup for Balance renaming
-  const gidToAlias = new Map(panels.map((p) => [p.gid, p.alias]));
+  // Build alias lookup for Balance renaming (parent alias from mapping)
+  const gidToAlias = new Map<number, string>([[panel.gid, panel.alias]]);
   const multiPanel = resolvedGids.size > 1;
 
   for (const gid of resolvedGids) {
