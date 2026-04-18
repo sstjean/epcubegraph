@@ -3,6 +3,17 @@ import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../a
 import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
 import { toTrackedError, errorMessage } from '../utils/errors';
 
+export function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
+  for (const value of Object.values(parsed as Record<string, unknown>)) {
+    if (Array.isArray(value)) return false;
+    if (typeof value !== 'object' || value === null) return false;
+    const panel = value as Record<string, unknown>;
+    if (typeof panel.gid !== 'number' || typeof panel.alias !== 'string') return false;
+  }
+  return true;
+}
+
 export interface UseVueDataResult {
   vueCurrentReadings: VueBulkCurrentReadingsResponse | undefined;
   vueDeviceMapping: VueDeviceMapping | undefined;
@@ -46,7 +57,13 @@ export function useVueData(): UseVueDataResult {
       const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
       if (mappingSetting) {
         try {
-          setVueDeviceMapping(JSON.parse(mappingSetting.value) as VueDeviceMapping);
+          const parsed: unknown = JSON.parse(mappingSetting.value);
+          if (isValidVueDeviceMapping(parsed)) {
+            setVueDeviceMapping(parsed);
+          } else {
+            setVueDeviceMapping(undefined);
+            toTrackedError(new Error('vue_device_mapping uses invalid or legacy array format'), 'Invalid vue_device_mapping format');
+          }
         } catch (err) {
           setVueDeviceMapping(undefined);
           toTrackedError(err, 'Invalid vue_device_mapping JSON');
