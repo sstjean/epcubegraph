@@ -17,6 +17,10 @@ interface EpCubeGroup {
   devices: Device[];
 }
 
+export function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
+  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
+}
+
 export function SettingsPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -152,10 +156,10 @@ export function SettingsPage() {
       setMappingMessage(null);
       return;
     }
-    const vue = vueDevices.find((v) => v.device_gid === gid)!;
+    const alias = resolveDeviceAlias(vueDevices, gid);
     setMapping((prev) => ({
       ...prev,
-      [deviceId]: { gid, alias: vue.display_name },
+      [deviceId]: { gid, alias },
     }));
     setMappingMessage(null);
   }

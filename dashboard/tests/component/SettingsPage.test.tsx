@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/preact';
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/preact';
 import { h } from 'preact';
 
 const mockFetchSettings = vi.fn();
@@ -21,7 +21,42 @@ vi.mock('../../src/api', () => ({
   fetchGridPower: vi.fn(),
 }));
 
-import { SettingsPage } from '../../src/components/SettingsPage';
+import { SettingsPage, resolveDeviceAlias } from '../../src/components/SettingsPage';
+
+describe('resolveDeviceAlias', () => {
+  it('returns display_name when device found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 100);
+
+    // Assert
+    expect(result).toBe('Main Panel');
+  });
+
+  it('returns GID string when device not found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 999);
+
+    // Assert
+    expect(result).toBe('999');
+  });
+
+  it('returns GID string when display_name is empty', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: '' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 100);
+
+    // Assert
+    expect(result).toBe('100');
+  });
+});
 
 describe('SettingsPage — Polling Intervals', () => {
   beforeEach(() => {

@@ -33,7 +33,7 @@ export function formatKwh(value: number): string {
 
 export function formatRelativeTime(epoch: number): string {
   if (epoch == null || Number.isNaN(epoch)) return '—';
-  const seconds = Math.floor(Date.now() / 1000 - epoch);
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - epoch));
   if (seconds >= 86_400) return `${Math.floor(seconds / 86_400)}d ago`;
   if (seconds >= 3_600) return `${Math.floor(seconds / 3_600)}h ago`;
   if (seconds >= 60) return `${Math.floor(seconds / 60)}m ago`;

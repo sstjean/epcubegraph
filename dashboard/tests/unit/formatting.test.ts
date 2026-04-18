@@ -363,7 +363,7 @@ describe('formatting', () => {
       expect(result).toBe('1d ago');
     });
 
-    it('shows negative seconds for future epoch', async () => {
+    it('clamps to 0s ago for future epoch', async () => {
       // Arrange
       const { formatRelativeTime } = await import('../../src/utils/formatting');
       const fiveSecInFuture = Date.now() / 1000 + 5;
@@ -371,8 +371,8 @@ describe('formatting', () => {
       // Act
       const result = formatRelativeTime(fiveSecInFuture);
 
-      // Assert — negative seconds pass through (no clamp)
-      expect(result).toBe('-5s ago');
+      // Assert — future timestamps clamp to "0s ago"
+      expect(result).toBe('0s ago');
     });
   });
 });
