@@ -13,7 +13,7 @@ vi.mock('../../src/telemetry', () => ({
 
 import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../../src/api';
 import { trackException } from '../../src/telemetry';
-import { useVueData } from '../../src/hooks/useVueData';
+import { useVueData, isValidVueDeviceMapping } from '../../src/hooks/useVueData';
 
 const mockFetchVueReadings = fetchVueBulkCurrentReadings as ReturnType<typeof vi.fn>;
 const mockFetchSettings = fetchSettings as ReturnType<typeof vi.fn>;
@@ -28,7 +28,7 @@ const vueReadingsResponse = {
 
 const settingsResponse = {
   settings: [
-    { key: 'vue_device_mapping', value: '{"panel1":[{"gid":123,"alias":"Main Panel"}]}' },
+    { key: 'vue_device_mapping', value: '{"panel1":{"gid":123,"alias":"Main Panel"}}' },
   ],
 };
 
@@ -91,7 +91,7 @@ describe('useVueData', () => {
     expect(mockFetchSettings).toHaveBeenCalledTimes(1);
     expect(mockFetchHierarchy).toHaveBeenCalledTimes(1);
     expect(result.current.hierarchyEntries).toEqual(hierarchyResponse.entries);
-    expect(result.current.vueDeviceMapping).toEqual({ panel1: [{ gid: 123, alias: 'Main Panel' }] });
+    expect(result.current.vueDeviceMapping).toEqual({ panel1: { gid: 123, alias: 'Main Panel' } });
   });
 
   it('polls vue readings every 1 second', async () => {
@@ -312,5 +312,148 @@ describe('useVueData', () => {
 
     // Assert — toTrackedError should not be called post-unmount
     expect(mockTrackException).not.toHaveBeenCalled();
+  });
+
+  it('sets vueDeviceMapping to undefined and tracks error when old array format is detected', async () => {
+    // Arrange — old array format
+    mockFetchSettings.mockResolvedValue({
+      settings: [{ key: 'vue_device_mapping', value: '{"panel1":[{"gid":123,"alias":"Main Panel"}]}' }],
+    });
+
+    // Act
+    const { result } = renderHook(() => useVueData());
+    await flushInitialLoad();
+
+    // Assert — mapping rejected, error tracked
+    expect(result.current.vueDeviceMapping).toBeUndefined();
+    expect(mockTrackException).toHaveBeenCalled();
+  });
+});
+
+describe('isValidVueDeviceMapping', () => {
+  it('returns true for valid single-object format', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 480380, alias: 'Main Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(true);
+  });
+
+  it('returns true for empty object (no mappings)', () => {
+    // Arrange
+    const input = {};
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(true);
+  });
+
+  it('returns true for multiple EP Cube mappings', () => {
+    // Arrange
+    const input = {
+      epcube3483: { gid: 480380, alias: 'Main Panel' },
+      epcube9999: { gid: 480544, alias: 'Subpanel 1' },
+    };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(true);
+  });
+
+  it('returns false for old array format', () => {
+    // Arrange
+    const input = { epcube3483: [{ gid: 480380, alias: 'Main Panel' }] };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false for null', () => {
+    // Act
+    const result = isValidVueDeviceMapping(null);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false for non-object (string)', () => {
+    // Act
+    const result = isValidVueDeviceMapping('not an object');
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false for array at root', () => {
+    // Act
+    const result = isValidVueDeviceMapping([{ gid: 1, alias: 'x' }]);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when gid is missing', () => {
+    // Arrange
+    const input = { epcube3483: { alias: 'Main Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when alias is missing', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 480380 } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when gid is not a number', () => {
+    // Arrange
+    const input = { epcube3483: { gid: '480380', alias: 'Main Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when alias is not a string', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 480380, alias: 42 } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when value is null', () => {
+    // Arrange
+    const input = { epcube3483: null };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
   });
 });
