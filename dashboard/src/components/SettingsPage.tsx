@@ -161,11 +161,10 @@ export function SettingsPage() {
   }
 
   function handleMappingFieldChange(deviceId: string, field: 'alias', value: string) {
-    setMapping((prev) => {
-      const panel = prev[deviceId];
-      if (!panel) return prev;
-      return { ...prev, [deviceId]: { ...panel, [field]: value } };
-    });
+    setMapping((prev) => ({
+      ...prev,
+      [deviceId]: { ...prev[deviceId]!, [field]: value },
+    }));
     setMappingMessage(null);
   }
 

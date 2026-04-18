@@ -659,6 +659,26 @@ describe('SettingsPage — Vue Device Mapping', () => {
     });
   });
 
+  it('treats old array format as invalid and shows empty mapping', async () => {
+    // Arrange — old array format should be detected and rejected
+    setupMocks({
+      settings: [{
+        key: 'vue_device_mapping',
+        value: JSON.stringify({ epcube3483: [{ gid: 480380, alias: 'Main Panel' }] }),
+        last_modified: '',
+      }],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert — renders mapping section with no assigned panel (old format ignored)
+    await waitFor(() => {
+      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
+      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
+    });
+  });
+
   it('ignores saved mapping keys that do not match any EP Cube group', async () => {
     // Arrange — mapping has an extra key "unknown_device" not in EP Cube groups
     setupMocks({

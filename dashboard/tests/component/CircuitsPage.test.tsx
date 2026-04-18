@@ -444,6 +444,61 @@ describe('CircuitsPage', () => {
     });
   });
 
+  it('shows configure prompt when vue_device_mapping uses old array format', async () => {
+    // Arrange — old array format should be rejected
+    setupMocks({
+      settings: {
+        settings: [{
+          key: 'vue_device_mapping',
+          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+        }],
+      },
+    });
+
+    // Act
+    render(<CircuitsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Configure Vue device mapping/i)).toBeTruthy();
+    });
+  });
+
+  it('handles fetchVueDevices error gracefully', async () => {
+    // Arrange
+    setupMocks();
+    mockFetchVueDevices.mockRejectedValue(new Error('Vue devices API fail'));
+
+    // Act
+    const { container } = render(<CircuitsPage />);
+
+    // Assert — panels still render (child alias falls back to GID string)
+    await waitFor(() => {
+      expect(container.querySelectorAll('.panel-section').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('ignores hierarchy entries where parent is not in the mapping', async () => {
+    // Arrange — hierarchy has entry for parent 999 which is not mapped
+    setupMocks({
+      hierarchy: {
+        entries: [
+          { id: 1, parent_device_gid: 999, child_device_gid: 222 },
+        ],
+      },
+    });
+
+    // Act
+    const { container } = render(<CircuitsPage />);
+
+    // Assert — only mapped parent panel shown, child from unmapped parent ignored
+    await waitFor(() => {
+      const panels = container.querySelectorAll('.panel-section');
+      expect(panels.length).toBe(1);
+      expect(panels[0].querySelector('.panel-name')?.textContent).toBe('Main Panel');
+    });
+  });
+
   it('handles panel with no current readings data', async () => {
     // Arrange — mapping references GID 999 which has no readings
     setupMocks({
