@@ -2,8 +2,8 @@
 
 **Feature Branch**: `010-simplify-vue-mapping`
 **Created**: 2026-04-15
-**Updated**: 2026-04-17
-**Status**: Draft
+**Updated**: 2026-04-18
+**Status**: Implementation Complete — pending manual smoke test + merge
 **Input**: Simplify Vue Device Mapping to one top-level parent Vue device per EP Cube, replacing the multi-panel array format.
 
 ## Scope Summary

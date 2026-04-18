@@ -19,7 +19,7 @@
 
 **Purpose**: Type definition change that all other tasks depend on
 
-- [ ] T001 Update `VueDeviceMapping` type from `Record<string, VuePanelMapping[]>` to `Record<string, VuePanelMapping>` in `dashboard/src/types.ts`
+- [x] T001 Update `VueDeviceMapping` type from `Record<string, VuePanelMapping[]>` to `Record<string, VuePanelMapping>` in `dashboard/src/types.ts`
 
 ---
 
@@ -33,19 +33,19 @@
 
 > **Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T002 [P] [US1] Unit tests for `isValidVueDeviceMapping` type guard + update `useVueData` hook tests for new mapping format in `dashboard/tests/unit/useVueData.test.ts` — type guard: old array format returns false, new object format returns true, edge cases (null, empty, missing fields); hook: old format sets mapping undefined + tracks error
-- [ ] T003 [P] [US1] Update SettingsPage component tests for single-select editor in `dashboard/tests/component/SettingsPage.test.tsx` — single device dropdown, save produces object format, old format shows reconfigure prompt
-- [ ] T004 [P] [US1] Update CircuitsPage component tests for new mapping parser in `dashboard/tests/component/CircuitsPage.test.tsx` — mock data uses single-object format, old format shows reconfigure prompt (uses imported `isValidVueDeviceMapping`)
-- [ ] T005 [P] [US1] Update EnergyFlowDiagram component tests for new mapping parser in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — mock data uses single-object format
-- [ ] T006 [P] [US1] Update API integration tests for new validation logic in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` — valid single-object format returns 200, old array format returns 400 with migration message
+- [x] T002 [P] [US1] Unit tests for `isValidVueDeviceMapping` type guard + update `useVueData` hook tests for new mapping format in `dashboard/tests/unit/useVueData.test.ts` — type guard: old array format returns false, new object format returns true, edge cases (null, empty, missing fields); hook: old format sets mapping undefined + tracks error
+- [x] T003 [P] [US1] Update SettingsPage component tests for single-select editor in `dashboard/tests/component/SettingsPage.test.tsx` — single device dropdown, save produces object format, old format shows reconfigure prompt
+- [x] T004 [P] [US1] Update CircuitsPage component tests for new mapping parser in `dashboard/tests/component/CircuitsPage.test.tsx` — mock data uses single-object format, old format shows reconfigure prompt (uses imported `isValidVueDeviceMapping`)
+- [x] T005 [P] [US1] Update EnergyFlowDiagram component tests for new mapping parser in `dashboard/tests/component/EnergyFlowDiagram.test.tsx` — mock data uses single-object format
+- [x] T006 [P] [US1] Update API integration tests for new validation logic in `api/tests/EpCubeGraph.Api.Tests/Integration/SettingsEndpointTests.cs` — valid single-object format returns 200, old array format returns 400 with migration message
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implement and export `isValidVueDeviceMapping` type guard in `dashboard/src/hooks/useVueData.ts` and wire into the hook's parse path — validates object format, rejects array format, sets mapping to undefined + tracks error if old format detected. Exported so CircuitsPage and SettingsPage can import it (single source of truth per RQ-5).
-- [ ] T008 [P] [US1] Update `EnergyFlowDiagram` parser from array iteration to direct object access in `dashboard/src/components/EnergyFlowDiagram.tsx` — `panels.map(p => p.gid)` → single `panel.gid`
-- [ ] T009 [P] [US1] Update `CircuitsPage` parser from array iteration to direct object access in `dashboard/src/components/CircuitsPage.tsx` — `for (const panels of Object.values(mapping))` → direct panel extraction, import `isValidVueDeviceMapping` from `useVueData.ts` to detect old format and show reconfigure prompt
-- [ ] T010 [P] [US1] Update `SettingsPage` editor from multi-panel add/remove to single-select dropdown in `dashboard/src/components/SettingsPage.tsx` — one `<select>` per EP Cube, save produces single-object format, import `isValidVueDeviceMapping` from `useVueData.ts` to detect old format and show reconfigure banner. Note: SettingsPage has 4 hardcoded `VuePanelMapping[]` references (lines 30, 68, 73, 178) that must be changed to `VuePanelMapping` — these don't use the type alias so T001 won't catch them.
-- [ ] T011 [P] [US1] Update API `HandleUpdateVueDeviceMapping` validation from array to single-object format in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — reject array values with 400 + migration message, validate object has `gid` (int64) + `alias` (string)
+- [x] T007 [US1] Implement and export `isValidVueDeviceMapping` type guard in `dashboard/src/hooks/useVueData.ts` and wire into the hook's parse path — validates object format, rejects array format, sets mapping to undefined + tracks error if old format detected. Exported so CircuitsPage and SettingsPage can import it (single source of truth per RQ-5).
+- [x] T008 [P] [US1] Update `EnergyFlowDiagram` parser from array iteration to direct object access in `dashboard/src/components/EnergyFlowDiagram.tsx` — `panels.map(p => p.gid)` → single `panel.gid`
+- [x] T009 [P] [US1] Update `CircuitsPage` parser from array iteration to direct object access in `dashboard/src/components/CircuitsPage.tsx` — `for (const panels of Object.values(mapping))` → direct panel extraction, import `isValidVueDeviceMapping` from `useVueData.ts` to detect old format and show reconfigure prompt
+- [x] T010 [P] [US1] Update `SettingsPage` editor from multi-panel add/remove to single-select dropdown in `dashboard/src/components/SettingsPage.tsx` — one `<select>` per EP Cube, save produces single-object format, import `isValidVueDeviceMapping` from `useVueData.ts` to detect old format and show reconfigure banner. Note: SettingsPage has 4 hardcoded `VuePanelMapping[]` references (lines 30, 68, 73, 178) that must be changed to `VuePanelMapping` — these don't use the type alias so T001 won't catch them.
+- [x] T011 [P] [US1] Update API `HandleUpdateVueDeviceMapping` validation from array to single-object format in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` — reject array values with 400 + migration message, validate object has `gid` (int64) + `alias` (string)
 
 **Checkpoint**: US1 complete — mapping format changed end-to-end, old format rejected with clear messaging
 
@@ -57,8 +57,8 @@
 
 > These are NOT new implementations — they verify existing behavior from Features 005/006/007 is not broken by the format change.
 
-- [ ] T012 Run full dashboard test suite: `cd dashboard && npm run typecheck && npm run test:coverage` — verify 100% all metrics
-- [ ] T013 Run full API test suite with coverage: exact CI coverage command per coverage-verification.md
+- [x] T012 Run full dashboard test suite: `cd dashboard && npm run typecheck && npm run test:coverage` — verify 100% all metrics
+- [x] T013 Run full API test suite with coverage: 391 tests, 100% line + branch + method
 - [ ] T014 Manual smoke test per quickstart.md: verify Flow diagram Balance dedup, panel-prefixed Unmonitored labels, Circuits page panel ordering
 
 ---
