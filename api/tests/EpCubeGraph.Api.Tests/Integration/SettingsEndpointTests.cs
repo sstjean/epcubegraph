@@ -418,9 +418,9 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_ValidJson_Returns200()
     {
-        // Arrange
-        var mapping = new { epcube3483 = new[] { new { gid = 480380, alias = "Main Panel" } } };
-        var request = new SettingUpdateRequest(JsonSerializer.Serialize(mapping));
+        // Arrange — single object per EP Cube (new format)
+        var json = "{\"epcube3483\":{\"gid\":480380,\"alias\":\"Main Panel\"}}";
+        var request = new SettingUpdateRequest(json);
 
         // Act
         var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
@@ -464,8 +464,8 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_InvalidStructure_Returns400()
     {
-        // Arrange — values must be arrays of objects with gid/alias
-        var request = new SettingUpdateRequest("{\"epcube1\": \"not-an-array\"}");
+        // Arrange — values must be objects with gid/alias, not strings
+        var request = new SettingUpdateRequest("{\"epcube1\": \"not-an-object\"}");
 
         // Act
         var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
@@ -474,14 +474,14 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
         Assert.NotNull(body);
-        Assert.Contains("arrays of objects", body.Error);
+        Assert.Contains("object with", body.Error);
     }
 
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_DuplicateGids_Returns400()
     {
-        // Arrange — same GID mapped to two EP Cubes
-        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":\"A\"}],\"epcube2\":[{\"gid\":480380,\"alias\":\"B\"}]}";
+        // Arrange — same GID mapped to two EP Cubes (single-object format)
+        var json = "{\"epcube1\":{\"gid\":480380,\"alias\":\"A\"},\"epcube2\":{\"gid\":480380,\"alias\":\"B\"}}";
         var request = new SettingUpdateRequest(json);
 
         // Act
@@ -498,8 +498,8 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_MissingFields_Returns400()
     {
-        // Arrange — missing alias field
-        var json = "{\"epcube1\":[{\"gid\":480380}]}";
+        // Arrange — missing alias field (single-object format)
+        var json = "{\"epcube1\":{\"gid\":480380}}";
         var request = new SettingUpdateRequest(json);
 
         // Act
@@ -532,24 +532,27 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
     }
 
     [Fact]
-    public async Task UpdateSetting_VueDeviceMapping_EmptyArrayValue_Accepted()
+    public async Task UpdateSetting_VueDeviceMapping_OldArrayFormat_Returns400()
     {
-        // Arrange — device with empty panel array
-        var json = "{\"epcube1\":[]}";
+        // Arrange — old array format should be rejected with migration message
+        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":\"Main Panel\"}]}";
         var request = new SettingUpdateRequest(json);
 
         // Act
         var response = await _client.PutAsJsonAsync("/api/v1/settings/vue_device_mapping", request);
 
         // Assert
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.NotNull(body);
+        Assert.Contains("legacy", body.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_NullAlias_Returns400()
     {
-        // Arrange — alias is null instead of string
-        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":null}]}";
+        // Arrange — alias is null instead of string (single-object format)
+        var json = "{\"epcube1\":{\"gid\":480380,\"alias\":null}}";
         var request = new SettingUpdateRequest(json);
 
         // Act
@@ -562,8 +565,8 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
     [Fact]
     public async Task UpdateSetting_VueDeviceMapping_NumericAlias_Returns400()
     {
-        // Arrange — alias is number instead of string
-        var json = "{\"epcube1\":[{\"gid\":480380,\"alias\":42}]}";
+        // Arrange — alias is number instead of string (single-object format)
+        var json = "{\"epcube1\":{\"gid\":480380,\"alias\":42}}";
         var request = new SettingUpdateRequest(json);
 
         // Act

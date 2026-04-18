@@ -80,10 +80,7 @@ const settingsWithMapping = {
     {
       key: 'vue_device_mapping',
       value: JSON.stringify({
-        epcube1: [
-          { gid: 111, alias: 'Main Panel' },
-          { gid: 222, alias: 'Subpanel 1' },
-        ],
+        epcube1: { gid: 111, alias: 'Main Panel' },
       }),
     },
   ],
@@ -209,7 +206,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -311,7 +308,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -402,7 +399,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -442,7 +439,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 999, alias: 'Ghost Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 999, alias: 'Ghost Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -555,7 +552,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },

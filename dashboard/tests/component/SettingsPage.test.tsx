@@ -352,7 +352,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -379,7 +379,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -430,7 +430,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -461,7 +461,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -479,7 +479,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       expect(mockUpdateSetting).toHaveBeenCalledWith(
         'vue_device_mapping',
         JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
       );
     });
@@ -585,7 +585,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -664,8 +664,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
-          unknown_device: [{ gid: 999, alias: 'Ghost' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
+          unknown_device: { gid: 999, alias: 'Ghost' },
         }),
         last_modified: '',
       }],
@@ -688,7 +688,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -800,8 +800,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
     });
   });
 
-  it('edits field on panel within a multi-panel device', async () => {
-    // Arrange — two panels on same device (exercises map branch for non-matching gid)
+  it('updates alias field for assigned panel', async () => {
+    // Arrange — single panel assigned to device
     setupMocks({
       epcubeDevices: [
         { device: 'epcube3483_battery', class: 'storage_battery', online: true },
@@ -809,10 +809,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [
-            { gid: 480380, alias: 'Main Panel' },
-            { gid: 480544, alias: 'Subpanel 1' },
-          ],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -823,17 +820,15 @@ describe('SettingsPage — Vue Device Mapping', () => {
     render(<SettingsPage />);
     await waitFor(() => screen.getByDisplayValue('Main Panel'));
 
-    // Edit only the first panel's alias — second panel should be unchanged
     const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
     fireEvent.input(aliasInput, { target: { value: 'Updated Panel' } });
     fireEvent.click(screen.getByText('Save Mapping'));
 
-    // Assert — both panels in save, first has updated alias
+    // Assert — saved alias reflects edit
     await waitFor(() => {
       const savedValue = (mockUpdateSetting as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
       const parsed = JSON.parse(savedValue);
-      expect(parsed.epcube3483[0].alias).toBe('Updated Panel');
-      expect(parsed.epcube3483[1].alias).toBe('Subpanel 1');
+      expect(parsed.epcube3483.alias).toBe('Updated Panel');
     });
   });
 
