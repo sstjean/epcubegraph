@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/preact';
+import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/preact';
 import { h } from 'preact';
 
 const mockFetchSettings = vi.fn();
@@ -7,6 +7,7 @@ const mockUpdateSetting = vi.fn();
 const mockFetchDevices = vi.fn();
 const mockFetchVueDevices = vi.fn();
 const mockFetchHierarchy = vi.fn();
+const mockUpdateHierarchy = vi.fn();
 
 vi.mock('../../src/api', () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
@@ -14,12 +15,48 @@ vi.mock('../../src/api', () => ({
   fetchDevices: (...args: unknown[]) => mockFetchDevices(...args),
   fetchVueDevices: (...args: unknown[]) => mockFetchVueDevices(...args),
   fetchHierarchy: (...args: unknown[]) => mockFetchHierarchy(...args),
+  updateHierarchy: (...args: unknown[]) => mockUpdateHierarchy(...args),
   fetchCurrentReadings: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
 }));
 
-import { SettingsPage } from '../../src/components/SettingsPage';
+import { SettingsPage, resolveDeviceAlias } from '../../src/components/SettingsPage';
+
+describe('resolveDeviceAlias', () => {
+  it('returns display_name when device found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 100);
+
+    // Assert
+    expect(result).toBe('Main Panel');
+  });
+
+  it('returns GID string when device not found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 999);
+
+    // Assert
+    expect(result).toBe('999');
+  });
+
+  it('returns GID string when display_name is empty', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: '' }];
+
+    // Act
+    const result = resolveDeviceAlias(devices as any, 100);
+
+    // Assert
+    expect(result).toBe('100');
+  });
+});
 
 describe('SettingsPage — Polling Intervals', () => {
   beforeEach(() => {
@@ -257,7 +294,7 @@ describe('SettingsPage — Polling Intervals', () => {
     });
   });
 
-  it('renders deferred panel hierarchy section', async () => {
+  it('renders panel hierarchy section with heading', async () => {
     // Arrange
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
@@ -267,7 +304,6 @@ describe('SettingsPage — Polling Intervals', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
-      expect(screen.getByText(/Coming soon/)).toBeTruthy();
       expect(screen.queryByText('Display Names')).toBeNull();
     });
   });
@@ -351,7 +387,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -364,7 +400,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
       expect(screen.getByText('EP Cube 3483')).toBeTruthy();
-      expect(screen.getByDisplayValue('Main Panel')).toBeTruthy();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -378,7 +415,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -387,13 +424,14 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Act
     render(<SettingsPage />);
 
-    // Assert
+    // Assert — dropdown includes all eligible devices; currently selected appears as selected value
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
+      expect(options).toContain('Main Panel');
       expect(options).toContain('Subpanel 1');
       expect(options).toContain('Garage');
-      expect(options).not.toContain('Main Panel');
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -410,12 +448,13 @@ describe('SettingsPage — Vue Device Mapping', () => {
     render(<SettingsPage />);
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
-    // Assert — panel now shows as assigned with display_name as default alias
+    // Assert — panel now shows as assigned
     await waitFor(() => {
-      expect(screen.getByDisplayValue('Main Panel')).toBeTruthy();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -429,7 +468,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -437,16 +476,17 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
-
-    fireEvent.click(screen.getByLabelText(/Remove panel 480380/i));
-
-    // Assert — panel removed from assigned list, back in dropdown
     await waitFor(() => {
-      expect(screen.queryByDisplayValue('Main Panel')).toBeNull();
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
-      const options = Array.from(select.options).map((o) => o.text);
-      expect(options).toContain('Main Panel');
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
+
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: '' } });
+
+    // Assert — dropdown reset to None
+    await waitFor(() => {
+      expect(select.value).toBe('');
     });
   });
 
@@ -460,7 +500,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -469,7 +509,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => {
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -478,7 +521,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       expect(mockUpdateSetting).toHaveBeenCalledWith(
         'vue_device_mapping',
         JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
       );
     });
@@ -571,40 +614,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No Vue devices available/i)).toBeTruthy();
-    });
-  });
-
-  it('updates alias when edited', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
-        }),
-        last_modified: '',
-      }],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
-
-    const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
-    fireEvent.input(aliasInput, { target: { value: 'Updated Name' } });
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(mockUpdateSetting).toHaveBeenCalledWith(
-        'vue_device_mapping',
-        expect.stringContaining('"alias":"Updated Name"'),
-      );
+      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -634,7 +644,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert — section renders without crash, shows no vue devices
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No Vue devices available/i)).toBeTruthy();
+      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -657,14 +667,35 @@ describe('SettingsPage — Vue Device Mapping', () => {
     });
   });
 
+  it('treats old array format as invalid and shows empty mapping', async () => {
+    // Arrange — old array format should be detected and rejected
+    setupMocks({
+      settings: [{
+        key: 'vue_device_mapping',
+        value: JSON.stringify({ epcube3483: [{ gid: 480380, alias: 'Main Panel' }] }),
+        last_modified: '',
+      }],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert — renders mapping section with no assigned panel (old format ignored)
+    await waitFor(() => {
+      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('');
+    });
+  });
+
   it('ignores saved mapping keys that do not match any EP Cube group', async () => {
     // Arrange — mapping has an extra key "unknown_device" not in EP Cube groups
     setupMocks({
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
-          unknown_device: [{ gid: 999, alias: 'Ghost' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
+          unknown_device: { gid: 999, alias: 'Ghost' },
         }),
         last_modified: '',
       }],
@@ -673,11 +704,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Act
     render(<SettingsPage />);
 
-    // Assert — epcube3483 mapping loaded (input with alias value), unknown_device silently ignored
+    // Assert — epcube3483 mapping loaded (dropdown selected), unknown_device silently ignored
     await waitFor(() => {
-      const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
-      expect(aliasInput).toBeTruthy();
-      expect(screen.queryByDisplayValue('Ghost')).toBeNull();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -687,7 +717,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
       settings: [{
         key: 'vue_device_mapping',
         value: JSON.stringify({
-          epcube3483: [{ gid: 480380, alias: 'Main Panel' }],
+          epcube3483: { gid: 480380, alias: 'Main Panel' },
         }),
         last_modified: '',
       }],
@@ -698,7 +728,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Assert — epcube7891 dropdown should not contain Main Panel
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 7891/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 7891/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
       expect(options).not.toContain('Main Panel');
       expect(options).toContain('Subpanel 1');
@@ -716,10 +746,13 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
     // Assign one panel to epcube3483 only
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
+    await waitFor(() => {
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -766,11 +799,12 @@ describe('SettingsPage — Vue Device Mapping', () => {
     render(<SettingsPage />);
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — no panel assigned
-    expect(screen.queryByLabelText(/Remove panel/i)).toBeNull();
+    // Assert — no panel assigned (dropdown value is empty)
+    const selectAfter = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+    expect(selectAfter.value).toBe('');
   });
 
   it('removes panel from device with no prior mapping entry', async () => {
@@ -786,53 +820,18 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => screen.getByText('Vue Device Mapping'));
 
     // Assign a panel
-    const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
-
-    // Remove it
-    fireEvent.click(screen.getByLabelText(/Remove panel 480380/i));
-
-    // Assert — panel removed successfully
     await waitFor(() => {
-      expect(screen.queryByDisplayValue('Main Panel')).toBeNull();
+      expect(select.value).toBe('480380');
     });
-  });
 
-  it('edits field on panel within a multi-panel device', async () => {
-    // Arrange — two panels on same device (exercises map branch for non-matching gid)
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: [
-            { gid: 480380, alias: 'Main Panel' },
-            { gid: 480544, alias: 'Subpanel 1' },
-          ],
-        }),
-        last_modified: '',
-      }],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
+    // Deselect by choosing None
+    fireEvent.change(select, { target: { value: '' } });
 
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByDisplayValue('Main Panel'));
-
-    // Edit only the first panel's alias — second panel should be unchanged
-    const aliasInput = screen.getByDisplayValue('Main Panel') as HTMLInputElement;
-    fireEvent.input(aliasInput, { target: { value: 'Updated Panel' } });
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert — both panels in save, first has updated alias
+    // Assert — panel removed, dropdown reset to None
     await waitFor(() => {
-      const savedValue = (mockUpdateSetting as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-      const parsed = JSON.parse(savedValue);
-      expect(parsed.epcube3483[0].alias).toBe('Updated Panel');
-      expect(parsed.epcube3483[1].alias).toBe('Subpanel 1');
+      expect(select.value).toBe('');
     });
   });
 
@@ -852,7 +851,7 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Assert — dropdown should show Main Panel and Garage, but NOT Subpanel 1 (it's a child)
     await waitFor(() => {
-      const select = screen.getByLabelText(/Add Vue panel to EP Cube 3483/i) as HTMLSelectElement;
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
       const options = Array.from(select.options).map((o) => o.text);
       expect(options).toContain('Main Panel');
       expect(options).toContain('Garage');
@@ -891,6 +890,243 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert — renders normally without hierarchy filtering
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
+    });
+  });
+});
+
+describe('SettingsPage — Panel Hierarchy Editor', () => {
+  const EP_CUBE_DEVICES = [
+    { device: 'epcube3483_battery', class: 'storage_battery', online: true },
+  ];
+
+  const VUE_DEVICES = [
+    { device_gid: 480380, device_name: 'Vue 1', display_name: 'Main Panel' },
+    { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+    { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(cleanup);
+
+  function setupMocks(overrides?: {
+    settings?: object[];
+    epcubeDevices?: object[];
+    vueDevices?: object[];
+    hierarchy?: object[];
+  }) {
+    mockFetchSettings.mockResolvedValue({
+      settings: overrides?.settings ?? [],
+    });
+    mockFetchDevices.mockResolvedValue({
+      devices: overrides?.epcubeDevices ?? EP_CUBE_DEVICES,
+    });
+    mockFetchVueDevices.mockResolvedValue({
+      devices: overrides?.vueDevices ?? VUE_DEVICES,
+    });
+    mockFetchHierarchy.mockResolvedValue({
+      entries: overrides?.hierarchy ?? [],
+    });
+  }
+
+  it('shows "No Vue devices" when no Vue devices exist', async () => {
+    // Arrange
+    setupMocks({ vueDevices: [] });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      const section = screen.getByText('Panel Hierarchy').closest('.settings-section')!;
+      expect(section.textContent).toContain('No Vue devices available');
+    });
+  });
+
+  it('renders existing hierarchy entries with device display names', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
+      expect(screen.getByLabelText(/Remove hierarchy entry.*480544/i)).toBeTruthy();
+    });
+  });
+
+  it('renders parent and child dropdowns for adding entries', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Parent panel/i)).toBeTruthy();
+      expect(screen.getByLabelText(/Child panel/i)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /Add/i })).toBeTruthy();
+    });
+  });
+
+  it('adds a hierarchy entry via dropdowns and Add button', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — new entry appears in the list
+    await waitFor(() => {
+      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
+    });
+  });
+
+  it('does not add entry when dropdowns are empty', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — no entry added, no error
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Remove hierarchy entry/i)).toBeNull();
+    });
+  });
+
+  it('removes a hierarchy entry via Remove button', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Remove hierarchy entry.*480544/i));
+    fireEvent.click(screen.getByLabelText(/Remove hierarchy entry.*480544/i));
+
+    // Assert — entry removed
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/Remove hierarchy entry.*480544/i)).toBeNull();
+    });
+  });
+
+  it('prevents adding self-reference (same parent and child)', async () => {
+    // Arrange
+    setupMocks();
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480380' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — no entry added, error shown
+    await waitFor(() => {
+      expect(screen.getByText(/cannot be its own child/i)).toBeTruthy();
+    });
+  });
+
+  it('prevents adding duplicate edge', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByLabelText(/Parent panel/i));
+    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
+    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
+    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+    // Assert — error shown
+    await waitFor(() => {
+      expect(screen.getByText(/already exists/i)).toBeTruthy();
+    });
+  });
+
+  it('saves hierarchy via PUT on Save button click', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+      ],
+    });
+    mockUpdateHierarchy.mockResolvedValue({
+      entries: [{ id: 1, parent_device_gid: 480380, child_device_gid: 480544 }],
+    });
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
+
+    // Assert
+    await waitFor(() => {
+      expect(mockUpdateHierarchy).toHaveBeenCalledWith([
+        { parent_device_gid: 480380, child_device_gid: 480544 },
+      ]);
+      expect(screen.getByText(/Hierarchy saved/i)).toBeTruthy();
+    });
+  });
+
+  it('shows API error message on save failure', async () => {
+    // Arrange
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+        { id: 2, parent_device_gid: 480544, child_device_gid: 480380 },
+      ],
+    });
+    mockUpdateHierarchy.mockRejectedValue(new Error('Panel hierarchy contains a circular reference'));
+
+    // Act
+    render(<SettingsPage />);
+    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/circular reference/i)).toBeTruthy();
+    });
+  });
+
+  it('shows device_gid as fallback when device not found in vueDevices', async () => {
+    // Arrange — hierarchy references a gid not in vueDevices list
+    setupMocks({
+      hierarchy: [
+        { id: 1, parent_device_gid: 999999, child_device_gid: 480544 },
+      ],
+    });
+
+    // Act
+    render(<SettingsPage />);
+
+    // Assert — shows gid as fallback
+    await waitFor(() => {
+      expect(screen.getByText(/999999 → Subpanel 1/)).toBeTruthy();
     });
   });
 });

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'preact/hooks';
-import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy } from '../api';
+import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy, updateHierarchy } from '../api';
 import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../types';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
 import { errorMessage, toTrackedError } from '../utils/errors';
+import { isValidVueDeviceMapping } from '../hooks/useVueData';
 
 const POLL_SETTINGS = [
   { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', group: 'EP Cube' },
@@ -16,6 +17,52 @@ interface EpCubeGroup {
   devices: Device[];
 }
 
+export function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
+  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
+}
+
+export function buildEpcubeGroups(devices: Device[]): EpCubeGroup[] {
+  const groupMap = groupDevicesByAlias(devices);
+  return Array.from(groupMap.entries()).map(([_key, devs]) => ({
+    baseDeviceId: getBaseDeviceId(devs[0]),
+    displayName: getDisplayName(devs),
+    devices: devs,
+  }));
+}
+
+export function initializeMapping(
+  groups: EpCubeGroup[],
+  rawMapping: string | undefined,
+): Record<string, VuePanelMapping | undefined> {
+  const mapping: Record<string, VuePanelMapping | undefined> = {};
+  for (const g of groups) mapping[g.baseDeviceId] = undefined;
+  if (rawMapping) {
+    try {
+      const parsed: unknown = JSON.parse(rawMapping);
+      if (isValidVueDeviceMapping(parsed)) {
+        for (const [key, panel] of Object.entries(parsed)) {
+          if (key in mapping) {
+            mapping[key] = panel;
+          }
+        }
+      } else {
+        toTrackedError(new Error('vue_device_mapping uses legacy array format'), 'Invalid vue_device_mapping format');
+      }
+    } catch (err) {
+      toTrackedError(err, 'Malformed vue_device_mapping JSON');
+    }
+  }
+  return mapping;
+}
+
+export function validatePollingValue(val: string): string | null {
+  const n = Number(val);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Must be a whole number';
+  if (n < 1) return 'Minimum is 1 second';
+  if (n > 3600) return 'Maximum is 3600 seconds';
+  return null;
+}
+
 export function SettingsPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -27,7 +74,11 @@ export function SettingsPage() {
   const [epcubeGroups, setEpcubeGroups] = useState<EpCubeGroup[]>([]);
   const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
-  const [mapping, setMapping] = useState<Record<string, VuePanelMapping[]>>({});
+  const [mapping, setMapping] = useState<Record<string, VuePanelMapping | undefined>>({});
+  const [savingHierarchy, setSavingHierarchy] = useState(false);
+  const [hierarchyMessage, setHierarchyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [addParentGid, setAddParentGid] = useState('');
+  const [addChildGid, setAddChildGid] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -51,32 +102,10 @@ export function SettingsPage() {
         setVueDevices(vueDevicesRes.devices);
         setHierarchyEntries(hierarchyRes.entries);
 
-        // Group EP Cube devices by base alias
-        const groupMap = groupDevicesByAlias(devicesRes.devices);
-        const groups: EpCubeGroup[] = Array.from(groupMap.entries()).map(([_key, devices]) => ({
-          baseDeviceId: getBaseDeviceId(devices[0]),
-          displayName: getDisplayName(devices),
-          devices,
-        }));
+        const groups = buildEpcubeGroups(devicesRes.devices);
         setEpcubeGroups(groups);
 
-        // Initialize mapping with all EP Cube groups, then overlay saved values
-        const initMapping: Record<string, VuePanelMapping[]> = {};
-        for (const g of groups) initMapping[g.baseDeviceId] = [];
-        const rawMapping = vals.vue_device_mapping;
-        if (rawMapping) {
-          try {
-            const parsed = JSON.parse(rawMapping) as Record<string, VuePanelMapping[]>;
-            for (const [key, panels] of Object.entries(parsed)) {
-              if (key in initMapping) {
-                initMapping[key] = panels;
-              }
-            }
-          } catch (err) {
-            toTrackedError(err, 'Malformed vue_device_mapping JSON');
-          }
-        }
-        setMapping(initMapping);
+        setMapping(initializeMapping(groups, vals.vue_device_mapping));
       } catch (err) {
         if (!cancelled) setError(errorMessage(err, 'Failed to load settings'));
       } finally {
@@ -92,21 +121,13 @@ export function SettingsPage() {
     setPollingMessage(null);
   }
 
-  function validate(val: string): string | null {
-    const n = Number(val);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Must be a whole number';
-    if (n < 1) return 'Minimum is 1 second';
-    if (n > 3600) return 'Maximum is 3600 seconds';
-    return null;
-  }
-
   async function handleSavePolling() {
     setPollingMessage(null);
     setError(null);
 
     // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
-      const err = validate(values[ps.key] ?? ps.default);
+      const err = validatePollingValue(values[ps.key] ?? ps.default);
       if (err) {
         setPollingMessage({ type: 'error', text: `${ps.label}: ${err}` });
         return;
@@ -130,37 +151,23 @@ export function SettingsPage() {
 
   function getAllAssignedGids(): Set<number> {
     const gids = new Set<number>();
-    for (const panels of Object.values(mapping)) {
-      for (const p of panels) gids.add(p.gid);
+    for (const panel of Object.values(mapping)) {
+      if (panel) gids.add(panel.gid);
     }
     return gids;
   }
 
-  function handleAssignPanel(deviceId: string, gidStr: string) {
+  function handleSelectDevice(deviceId: string, gidStr: string) {
     const gid = Number(gidStr);
-    if (!gid) return;
-    const vue = vueDevices.find((v) => v.device_gid === gid)!;
+    if (!gid) {
+      setMapping((prev) => ({ ...prev, [deviceId]: undefined }));
+      setMappingMessage(null);
+      return;
+    }
+    const alias = resolveDeviceAlias(vueDevices, gid);
     setMapping((prev) => ({
       ...prev,
-      [deviceId]: [...prev[deviceId], { gid, alias: vue.display_name }],
-    }));
-    setMappingMessage(null);
-  }
-
-  function handleRemovePanel(deviceId: string, gid: number) {
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: prev[deviceId].filter((p) => p.gid !== gid),
-    }));
-    setMappingMessage(null);
-  }
-
-  function handleMappingFieldChange(deviceId: string, gid: number, field: 'alias', value: string) {
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: prev[deviceId].map((p) =>
-        p.gid === gid ? { ...p, [field]: value } : p,
-      ),
+      [deviceId]: { gid, alias },
     }));
     setMappingMessage(null);
   }
@@ -171,9 +178,9 @@ export function SettingsPage() {
     setSavingMapping(true);
     try {
       // Only include devices with assigned panels
-      const filtered: Record<string, VuePanelMapping[]> = {};
-      for (const [key, panels] of Object.entries(mapping)) {
-        if (panels.length > 0) filtered[key] = panels;
+      const filtered: Record<string, VuePanelMapping> = {};
+      for (const [key, panel] of Object.entries(mapping)) {
+        if (panel) filtered[key] = panel;
       }
       await updateSetting('vue_device_mapping', JSON.stringify(filtered));
       setMappingMessage({ type: 'success', text: 'Device mapping saved' });
@@ -181,6 +188,60 @@ export function SettingsPage() {
       setMappingMessage({ type: 'error', text: errorMessage(err, 'Failed to save') });
     } finally {
       setSavingMapping(false);
+    }
+  }
+
+  // ── Hierarchy editor handlers ──
+
+  function handleAddHierarchyEntry() {
+    setHierarchyMessage(null);
+    const parentGid = Number(addParentGid);
+    const childGid = Number(addChildGid);
+    if (!parentGid || !childGid) return;
+
+    if (parentGid === childGid) {
+      setHierarchyMessage({ type: 'error', text: 'A panel cannot be its own child' });
+      return;
+    }
+
+    const duplicate = hierarchyEntries.some(
+      (e) => e.parent_device_gid === parentGid && e.child_device_gid === childGid,
+    );
+    if (duplicate) {
+      setHierarchyMessage({ type: 'error', text: 'This relationship already exists' });
+      return;
+    }
+
+    setHierarchyEntries((prev) => [
+      ...prev,
+      { id: 0, parent_device_gid: parentGid, child_device_gid: childGid },
+    ]);
+    setAddParentGid('');
+    setAddChildGid('');
+  }
+
+  function handleRemoveHierarchyEntry(parentGid: number, childGid: number) {
+    setHierarchyEntries((prev) =>
+      prev.filter((e) => !(e.parent_device_gid === parentGid && e.child_device_gid === childGid)),
+    );
+    setHierarchyMessage(null);
+  }
+
+  async function handleSaveHierarchy() {
+    setHierarchyMessage(null);
+    setSavingHierarchy(true);
+    try {
+      const input = hierarchyEntries.map((e) => ({
+        parent_device_gid: e.parent_device_gid,
+        child_device_gid: e.child_device_gid,
+      }));
+      const result = await updateHierarchy(input);
+      setHierarchyEntries(result.entries);
+      setHierarchyMessage({ type: 'success', text: 'Hierarchy saved' });
+    } catch (err) {
+      setHierarchyMessage({ type: 'error', text: errorMessage(err, 'Failed to save hierarchy') });
+    } finally {
+      setSavingHierarchy(false);
     }
   }
 
@@ -235,40 +296,20 @@ export function SettingsPage() {
             {epcubeGroups.map((group) => {
               const assignedGids = getAllAssignedGids();
               const childGids = new Set(hierarchyEntries.map((h) => h.child_device_gid));
-              const unassigned = vueDevices.filter(
-                (v) => !assignedGids.has(v.device_gid) && !childGids.has(v.device_gid),
+              const panel = mapping[group.baseDeviceId];
+              const eligible = vueDevices.filter(
+                (v) => !childGids.has(v.device_gid) && (!assignedGids.has(v.device_gid) || v.device_gid === panel?.gid),
               );
-              const panels = mapping[group.baseDeviceId];
               return (
                 <div class="mapping-device" key={group.baseDeviceId}>
                   <h4>{group.displayName}</h4>
-                  <div class="mapping-assigned">
-                    {panels.map((p) => (
-                      <div class="mapping-panel-row" key={p.gid}>
-                        <input
-                          type="text"
-                          aria-label={`Alias for panel ${p.gid}`}
-                          value={p.alias}
-                          onInput={(e) => handleMappingFieldChange(group.baseDeviceId, p.gid, 'alias', (e.target as HTMLInputElement).value)}
-                        />
-                        <button
-                          type="button"
-                          aria-label={`Remove panel ${p.gid}`}
-                          class="mapping-remove-btn"
-                          onClick={() => handleRemovePanel(group.baseDeviceId, p.gid)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                  </div>
                   <select
-                    aria-label={`Add Vue panel to ${group.displayName}`}
-                    value=""
-                    onChange={(e) => handleAssignPanel(group.baseDeviceId, (e.target as HTMLSelectElement).value)}
+                    aria-label={`Select Vue device for ${group.displayName}`}
+                    value={panel ? String(panel.gid) : ''}
+                    onChange={(e) => handleSelectDevice(group.baseDeviceId, (e.target as HTMLSelectElement).value)}
                   >
-                    <option value="">Add Vue panel…</option>
-                    {unassigned.map((v) => (
+                    <option value="">None</option>
+                    {eligible.map((v) => (
                       <option key={v.device_gid} value={String(v.device_gid)}>
                         {v.display_name}
                       </option>
@@ -296,7 +337,73 @@ export function SettingsPage() {
 
       <div class="settings-section">
         <h3>Panel Hierarchy</h3>
-        <p class="settings-coming-soon">Coming soon — see issue #113</p>
+        {vueDevices.length === 0 && <p class="settings-coming-soon">No Vue devices available</p>}
+        {vueDevices.length > 0 && (
+          <>
+            {hierarchyEntries.length > 0 && (
+              <div class="hierarchy-entries">
+                {hierarchyEntries.map((e) => (
+                  <div class="hierarchy-entry-row" key={`${e.parent_device_gid}-${e.child_device_gid}`}>
+                    <span>{resolveDeviceAlias(vueDevices, e.parent_device_gid)} → {resolveDeviceAlias(vueDevices, e.child_device_gid)}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove hierarchy entry ${e.child_device_gid}`}
+                      class="mapping-remove-btn"
+                      onClick={() => handleRemoveHierarchyEntry(e.parent_device_gid, e.child_device_gid)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div class="hierarchy-add-row">
+              <select
+                aria-label="Parent panel"
+                value={addParentGid}
+                onChange={(e) => setAddParentGid((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Parent…</option>
+                {vueDevices.map((v) => (
+                  <option key={v.device_gid} value={String(v.device_gid)}>
+                    {v.display_name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Child panel"
+                value={addChildGid}
+                onChange={(e) => setAddChildGid((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">Child…</option>
+                {vueDevices.map((v) => (
+                  <option key={v.device_gid} value={String(v.device_gid)}>
+                    {v.display_name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleAddHierarchyEntry}
+              >
+                Add
+              </button>
+            </div>
+            <button
+              type="button"
+              class="settings-save"
+              onClick={handleSaveHierarchy}
+              disabled={savingHierarchy}
+            >
+              {savingHierarchy ? 'Saving...' : 'Save Hierarchy'}
+            </button>
+            {hierarchyMessage && (
+              <p role={hierarchyMessage.type === 'error' ? 'alert' : 'status'} class={hierarchyMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
+                {hierarchyMessage.text}
+              </p>
+            )}
+          </>
+        )}
       </div>
     </section>
   );

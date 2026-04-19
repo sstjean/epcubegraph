@@ -314,7 +314,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act
@@ -344,7 +344,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act
@@ -370,7 +370,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act
@@ -405,7 +405,7 @@ describe('EnergyFlowDiagram', () => {
     // Arrange — Vue data with no devices
     const vueData: VueBulkCurrentReadingsResponse = { devices: [] };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act
@@ -460,7 +460,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act — render without active circuits
@@ -503,7 +503,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Panel' }],
+      epcube5488: { gid: 480380, alias: 'Panel' },
     };
 
     // Act
@@ -528,7 +528,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Panel' }],
+      epcube5488: { gid: 480380, alias: 'Panel' },
     };
 
     // Act
@@ -558,15 +558,15 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [
-        { gid: 480380, alias: 'Main Panel' },
-        { gid: 480544, alias: 'Subpanel' },
-      ],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
+    ];
 
     // Act
     const { container } = render(
-      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} hierarchyEntries={hierarchy} />,
     );
 
     // Assert — circuits from both panels shown by display_name
@@ -585,15 +585,15 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [
-        { gid: 480380, alias: 'Main Panel' },
-        { gid: 999999, alias: 'Missing Panel' },
-      ],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 480380, child_device_gid: 999999 },
+    ];
 
     // Act
     const { container } = render(
-      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} />,
+      <EnergyFlowDiagram groups={[makeGroup()]} vueCurrentReadings={vueData} vueDeviceMapping={mapping} hierarchyEntries={hierarchy} />,
     );
 
     // Assert — only Kitchen from 480380 shown (999999 skipped)
@@ -619,7 +619,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
@@ -651,7 +651,7 @@ describe('EnergyFlowDiagram', () => {
       }],
     };
     const mapping: VueDeviceMapping = {
-      epcube5488: [{ gid: 480380, alias: 'Main Panel' }],
+      epcube5488: { gid: 480380, alias: 'Main Panel' },
     };
 
     // Act
@@ -693,7 +693,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
@@ -729,7 +729,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
@@ -757,7 +757,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
 
     // Act — no hierarchyEntries argument
@@ -783,7 +783,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
@@ -820,7 +820,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
@@ -866,7 +866,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
@@ -900,7 +900,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
     const hierarchy: PanelHierarchyEntry[] = [
       { id: 1, parent_device_gid: 999, child_device_gid: 888 },
@@ -929,7 +929,7 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [{ gid: 111, alias: 'Main Panel' }],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
 
     // Act
@@ -941,8 +941,8 @@ describe('EnergyFlowDiagram', () => {
     expect(balance!.display_name).toBe('Unmonitored');
   });
 
-  it('prefixes Unmonitored with panel alias when multi-panel', () => {
-    // Arrange — two mapped panels, both with Balance
+  it('prefixes parent Unmonitored with panel alias when hierarchy creates multi-panel', () => {
+    // Arrange — parent panel with hierarchy child, both with Balance
     const readings: VueBulkCurrentReadingsResponse = {
       devices: [
         {
@@ -964,16 +964,59 @@ describe('EnergyFlowDiagram', () => {
       ],
     };
     const mapping: VueDeviceMapping = {
-      epcube1: [
-        { gid: 111, alias: 'Main Panel' },
-        { gid: 222, alias: 'Subpanel 1' },
-      ],
+      epcube1: { gid: 111, alias: 'Main Panel' },
     };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
 
-    // Act
-    const circuits = getCircuitsForGroup('epcube1', readings, mapping);
+    // Act — no vueDevices passed, child has no alias
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
 
     // Assert
+    const balances = circuits.filter((c) => c.channel_num === 'Balance');
+    expect(balances).toHaveLength(2);
+    expect(balances.find((b) => b.device_gid === 111)!.display_name).toBe('M: Unmonitored');
+    expect(balances.find((b) => b.device_gid === 222)!.display_name).toBe('Unmonitored');
+  });
+
+  it('prefixes child Unmonitored with panel alias when vueDevices provides display name', () => {
+    // Arrange — parent 111 mapped, child 222 from hierarchy, vueDevices provides child alias
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 3000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 1500 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub Main', value: 1000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 300 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: { gid: 111, alias: 'Main Panel' },
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+    const vueDevices = [
+      { device_gid: 111, device_name: 'Vue 1', display_name: 'Main Panel' },
+      { device_gid: 222, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy, vueDevices as any);
+
+    // Assert — both panels get prefixed Unmonitored
     const balances = circuits.filter((c) => c.channel_num === 'Balance');
     expect(balances).toHaveLength(2);
     expect(balances.find((b) => b.device_gid === 111)!.display_name).toBe('M: Unmonitored');

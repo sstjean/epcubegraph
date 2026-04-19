@@ -102,7 +102,7 @@ export interface VuePanelMapping {
   alias: string;
 }
 
-export type VueDeviceMapping = Record<string, VuePanelMapping[]>;
+export type VueDeviceMapping = Record<string, VuePanelMapping>;
 
 // Vue device discovery types (from GET /vue/devices)
 
@@ -131,6 +131,11 @@ export interface VueDevicesResponse {
 
 export interface PanelHierarchyEntry {
   id: number;
+  parent_device_gid: number;
+  child_device_gid: number;
+}
+
+export interface PanelHierarchyInputEntry {
   parent_device_gid: number;
   child_device_gid: number;
 }

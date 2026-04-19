@@ -196,21 +196,18 @@ apt-get install -y curl wget apt-transport-https ca-certificates gnupg lsb-relea
 echo "=== Installing Azure CLI ==="
 curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
-echo "=== Installing Terraform ==="
-wget -qO- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp.gpg
-echo "deb [signed-by=/usr/share/keyrings/hashicorp.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list
-apt-get update && apt-get install -y terraform
+# Terraform: NOT pre-installed. hashicorp/setup-terraform@v4 in CI/CD
+# handles installation per-job. Pre-installing causes permission
+# conflicts when the action tries to upgrade.
 
-echo "=== Installing .NET 10 SDK ==="
-wget https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh
-chmod +x /tmp/dotnet-install.sh
-/tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
-ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet
-export DOTNET_ROOT=/usr/share/dotnet
+# .NET SDK: NOT pre-installed. actions/setup-dotnet@v5 in CI/CD
+# handles installation per-job to keep versions in sync with
+# global.json / workflow config. Pre-installing here caused
+# permission conflicts when the action tried to upgrade.
 
-echo "=== Installing Node.js 22 ==="
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
+# Node.js: NOT pre-installed. actions/setup-node@v6 in CI/CD
+# handles installation per-job. Pre-installing causes permission
+# conflicts when the action tries to upgrade.
 
 echo "=== Installing Docker ==="
 install -m 0755 -d /etc/apt/keyrings

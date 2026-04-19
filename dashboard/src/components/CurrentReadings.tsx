@@ -37,6 +37,41 @@ function getMetricForDevice(response: CurrentReadingsResponse, deviceName: strin
   return match ? match.value : 0;
 }
 
+export interface MetricResponses {
+  batterySOC: CurrentReadingsResponse;
+  batteryPower: CurrentReadingsResponse;
+  batteryStored: CurrentReadingsResponse;
+  solar: CurrentReadingsResponse;
+  grid: CurrentReadingsResponse;
+  homeLoad: CurrentReadingsResponse;
+}
+
+export function buildDeviceGroups(devices: Device[], metrics: MetricResponses): DeviceGroup[] {
+  const groupMap = groupDevicesByAlias(devices);
+  return Array.from(groupMap.entries()).map(([_key, devs]) => {
+    const name = getDisplayName(devs);
+    const baseDeviceId = getBaseDeviceId(devs[0]);
+    const batteryDevice = devs.find((d) => d.class === 'storage_battery');
+    const solarDevice = devs.find((d) => d.class === 'home_solar');
+    const online = devs.some((d) => d.online);
+
+    return {
+      name,
+      baseDeviceId,
+      online,
+      devices: devs,
+      metrics: {
+        batteryPercent: batteryDevice ? getMetricForDevice(metrics.batterySOC, batteryDevice.device) : 0,
+        batteryStoredKwh: batteryDevice ? getMetricForDevice(metrics.batteryStored, batteryDevice.device) : 0,
+        batteryWatts: batteryDevice ? getMetricForDevice(metrics.batteryPower, batteryDevice.device) : 0,
+        solarWatts: solarDevice ? getMetricForDevice(metrics.solar, solarDevice.device) : 0,
+        homeLoadWatts: batteryDevice ? getMetricForDevice(metrics.homeLoad, batteryDevice.device) : 0,
+        gridWatts: batteryDevice ? getMetricForDevice(metrics.grid, batteryDevice.device) : 0,
+      },
+    };
+  });
+}
+
 export function CurrentReadings() {
   const [groups, setGroups] = useState<DeviceGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +81,7 @@ export function CurrentReadings() {
   const [retryAttempt, setRetryAttempt] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryingRef = useRef(false);
-  const { vueCurrentReadings, vueDeviceMapping, vueError, hierarchyEntries } = useVueData();
+  const { vueCurrentReadings, vueDeviceMapping, vueDevices, vueError, hierarchyEntries } = useVueData();
 
   const loadData = async () => {
     if (retryingRef.current) return;
@@ -68,44 +103,9 @@ export function CurrentReadings() {
       );
 
       // Group devices by base alias
-      const groupMap = groupDevicesByAlias(deviceList.devices);
-
-      const deviceGroups: DeviceGroup[] = Array.from(groupMap.entries()).map(
-        ([_key, devices]) => {
-          const name = getDisplayName(devices);
-          const baseDeviceId = getBaseDeviceId(devices[0]);
-          const batteryDevice = devices.find((d) => d.class === 'storage_battery');
-          const solarDevice = devices.find((d) => d.class === 'home_solar');
-          const online = devices.some((d) => d.online);
-
-          return {
-            name,
-            baseDeviceId,
-            online,
-            devices,
-            metrics: {
-              batteryPercent: batteryDevice
-                ? getMetricForDevice(batterySOC, batteryDevice.device)
-                : 0,
-              batteryStoredKwh: batteryDevice
-                ? getMetricForDevice(batteryStored, batteryDevice.device)
-                : 0,
-              batteryWatts: batteryDevice
-                ? getMetricForDevice(batteryPower, batteryDevice.device)
-                : 0,
-              solarWatts: solarDevice
-                ? getMetricForDevice(solar, solarDevice.device)
-                : 0,
-              homeLoadWatts: batteryDevice
-                ? getMetricForDevice(homeLoad, batteryDevice.device)
-                : 0,
-              gridWatts: batteryDevice
-                ? getMetricForDevice(grid, batteryDevice.device)
-                : 0,
-            },
-          };
-        },
-      );
+      const deviceGroups = buildDeviceGroups(deviceList.devices, {
+        batterySOC, batteryPower, batteryStored, solar, grid, homeLoad,
+      });
 
       setGroups(deviceGroups);
       setLastRefreshed(Date.now() / 1000);
@@ -157,7 +157,7 @@ export function CurrentReadings() {
       {loading && !error && retryAttempt === 0 && <p class="status-message">Loading devices…</p>}
       {!loading && !error && groups.length === 0 && <p class="status-message">No devices found.</p>}
       {view === 'flow' && groups.length > 0 && (
-        <EnergyFlowDiagram groups={groups} vueCurrentReadings={vueCurrentReadings} vueDeviceMapping={vueDeviceMapping} hierarchyEntries={hierarchyEntries} />
+        <EnergyFlowDiagram groups={groups} vueCurrentReadings={vueCurrentReadings} vueDeviceMapping={vueDeviceMapping} vueDevices={vueDevices} hierarchyEntries={hierarchyEntries} />
       )}
       {view === 'gauges' && (
         <div class="device-cards">

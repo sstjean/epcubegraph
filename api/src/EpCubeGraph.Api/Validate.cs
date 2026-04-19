@@ -54,6 +54,18 @@ public static partial class Validate
         return $"'{paramName}' contains invalid characters";
     }
 
+    /// <summary>
+    /// Validates that start is strictly before end. Both must be valid epoch strings.
+    /// Call after Required + Timestamp validation — null inputs are skipped.
+    /// </summary>
+    public static string? TimeRange(string? start, string? end)
+    {
+        if (start is null || end is null) return null;
+        if (!long.TryParse(start, out var s) || !long.TryParse(end, out var e)) return null;
+        if (s >= e) return "'start' must be before 'end'";
+        return null;
+    }
+
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$")]
     private static partial Regex SafeNameRegex();
 }

@@ -86,4 +86,15 @@ describe('errorMessage', () => {
     // Assert
     expect(result).toBe('fallback');
   });
+
+  it('returns empty string when Error.message is empty', async () => {
+    // Arrange
+    const { errorMessage } = await import('../../src/utils/errors');
+
+    // Act
+    const result = errorMessage(new Error(''), 'fallback');
+
+    // Assert — empty message is still an Error, returns "" not fallback
+    expect(result).toBe('');
+  });
 });

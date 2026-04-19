@@ -579,4 +579,87 @@ describe('Settings API', () => {
       expect.any(Object),
     );
   });
+
+  it('updateHierarchy calls PUT /settings/hierarchy with entries', async () => {
+    // Arrange
+    await setupAuth();
+    const mockResponse = {
+      entries: [{ id: 1, parent_device_gid: 480380, child_device_gid: 480544 }],
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResponse),
+    });
+    const { updateHierarchy } = await import('../../src/api');
+
+    // Act
+    const result = await updateHierarchy([
+      { parent_device_gid: 480380, child_device_gid: 480544 },
+    ]);
+
+    // Assert
+    expect(result).toEqual(mockResponse);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      'https://api.test/settings/hierarchy',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          entries: [{ parent_device_gid: 480380, child_device_gid: 480544 }],
+        }),
+      }),
+    );
+  });
+
+  it('updateHierarchy throws on API validation error', async () => {
+    // Arrange
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () => Promise.resolve({ error: 'Panel hierarchy contains a circular reference' }),
+    });
+    const { updateHierarchy } = await import('../../src/api');
+
+    // Act
+    const error = await updateHierarchy([
+      { parent_device_gid: 1, child_device_gid: 2 },
+      { parent_device_gid: 2, child_device_gid: 1 },
+    ]).catch((err: unknown) => err);
+
+    // Assert
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe('Panel hierarchy contains a circular reference');
+  });
+
+  it('resolveAuthHeaders throws when getAccessToken rejects', async () => {
+    // Arrange — auth enabled, getAccessToken rejects
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    vi.doMock('../../src/auth', () => ({
+      getAccessToken: vi.fn().mockRejectedValue(new Error('MSAL interaction required')),
+      initializeMsal: vi.fn(),
+      isAuthenticated: vi.fn(),
+    }));
+    const { resolveAuthHeaders } = await import('../../src/api');
+
+    // Act & Assert
+    await expect(resolveAuthHeaders()).rejects.toThrow('MSAL interaction required');
+  });
+
+  it('handles HTTP 204 No Content response', async () => {
+    // Arrange — 204 is ok=true, body may be empty
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      json: () => Promise.resolve(null),
+    });
+    const { fetchDevices } = await import('../../src/api');
+
+    // Act — .json() returns null
+    const result = await fetchDevices();
+
+    // Assert — returns null (caller must handle)
+    expect(result).toBeNull();
+  });
 });

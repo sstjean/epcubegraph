@@ -109,34 +109,37 @@ public static class SettingsEndpoints
             var seenGids = new HashSet<long>();
             foreach (var prop in doc.RootElement.EnumerateObject())
             {
-                if (prop.Value.ValueKind != JsonValueKind.Array)
+                if (prop.Value.ValueKind == JsonValueKind.Array)
                 {
                     return Results.BadRequest(new ErrorResponse(
-                        "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
+                        "error", "validation", "Vue device mapping uses legacy array format. Please reconfigure using the Settings page."));
                 }
 
-                foreach (var panel in prop.Value.EnumerateArray())
+                if (prop.Value.ValueKind != JsonValueKind.Object ||
+                    !prop.Value.TryGetProperty("gid", out var gidProp) ||
+                    !prop.Value.TryGetProperty("alias", out var aliasProp) ||
+                    aliasProp.ValueKind != JsonValueKind.String)
                 {
-                    if (panel.ValueKind != JsonValueKind.Object ||
-                        !panel.TryGetProperty("gid", out var gidProp) ||
-                        !panel.TryGetProperty("alias", out var aliasProp) ||
-                        aliasProp.ValueKind != JsonValueKind.String)
-                    {
-                        return Results.BadRequest(new ErrorResponse(
-                            "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
-                    }
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "Invalid vue_device_mapping: each EP Cube must map to a single object with 'gid' (number) and 'alias' (string)"));
+                }
 
-                    if (!gidProp.TryGetInt64(out var gid))
-                    {
-                        return Results.BadRequest(new ErrorResponse(
-                            "error", "validation", "vue_device_mapping values must be arrays of objects with gid and alias"));
-                    }
+                if (!gidProp.TryGetInt64(out var gid) || gid <= 0)
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "Invalid vue_device_mapping: gid must be a positive integer"));
+                }
 
-                    if (!seenGids.Add(gid))
-                    {
-                        return Results.BadRequest(new ErrorResponse(
-                            "error", "validation", $"Vue device GID {gid} is mapped to multiple EP Cube devices"));
-                    }
+                if (aliasProp.GetString() is not { Length: > 0 })
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", "Invalid vue_device_mapping: alias must be a non-empty string"));
+                }
+
+                if (!seenGids.Add(gid))
+                {
+                    return Results.BadRequest(new ErrorResponse(
+                        "error", "validation", $"Vue device GID {gid} is mapped to multiple EP Cube devices"));
                 }
             }
         }

@@ -1,11 +1,23 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../api';
-import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
+import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../api';
+import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, VueDeviceInfo, PanelHierarchyEntry } from '../types';
 import { toTrackedError, errorMessage } from '../utils/errors';
+
+export function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return false;
+  for (const value of Object.values(parsed as Record<string, unknown>)) {
+    if (Array.isArray(value)) return false;
+    if (typeof value !== 'object' || value === null) return false;
+    const panel = value as Record<string, unknown>;
+    if (typeof panel.gid !== 'number' || !Number.isInteger(panel.gid) || panel.gid <= 0 || typeof panel.alias !== 'string' || panel.alias.length === 0) return false;
+  }
+  return true;
+}
 
 export interface UseVueDataResult {
   vueCurrentReadings: VueBulkCurrentReadingsResponse | undefined;
   vueDeviceMapping: VueDeviceMapping | undefined;
+  vueDevices: VueDeviceInfo[];
   vueError: string | null;
   hierarchyEntries: PanelHierarchyEntry[];
 }
@@ -14,6 +26,7 @@ export function useVueData(): UseVueDataResult {
   const [vueCurrentReadings, setVueCurrentReadings] = useState<VueBulkCurrentReadingsResponse | undefined>();
   const [vueDeviceMapping, setVueDeviceMapping] = useState<VueDeviceMapping | undefined>();
   const [vueError, setVueError] = useState<string | null>(null);
+  const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -36,17 +49,25 @@ export function useVueData(): UseVueDataResult {
 
   const loadVueSettings = async () => {
     try {
-      const [settingsResp, hierarchyResp] = await Promise.all([
+      const [settingsResp, hierarchyResp, vueDevicesResp] = await Promise.all([
         fetchSettings(),
         fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
+        fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
       ]);
       if (!mountedRef.current) return;
       setHierarchyEntries(hierarchyResp.entries);
+      setVueDevices(vueDevicesResp.devices);
 
       const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
       if (mappingSetting) {
         try {
-          setVueDeviceMapping(JSON.parse(mappingSetting.value) as VueDeviceMapping);
+          const parsed: unknown = JSON.parse(mappingSetting.value);
+          if (isValidVueDeviceMapping(parsed)) {
+            setVueDeviceMapping(parsed);
+          } else {
+            setVueDeviceMapping(undefined);
+            toTrackedError(new Error('vue_device_mapping uses invalid or legacy array format'), 'Invalid vue_device_mapping format');
+          }
         } catch (err) {
           setVueDeviceMapping(undefined);
           toTrackedError(err, 'Invalid vue_device_mapping JSON');
@@ -72,5 +93,5 @@ export function useVueData(): UseVueDataResult {
     return () => clearInterval(vueSettingsPollingRef.current!);
   }, []);
 
-  return { vueCurrentReadings, vueDeviceMapping, vueError, hierarchyEntries };
+  return { vueCurrentReadings, vueDeviceMapping, vueDevices, vueError, hierarchyEntries };
 }

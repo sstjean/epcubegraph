@@ -2,12 +2,13 @@ import { formatKw, formatPercent, formatKwh, formatWatts } from '../utils/format
 import { filterActiveCircuits, sortByWattsThenName, derivePanelPrefix } from '../utils/circuits';
 import type { CircuitEntry } from '../utils/circuits';
 import type { DeviceGroup } from './CurrentReadings';
-import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
+import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, VueDeviceInfo, PanelHierarchyEntry } from '../types';
 
 export interface EnergyFlowDiagramProps {
   groups: DeviceGroup[];
   vueCurrentReadings?: VueBulkCurrentReadingsResponse;
   vueDeviceMapping?: VueDeviceMapping;
+  vueDevices?: VueDeviceInfo[];
   hierarchyEntries?: PanelHierarchyEntry[];
 }
 
@@ -288,13 +289,14 @@ export function getCircuitsForGroup(
   vueCurrentReadings?: VueBulkCurrentReadingsResponse,
   vueDeviceMapping?: VueDeviceMapping,
   hierarchyEntries: PanelHierarchyEntry[] = [],
+  vueDevices: VueDeviceInfo[] = [],
 ): CircuitEntry[] {
   if (!vueCurrentReadings || !vueDeviceMapping) return [];
-  const panels = vueDeviceMapping[baseDeviceId];
-  if (!panels || panels.length === 0) return [];
+  const panel = vueDeviceMapping[baseDeviceId];
+  if (!panel) return [];
 
-  // Resolve mapped GIDs + their children from the hierarchy
-  const mappedGids = new Set(panels.map((p) => p.gid));
+  // Resolve mapped GID + its children from the hierarchy
+  const mappedGids = new Set([panel.gid]);
   const resolvedGids = new Set(mappedGids);
   for (const h of hierarchyEntries) {
     if (mappedGids.has(h.parent_device_gid)) {
@@ -314,8 +316,14 @@ export function getCircuitsForGroup(
     }
   }
 
-  // Build alias lookup for Balance renaming
-  const gidToAlias = new Map(panels.map((p) => [p.gid, p.alias]));
+  // Build alias lookup for Balance renaming (parent from mapping + children from vueDevices)
+  const gidToAlias = new Map<number, string>([[panel.gid, panel.alias]]);
+  for (const gid of resolvedGids) {
+    if (!gidToAlias.has(gid)) {
+      const device = vueDevices.find((d) => d.device_gid === gid);
+      if (device) gidToAlias.set(gid, device.display_name);
+    }
+  }
   const multiPanel = resolvedGids.size > 1;
 
   for (const gid of resolvedGids) {
@@ -359,7 +367,7 @@ export function getCircuitsForGroup(
   return entries.sort(sortByWattsThenName);
 }
 
-export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping, hierarchyEntries }: EnergyFlowDiagramProps) {
+export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping, vueDevices, hierarchyEntries }: EnergyFlowDiagramProps) {
   return (
     <div class="device-cards">
       {groups.map((group, i) => (
@@ -367,7 +375,7 @@ export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping
           key={group.name}
           group={group}
           index={i}
-          circuits={getCircuitsForGroup(group.baseDeviceId, vueCurrentReadings, vueDeviceMapping, hierarchyEntries)}
+          circuits={getCircuitsForGroup(group.baseDeviceId, vueCurrentReadings, vueDeviceMapping, hierarchyEntries, vueDevices)}
         />
       ))}
     </div>

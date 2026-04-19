@@ -186,6 +186,28 @@ describe('formatting', () => {
       // Assert
       expect(result).toBe('—');
     });
+
+    it('does not clamp values above 100', async () => {
+      // Arrange
+      const { formatPercent } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatPercent(150);
+
+      // Assert
+      expect(result).toBe('150.0%');
+    });
+
+    it('does not clamp negative values', async () => {
+      // Arrange
+      const { formatPercent } = await import('../../src/utils/formatting');
+
+      // Act
+      const result = formatPercent(-5);
+
+      // Assert
+      expect(result).toBe('-5.0%');
+    });
   });
 
   describe('formatKwh', () => {
@@ -303,6 +325,54 @@ describe('formatting', () => {
 
       // Assert
       expect(result).toBe('2d ago');
+    });
+
+    it('shows "1m ago" at exactly 60 seconds', async () => {
+      // Arrange
+      const { formatRelativeTime } = await import('../../src/utils/formatting');
+      const exactlyOneMinAgo = Date.now() / 1000 - 60;
+
+      // Act
+      const result = formatRelativeTime(exactlyOneMinAgo);
+
+      // Assert
+      expect(result).toBe('1m ago');
+    });
+
+    it('shows "1h ago" at exactly 3600 seconds', async () => {
+      // Arrange
+      const { formatRelativeTime } = await import('../../src/utils/formatting');
+      const exactlyOneHourAgo = Date.now() / 1000 - 3600;
+
+      // Act
+      const result = formatRelativeTime(exactlyOneHourAgo);
+
+      // Assert
+      expect(result).toBe('1h ago');
+    });
+
+    it('shows "1d ago" at exactly 86400 seconds', async () => {
+      // Arrange
+      const { formatRelativeTime } = await import('../../src/utils/formatting');
+      const exactlyOneDayAgo = Date.now() / 1000 - 86400;
+
+      // Act
+      const result = formatRelativeTime(exactlyOneDayAgo);
+
+      // Assert
+      expect(result).toBe('1d ago');
+    });
+
+    it('clamps to 0s ago for future epoch', async () => {
+      // Arrange
+      const { formatRelativeTime } = await import('../../src/utils/formatting');
+      const fiveSecInFuture = Date.now() / 1000 + 5;
+
+      // Act
+      const result = formatRelativeTime(fiveSecInFuture);
+
+      // Assert — future timestamps clamp to "0s ago"
+      expect(result).toBe('0s ago');
     });
   });
 });

@@ -193,7 +193,23 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+    [Fact]
+    public async Task RangeReadings_Returns400_WhenStartAfterEnd()
+    {
+        var response = await _client.GetAsync(
+            "/api/v1/readings/range?metric=battery_soc&start=2000&end=1000&step=60");
 
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RangeReadings_Returns400_WhenStartEqualsEnd()
+    {
+        var response = await _client.GetAsync(
+            "/api/v1/readings/range?metric=battery_soc&start=1000&end=1000&step=60");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
     [Fact]
     public async Task RangeReadings_Returns422_WhenStoreFails()
     {
@@ -338,6 +354,22 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task Grid_ReturnsBadRequest_WhenStepInvalid()
     {
         var response = await _client.GetAsync("/api/v1/grid?start=1000&end=2000&step=abc");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Grid_ReturnsBadRequest_WhenStartAfterEnd()
+    {
+        var response = await _client.GetAsync("/api/v1/grid?start=2000&end=1000&step=60");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Grid_ReturnsBadRequest_WhenStartEqualsEnd()
+    {
+        var response = await _client.GetAsync("/api/v1/grid?start=1000&end=1000&step=60");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }

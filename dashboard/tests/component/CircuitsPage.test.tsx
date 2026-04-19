@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, cleanup, act } from '@testing-library/preact';
 import { h } from 'preact';
-import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy } from '../../src/api';
+import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../../src/api';
 
 vi.mock('../../src/api', () => ({
   fetchVueBulkCurrentReadings: vi.fn(),
   fetchVueDailyReadings: vi.fn(),
   fetchSettings: vi.fn(),
   fetchHierarchy: vi.fn(),
+  fetchVueDevices: vi.fn(),
 }));
 
 vi.mock('../../src/telemetry', () => ({
@@ -23,6 +24,7 @@ const mockFetchCurrentReadings = fetchVueBulkCurrentReadings as ReturnType<typeo
 const mockFetchDailyReadings = fetchVueDailyReadings as ReturnType<typeof vi.fn>;
 const mockFetchSettings = fetchSettings as ReturnType<typeof vi.fn>;
 const mockFetchHierarchy = fetchHierarchy as ReturnType<typeof vi.fn>;
+const mockFetchVueDevices = fetchVueDevices as ReturnType<typeof vi.fn>;
 
 const currentReadings = {
   devices: [
@@ -80,10 +82,7 @@ const settingsWithMapping = {
     {
       key: 'vue_device_mapping',
       value: JSON.stringify({
-        epcube1: [
-          { gid: 111, alias: 'Main Panel' },
-          { gid: 222, alias: 'Subpanel 1' },
-        ],
+        epcube1: { gid: 111, alias: 'Main Panel' },
       }),
     },
   ],
@@ -93,16 +92,25 @@ const hierarchyWithChild = {
   entries: [{ id: 1, parent_device_gid: 111, child_device_gid: 222 }],
 };
 
+const vueDevicesResponse = {
+  devices: [
+    { device_gid: 111, device_name: 'Vue 1', display_name: 'Main Panel' },
+    { device_gid: 222, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+  ],
+};
+
 function setupMocks(opts?: {
   settings?: typeof settingsWithMapping;
   hierarchy?: typeof hierarchyWithChild;
   current?: typeof currentReadings;
   daily?: typeof dailyReadings;
+  vueDevices?: typeof vueDevicesResponse;
 }) {
   mockFetchCurrentReadings.mockResolvedValue(opts?.current ?? currentReadings);
   mockFetchDailyReadings.mockResolvedValue(opts?.daily ?? dailyReadings);
   mockFetchSettings.mockResolvedValue(opts?.settings ?? settingsWithMapping);
   mockFetchHierarchy.mockResolvedValue(opts?.hierarchy ?? hierarchyWithChild);
+  mockFetchVueDevices.mockResolvedValue(opts?.vueDevices ?? vueDevicesResponse);
 }
 
 describe('CircuitsPage', () => {
@@ -209,7 +217,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -311,7 +319,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -402,7 +410,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -436,13 +444,68 @@ describe('CircuitsPage', () => {
     });
   });
 
+  it('shows configure prompt when vue_device_mapping uses old array format', async () => {
+    // Arrange — old array format should be rejected
+    setupMocks({
+      settings: {
+        settings: [{
+          key: 'vue_device_mapping',
+          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+        }],
+      },
+    });
+
+    // Act
+    render(<CircuitsPage />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/Configure Vue device mapping/i)).toBeTruthy();
+    });
+  });
+
+  it('handles fetchVueDevices error gracefully', async () => {
+    // Arrange
+    setupMocks();
+    mockFetchVueDevices.mockRejectedValue(new Error('Vue devices API fail'));
+
+    // Act
+    const { container } = render(<CircuitsPage />);
+
+    // Assert — panels still render (child alias falls back to GID string)
+    await waitFor(() => {
+      expect(container.querySelectorAll('.panel-section').length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('ignores hierarchy entries where parent is not in the mapping', async () => {
+    // Arrange — hierarchy has entry for parent 999 which is not mapped
+    setupMocks({
+      hierarchy: {
+        entries: [
+          { id: 1, parent_device_gid: 999, child_device_gid: 222 },
+        ],
+      },
+    });
+
+    // Act
+    const { container } = render(<CircuitsPage />);
+
+    // Assert — only mapped parent panel shown, child from unmapped parent ignored
+    await waitFor(() => {
+      const panels = container.querySelectorAll('.panel-section');
+      expect(panels.length).toBe(1);
+      expect(panels[0].querySelector('.panel-name')?.textContent).toBe('Main Panel');
+    });
+  });
+
   it('handles panel with no current readings data', async () => {
     // Arrange — mapping references GID 999 which has no readings
     setupMocks({
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 999, alias: 'Ghost Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 999, alias: 'Ghost Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
@@ -555,7 +618,7 @@ describe('CircuitsPage', () => {
       settings: {
         settings: [{
           key: 'vue_device_mapping',
-          value: JSON.stringify({ epcube1: [{ gid: 111, alias: 'Main Panel' }] }),
+          value: JSON.stringify({ epcube1: { gid: 111, alias: 'Main Panel' } }),
         }],
       },
       hierarchy: { entries: [] },
