@@ -8,6 +8,13 @@ on:
       - '.specify/**'
       - '**/*.md'
       - '.gitignore'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'specs/**'
+      - '.specify/**'
+      - '**/*.md'
+      - '.gitignore'
   workflow_dispatch:
 
 env:
@@ -200,7 +207,9 @@ jobs:
   # See: https://docs.github.com/en/actions/using-workflows/reusing-workflows
   deploy:
     needs: [build-and-test, exporter-tests, docker-local, docker-api, validate-infra, validate-tools, dashboard]
-    if: success()
+    # Only deploy on push (not pull_request) — fork PRs must not trigger
+    # the self-hosted runner or access deployment secrets.
+    if: success() && github.event_name != 'pull_request'
     permissions:
       id-token: write
       contents: read
