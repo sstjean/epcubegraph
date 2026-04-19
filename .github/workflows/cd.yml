@@ -107,6 +107,8 @@ jobs:
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '10.0.x'
 
@@ -494,6 +496,8 @@ jobs:
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
           dotnet-version: '10.0.x'
 
