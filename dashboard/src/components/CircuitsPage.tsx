@@ -111,6 +111,30 @@ function circuitDisplayName(channelNum: string, displayName: string): string {
 const POLL_INTERVAL_MS = 1000;
 const ERROR_THRESHOLD = Math.max(2, Math.ceil(10_000 / POLL_INTERVAL_MS));
 
+export function resolvePanelsFromMapping(
+  mapping: VueDeviceMapping,
+  hierarchyEntries: PanelHierarchyEntry[],
+  vueDevices: VueDeviceInfo[],
+): PanelInfo[] {
+  const allPanels: PanelInfo[] = [];
+  for (const panel of Object.values(mapping)) {
+    allPanels.push({ device_gid: panel.gid, alias: panel.alias });
+  }
+
+  const mappedGids = new Set(allPanels.map((p) => p.device_gid));
+  for (const h of hierarchyEntries) {
+    if (mappedGids.has(h.parent_device_gid) && !mappedGids.has(h.child_device_gid)) {
+      const vueDevice = vueDevices.find((d: VueDeviceInfo) => d.device_gid === h.child_device_gid);
+      allPanels.push({
+        device_gid: h.child_device_gid,
+        alias: vueDevice?.display_name ?? String(h.child_device_gid),
+      });
+    }
+  }
+
+  return allPanels;
+}
+
 export function CircuitsPage() {
   const [panels, setPanels] = useState<PanelData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,22 +183,7 @@ export function CircuitsPage() {
         return;
       }
 
-      const allPanels: PanelInfo[] = [];
-      for (const panel of Object.values(mapping)) {
-        allPanels.push({ device_gid: panel.gid, alias: panel.alias });
-      }
-
-      // Resolve children from hierarchy and add with display names from Vue devices
-      const mappedGids = new Set(allPanels.map((p) => p.device_gid));
-      for (const h of hierarchyResp.entries) {
-        if (mappedGids.has(h.parent_device_gid) && !mappedGids.has(h.child_device_gid)) {
-          const vueDevice = vueDevicesResp.devices.find((d: VueDeviceInfo) => d.device_gid === h.child_device_gid);
-          allPanels.push({
-            device_gid: h.child_device_gid,
-            alias: vueDevice?.display_name ?? String(h.child_device_gid),
-          });
-        }
-      }
+      const allPanels = resolvePanelsFromMapping(mapping, hierarchyResp.entries, vueDevicesResp.devices);
 
       const ordered = orderPanels(allPanels, hierarchyResp.entries);
       const panelData = buildPanelData(ordered, currentResp, dailyResp, hierarchyResp.entries);

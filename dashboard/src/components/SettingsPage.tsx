@@ -21,6 +21,48 @@ export function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): st
   return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
 }
 
+export function buildEpcubeGroups(devices: Device[]): EpCubeGroup[] {
+  const groupMap = groupDevicesByAlias(devices);
+  return Array.from(groupMap.entries()).map(([_key, devs]) => ({
+    baseDeviceId: getBaseDeviceId(devs[0]),
+    displayName: getDisplayName(devs),
+    devices: devs,
+  }));
+}
+
+export function initializeMapping(
+  groups: EpCubeGroup[],
+  rawMapping: string | undefined,
+): Record<string, VuePanelMapping | undefined> {
+  const mapping: Record<string, VuePanelMapping | undefined> = {};
+  for (const g of groups) mapping[g.baseDeviceId] = undefined;
+  if (rawMapping) {
+    try {
+      const parsed: unknown = JSON.parse(rawMapping);
+      if (isValidVueDeviceMapping(parsed)) {
+        for (const [key, panel] of Object.entries(parsed)) {
+          if (key in mapping) {
+            mapping[key] = panel;
+          }
+        }
+      } else {
+        toTrackedError(new Error('vue_device_mapping uses legacy array format'), 'Invalid vue_device_mapping format');
+      }
+    } catch (err) {
+      toTrackedError(err, 'Malformed vue_device_mapping JSON');
+    }
+  }
+  return mapping;
+}
+
+export function validatePollingValue(val: string): string | null {
+  const n = Number(val);
+  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Must be a whole number';
+  if (n < 1) return 'Minimum is 1 second';
+  if (n > 3600) return 'Maximum is 3600 seconds';
+  return null;
+}
+
 export function SettingsPage() {
   const [values, setValues] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -60,36 +102,10 @@ export function SettingsPage() {
         setVueDevices(vueDevicesRes.devices);
         setHierarchyEntries(hierarchyRes.entries);
 
-        // Group EP Cube devices by base alias
-        const groupMap = groupDevicesByAlias(devicesRes.devices);
-        const groups: EpCubeGroup[] = Array.from(groupMap.entries()).map(([_key, devices]) => ({
-          baseDeviceId: getBaseDeviceId(devices[0]),
-          displayName: getDisplayName(devices),
-          devices,
-        }));
+        const groups = buildEpcubeGroups(devicesRes.devices);
         setEpcubeGroups(groups);
 
-        // Initialize mapping with all EP Cube groups, then overlay saved values
-        const initMapping: Record<string, VuePanelMapping | undefined> = {};
-        for (const g of groups) initMapping[g.baseDeviceId] = undefined;
-        const rawMapping = vals.vue_device_mapping;
-        if (rawMapping) {
-          try {
-            const parsed: unknown = JSON.parse(rawMapping);
-            if (isValidVueDeviceMapping(parsed)) {
-              for (const [key, panel] of Object.entries(parsed)) {
-                if (key in initMapping) {
-                  initMapping[key] = panel;
-                }
-              }
-            } else {
-              toTrackedError(new Error('vue_device_mapping uses legacy array format'), 'Invalid vue_device_mapping format');
-            }
-          } catch (err) {
-            toTrackedError(err, 'Malformed vue_device_mapping JSON');
-          }
-        }
-        setMapping(initMapping);
+        setMapping(initializeMapping(groups, vals.vue_device_mapping));
       } catch (err) {
         if (!cancelled) setError(errorMessage(err, 'Failed to load settings'));
       } finally {
@@ -105,21 +121,13 @@ export function SettingsPage() {
     setPollingMessage(null);
   }
 
-  function validate(val: string): string | null {
-    const n = Number(val);
-    if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Must be a whole number';
-    if (n < 1) return 'Minimum is 1 second';
-    if (n > 3600) return 'Maximum is 3600 seconds';
-    return null;
-  }
-
   async function handleSavePolling() {
     setPollingMessage(null);
     setError(null);
 
     // Validate all editable fields — use same fallback as rendered input
     for (const ps of POLL_SETTINGS) {
-      const err = validate(values[ps.key] ?? ps.default);
+      const err = validatePollingValue(values[ps.key] ?? ps.default);
       if (err) {
         setPollingMessage({ type: 'error', text: `${ps.label}: ${err}` });
         return;

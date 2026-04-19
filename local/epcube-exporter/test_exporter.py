@@ -2936,5 +2936,110 @@ class TestConfigureAzureMonitor(unittest.TestCase):
         exporter._configure_azure_monitor()
 
 
+class TestParseDeviceMetrics(unittest.TestCase):
+    """Tests for parse_device_metrics — pure data extraction from API response."""
+
+    def test_extracts_all_metric_fields(self):
+        from exporter import parse_device_metrics
+        data = {
+            "solarPower": 3.5,
+            "batterySoc": 85,
+            "gridPower": -1.2,
+            "backUpPower": 2.1,
+            "selfHelpRate": 92.5,
+            "batteryCurrentElectricity": 12.5,
+            "systemStatus": 1,
+            "ressNumber": 2,
+        }
+        m = parse_device_metrics(data)
+        self.assertAlmostEqual(m["solar_kw"], 3.5)
+        self.assertAlmostEqual(m["solar_w"], 3500.0)
+        self.assertEqual(m["soc"], 85)
+        self.assertAlmostEqual(m["grid_kw"], -1.2)
+        self.assertAlmostEqual(m["grid_w"], -1200.0)
+        self.assertAlmostEqual(m["backup_kw"], 2.1)
+        self.assertAlmostEqual(m["backup_w"], 2100.0)
+        # battery_kw = solar + grid - backup = 3.5 + (-1.2) - 2.1 = 0.2
+        self.assertAlmostEqual(m["battery_kw"], 0.2)
+        self.assertAlmostEqual(m["battery_w"], 200.0)
+        self.assertAlmostEqual(m["self_sufficiency"], 92.5)
+        self.assertAlmostEqual(m["bat_stored_kwh"], 12.5)
+        self.assertEqual(m["system_status_raw"], 1)
+        self.assertEqual(m["ress_count"], 2)
+
+    def test_defaults_to_zero_for_missing_fields(self):
+        from exporter import parse_device_metrics
+        m = parse_device_metrics({})
+        self.assertEqual(m["solar_kw"], 0)
+        self.assertEqual(m["soc"], 0)
+        self.assertEqual(m["grid_kw"], 0)
+        self.assertEqual(m["backup_kw"], 0)
+
+    def test_normalizes_negative_zero(self):
+        from exporter import parse_device_metrics
+        data = {"solarPower": 0.0, "gridPower": 0.0, "backUpPower": 0.0,
+                "batterySoc": 0, "batteryCurrentElectricity": 0,
+                "selfHelpRate": 0, "systemStatus": 0, "ressNumber": 0}
+        m = parse_device_metrics(data)
+        # battery_kw = 0 + 0 - 0 = 0, should not be -0
+        self.assertNotEqual(str(m["battery_w"]), "-0.0")
+
+
+class TestBuildPostgresReadings(unittest.TestCase):
+    """Tests for build_postgres_readings — pure tuple construction."""
+
+    def test_builds_correct_tuples(self):
+        from exporter import build_postgres_readings
+        from datetime import datetime, timezone
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = {
+            "solar_w": 3500.0, "soc": 85, "grid_w": 0.0,
+            "backup_w": 2100.0, "battery_w": 1400.0,
+            "self_sufficiency": 92.5, "bat_stored_kwh": 12.5,
+            "bat_peak_kwh": 13.0,
+        }
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Should have 8 readings: solar + 7 battery metrics
+        self.assertEqual(len(readings), 8)
+        # Check solar reading
+        solar = [r for r in readings if r[1] == "solar_instantaneous_generation_watts"]
+        self.assertEqual(len(solar), 1)
+        self.assertEqual(solar[0][0], "epcube1_solar")
+        self.assertAlmostEqual(solar[0][3], 3500.0)
+        # Check battery reading
+        bat = [r for r in readings if r[1] == "battery_power_watts"]
+        self.assertEqual(len(bat), 1)
+        self.assertEqual(bat[0][0], "epcube1_battery")
+
+
+class TestUpdateBatteryPeak(unittest.TestCase):
+    """Tests for update_battery_peak — pure peak tracking."""
+
+    def test_new_day_starts_fresh(self):
+        from exporter import update_battery_peak
+        bat_peak = {}
+        result = update_battery_peak(bat_peak, "dev1", 10.0, "2026-04-18")
+        self.assertAlmostEqual(result, 10.0)
+        self.assertAlmostEqual(bat_peak["dev1"]["peak"], 10.0)
+
+    def test_same_day_retains_max(self):
+        from exporter import update_battery_peak
+        bat_peak = {"dev1": {"date": "2026-04-18", "peak": 15.0}}
+        result = update_battery_peak(bat_peak, "dev1", 10.0, "2026-04-18")
+        self.assertAlmostEqual(result, 15.0)
+
+    def test_same_day_updates_when_higher(self):
+        from exporter import update_battery_peak
+        bat_peak = {"dev1": {"date": "2026-04-18", "peak": 10.0}}
+        result = update_battery_peak(bat_peak, "dev1", 15.0, "2026-04-18")
+        self.assertAlmostEqual(result, 15.0)
+
+    def test_new_day_resets(self):
+        from exporter import update_battery_peak
+        bat_peak = {"dev1": {"date": "2026-04-17", "peak": 20.0}}
+        result = update_battery_peak(bat_peak, "dev1", 5.0, "2026-04-18")
+        self.assertAlmostEqual(result, 5.0)
+
+
 if __name__ == "__main__":
     unittest.main()

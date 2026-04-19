@@ -422,6 +422,65 @@ def _nz(v):
     return 0.0 if v == 0 else v
 
 
+def parse_device_metrics(data):
+    """Extract structured metrics from EP Cube API homeDeviceInfo response.
+
+    Pure function — no side effects, no I/O.
+    """
+    solar_kw = _nz(float(data.get("solarPower", 0)))
+    grid_kw = _nz(float(data.get("gridPower", 0)))
+    backup_kw = _nz(float(data.get("backUpPower", 0)))
+    battery_kw = _nz(round(solar_kw + grid_kw - backup_kw, 2))
+    return {
+        "solar_kw": solar_kw,
+        "solar_w": _nz(round(solar_kw * 1000, 1)),
+        "soc": _nz(float(data.get("batterySoc", 0))),
+        "grid_kw": grid_kw,
+        "grid_w": _nz(round(grid_kw * 1000, 1)),
+        "backup_kw": backup_kw,
+        "backup_w": _nz(round(backup_kw * 1000, 1)),
+        "battery_kw": battery_kw,
+        "battery_w": _nz(round(battery_kw * 1000, 1)),
+        "self_sufficiency": _nz(float(data.get("selfHelpRate", 0))),
+        "bat_stored_kwh": _nz(float(data.get("batteryCurrentElectricity", 0))),
+        "system_status_raw": data.get("systemStatus", "?"),
+        "ress_count": data.get("ressNumber", "?"),
+    }
+
+
+def build_postgres_readings(dev_id, timestamp, metrics):
+    """Build PostgreSQL reading tuples from structured metrics.
+
+    Pure function — no side effects, no I/O.
+    Returns list of (device_id, metric_name, timestamp, value).
+    """
+    bat = f"{dev_id}_battery"
+    sol = f"{dev_id}_solar"
+    return [
+        (sol, "solar_instantaneous_generation_watts", timestamp, metrics["solar_w"]),
+        (bat, "battery_state_of_capacity_percent", timestamp, metrics["soc"]),
+        (bat, "grid_power_watts", timestamp, metrics["grid_w"]),
+        (bat, "home_load_power_watts", timestamp, metrics["backup_w"]),
+        (bat, "battery_power_watts", timestamp, metrics["battery_w"]),
+        (bat, "self_sufficiency_rate", timestamp, metrics["self_sufficiency"]),
+        (bat, "battery_stored_kwh", timestamp, metrics["bat_stored_kwh"]),
+        (bat, "battery_peak_stored_kwh", timestamp, metrics.get("bat_peak_kwh", 0)),
+    ]
+
+
+def update_battery_peak(bat_peak, dev_id, bat_stored_kwh, today_str):
+    """Track daily peak battery stored energy. Pure — mutates bat_peak dict.
+
+    Returns the current peak value.
+    """
+    entry = bat_peak.get(dev_id)
+    if entry and entry["date"] == today_str:
+        entry["peak"] = max(entry["peak"], bat_stored_kwh)
+    else:
+        bat_peak[dev_id] = {"date": today_str, "peak": bat_stored_kwh}
+    return bat_peak[dev_id]["peak"]
+
+
 # ---------------------------------------------------------------------------
 # Captcha solver
 # ---------------------------------------------------------------------------
@@ -680,88 +739,67 @@ class EpCubeCollector:
             bl = ",".join(f'{k}="{v}"' for k, v in bat_labels.items())
             sl = ",".join(f'{k}="{v}"' for k, v in sol_labels.items())
 
-            # ── Solar metrics ──
-            solar_kw = _nz(float(data.get("solarPower", 0)))
-            solar_w = _nz(round(solar_kw * 1000, 1))
+            # ── Parse metrics from API response (pure function) ──
+            m = parse_device_metrics(data)
 
+            # ── Prometheus text format (vestigial — see #93) ──
             lines.append("# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
             lines.append("# TYPE epcube_solar_instantaneous_generation_watts gauge")
-            lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {solar_w}")
-
-            # ── Battery metrics ──
-            soc = _nz(float(data.get("batterySoc", 0)))
+            lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {m['solar_w']}")
 
             lines.append("# HELP epcube_battery_state_of_capacity_percent Battery SoC")
             lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
-            lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {soc}")
+            lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {m['soc']}")
 
-            # ── Grid metrics ── (API already uses positive=import, negative=export)
-            grid_kw = _nz(float(data.get("gridPower", 0)))
-            grid_w = _nz(round(grid_kw * 1000, 1))
             lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
             lines.append("# TYPE epcube_grid_power_watts gauge")
-            lines.append(f"epcube_grid_power_watts{{{bl}}} {grid_w}")
-
-            # ── Backup/home load metrics ──
-            backup_kw = _nz(float(data.get("backUpPower", 0)))
-            backup_w = _nz(round(backup_kw * 1000, 1))
+            lines.append(f"epcube_grid_power_watts{{{bl}}} {m['grid_w']}")
 
             lines.append("# HELP epcube_home_load_power_watts Home load power consumption")
             lines.append("# TYPE epcube_home_load_power_watts gauge")
-            lines.append(f"epcube_home_load_power_watts{{{bl}}} {backup_w}")
+            lines.append(f"epcube_home_load_power_watts{{{bl}}} {m['backup_w']}")
 
-            # ── Battery power (derived from energy balance — API batteryPower is unreliable) ──
-            # positive = charging, negative = discharging
-            battery_kw = _nz(round(solar_kw + grid_kw - backup_kw, 2))
-            battery_w = _nz(round(battery_kw * 1000, 1))
             lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
             lines.append("# TYPE epcube_battery_power_watts gauge")
-            lines.append(f"epcube_battery_power_watts{{{bl}}} {battery_w}")
+            lines.append(f"epcube_battery_power_watts{{{bl}}} {m['battery_w']}")
 
-            # ── Self-sufficiency rate ──
-            self_help = _nz(float(data.get("selfHelpRate", 0)))
             lines.append("# HELP epcube_self_sufficiency_rate Self-sufficiency percentage")
             lines.append("# TYPE epcube_self_sufficiency_rate gauge")
-            lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {self_help}")
+            lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {m['self_sufficiency']}")
 
-            # ── Battery stored energy ──
-            bat_stored_kwh = _nz(float(data.get("batteryCurrentElectricity", 0)))
             lines.append("# HELP epcube_battery_stored_kwh Current battery energy level")
             lines.append("# TYPE epcube_battery_stored_kwh gauge")
-            lines.append(f"epcube_battery_stored_kwh{{{bl}}} {bat_stored_kwh}")
+            lines.append(f"epcube_battery_stored_kwh{{{bl}}} {m['bat_stored_kwh']}")
 
             # ── Capture snapshot for debug UI ──
             _STATUS_MAP = {
                 0: "Standby", 1: "Self-Use", 2: "Backup",
                 3: "Off-Grid", 4: "Normal", 5: "Fault", 6: "Upgrading",
             }
-            raw_status = data.get("systemStatus", "?")
-            system_status = f"{_STATUS_MAP.get(raw_status, raw_status)} ({raw_status})"
-            # Track peak battery stored for the day (resets at midnight)
+            system_status = f"{_STATUS_MAP.get(m['system_status_raw'], m['system_status_raw'])} ({m['system_status_raw']})"
+
+            # Track peak battery stored for the day (pure function)
             today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
-            peak_entry = self._bat_peak.get(dev_id)
-            if peak_entry and peak_entry["date"] == today_str:
-                peak_entry["peak"] = max(peak_entry["peak"], bat_stored_kwh)
-            else:
-                self._bat_peak[dev_id] = {"date": today_str, "peak": bat_stored_kwh}
-            bat_peak_kwh = self._bat_peak[dev_id]["peak"]
+            bat_peak_kwh = update_battery_peak(self._bat_peak, dev_id, m["bat_stored_kwh"], today_str)
+            m["bat_peak_kwh"] = bat_peak_kwh
+
             lines.append("# HELP epcube_battery_peak_stored_kwh Peak battery energy level today")
             lines.append("# TYPE epcube_battery_peak_stored_kwh gauge")
             lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
-            ress_count = data.get("ressNumber", "?")
+
             snapshot["devices"].append({
                 "name": dev_name,
                 "id": dev_id,
-                "solar_kw": solar_kw,
-                "battery_soc": soc,
-                "battery_kw": battery_kw,
-                "grid_kw": grid_kw,
-                "backup_kw": backup_kw,
-                "self_sufficiency": self_help,
+                "solar_kw": m["solar_kw"],
+                "battery_soc": m["soc"],
+                "battery_kw": m["battery_kw"],
+                "grid_kw": m["grid_kw"],
+                "backup_kw": m["backup_kw"],
+                "self_sufficiency": m["self_sufficiency"],
                 "system_status": system_status,
-                "bat_stored_kwh": bat_stored_kwh,
+                "bat_stored_kwh": m["bat_stored_kwh"],
                 "bat_peak_kwh": bat_peak_kwh,
-                "ress_count": ress_count,
+                "ress_count": m["ress_count"],
                 # daily totals filled in below
                 "solar_kwh": 0.0,
                 "grid_import_kwh": 0.0,
@@ -777,7 +815,7 @@ class EpCubeCollector:
                 lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
 
             # ── Device info ──
-            status_label = _STATUS_MAP.get(raw_status, str(raw_status))
+            status_label = _STATUS_MAP.get(m["system_status_raw"], str(m["system_status_raw"]))
             for dl in [bat_labels, sol_labels]:
                 info_labels = {
                     **dl,
@@ -785,30 +823,19 @@ class EpCubeCollector:
                     "product_code": f"EP Cube (devType={dev_type})",
                     "uid": sg_sn,
                     "system_status": status_label,
-                    "ress_count": str(ress_count),
+                    "ress_count": str(m["ress_count"]),
                 }
                 il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
                 lines.append(f"epcube_device_info{{{il}}} 1")
 
-            # ── Accumulate Postgres readings ──
+            # ── Accumulate Postgres readings (pure function) ──
             if self._pg:
-                bat_device_id = bat_labels["device"]
-                sol_device_id = sol_labels["device"]
-                pg_devices.append((bat_device_id, "storage_battery", dev_name,
+                base_id = f"epcube{dev_id}"
+                pg_devices.append((f"{base_id}_battery", "storage_battery", dev_name,
                                    "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
-                pg_devices.append((sol_device_id, "home_solar", dev_name,
+                pg_devices.append((f"{base_id}_solar", "home_solar", dev_name,
                                    "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
-                ts = now_utc
-                pg_readings.extend([
-                    (sol_device_id, "solar_instantaneous_generation_watts", ts, solar_w),
-                    (bat_device_id, "battery_state_of_capacity_percent", ts, soc),
-                    (bat_device_id, "grid_power_watts", ts, grid_w),
-                    (bat_device_id, "home_load_power_watts", ts, backup_w),
-                    (bat_device_id, "battery_power_watts", ts, battery_w),
-                    (bat_device_id, "self_sufficiency_rate", ts, self_help),
-                    (bat_device_id, "battery_stored_kwh", ts, bat_stored_kwh),
-                    (bat_device_id, "battery_peak_stored_kwh", ts, bat_peak_kwh),
-                ])
+                pg_readings.extend(build_postgres_readings(base_id, now_utc, m))
 
         # Also try to get daily energy totals
         # Build a lookup from device id to snapshot entry for merging
