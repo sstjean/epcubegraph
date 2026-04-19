@@ -185,11 +185,6 @@ export function SettingsPage() {
 
   // ── Hierarchy editor handlers ──
 
-  function getVueDisplayName(gid: number): string {
-    const device = vueDevices.find((v) => v.device_gid === gid);
-    return device ? device.display_name : String(gid);
-  }
-
   function handleAddHierarchyEntry() {
     setHierarchyMessage(null);
     const parentGid = Number(addParentGid);
@@ -341,7 +336,7 @@ export function SettingsPage() {
               <div class="hierarchy-entries">
                 {hierarchyEntries.map((e) => (
                   <div class="hierarchy-entry-row" key={`${e.parent_device_gid}-${e.child_device_gid}`}>
-                    <span>{getVueDisplayName(e.parent_device_gid)} → {getVueDisplayName(e.child_device_gid)}</span>
+                    <span>{resolveDeviceAlias(vueDevices, e.parent_device_gid)} → {resolveDeviceAlias(vueDevices, e.child_device_gid)}</span>
                     <button
                       type="button"
                       aria-label={`Remove hierarchy entry ${e.child_device_gid}`}

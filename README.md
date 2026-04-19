@@ -67,7 +67,8 @@ ASP.NET Core Minimal API on .NET 10:
 | `GET /api/v1/grid` | Yes | Grid power time-series |
 | `GET /api/v1/settings` | Yes | Runtime configuration |
 | `PUT /api/v1/settings/{key}` | Yes | Update setting (allowlisted keys) |
-| `GET /api/v1/settings/hierarchy` | Yes | Panel hierarchy with cycle detection |
+| `GET /api/v1/settings/hierarchy` | Yes | Panel hierarchy entries |
+| `PUT /api/v1/settings/hierarchy` | Yes | Update panel hierarchy (cycle detection) |
 
 ### Dashboard (`dashboard/`)
 

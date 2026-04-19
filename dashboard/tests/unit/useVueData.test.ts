@@ -502,4 +502,37 @@ describe('isValidVueDeviceMapping', () => {
     // Assert
     expect(result).toBe(false);
   });
+
+  it('returns false when gid is zero', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 0, alias: 'Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when gid is negative', () => {
+    // Arrange
+    const input = { epcube3483: { gid: -1, alias: 'Panel' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
+
+  it('returns false when alias is empty string', () => {
+    // Arrange
+    const input = { epcube3483: { gid: 480380, alias: '' } };
+
+    // Act
+    const result = isValidVueDeviceMapping(input);
+
+    // Assert
+    expect(result).toBe(false);
+  });
 });
