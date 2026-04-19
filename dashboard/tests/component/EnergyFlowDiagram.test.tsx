@@ -970,7 +970,7 @@ describe('EnergyFlowDiagram', () => {
       { id: 1, parent_device_gid: 111, child_device_gid: 222 },
     ];
 
-    // Act
+    // Act — no vueDevices passed, child has no alias
     const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy);
 
     // Assert
@@ -978,5 +978,48 @@ describe('EnergyFlowDiagram', () => {
     expect(balances).toHaveLength(2);
     expect(balances.find((b) => b.device_gid === 111)!.display_name).toBe('M: Unmonitored');
     expect(balances.find((b) => b.device_gid === 222)!.display_name).toBe('Unmonitored');
+  });
+
+  it('prefixes child Unmonitored with panel alias when vueDevices provides display name', () => {
+    // Arrange — parent 111 mapped, child 222 from hierarchy, vueDevices provides child alias
+    const readings: VueBulkCurrentReadingsResponse = {
+      devices: [
+        {
+          device_gid: 111,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Main', value: 3000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 1500 },
+          ],
+        },
+        {
+          device_gid: 222,
+          timestamp: 100,
+          channels: [
+            { channel_num: '1,2,3', display_name: 'Sub Main', value: 1000 },
+            { channel_num: 'Balance', display_name: 'Unmonitored loads', value: 300 },
+          ],
+        },
+      ],
+    };
+    const mapping: VueDeviceMapping = {
+      epcube1: { gid: 111, alias: 'Main Panel' },
+    };
+    const hierarchy: PanelHierarchyEntry[] = [
+      { id: 1, parent_device_gid: 111, child_device_gid: 222 },
+    ];
+    const vueDevices = [
+      { device_gid: 111, device_name: 'Vue 1', display_name: 'Main Panel' },
+      { device_gid: 222, device_name: 'Vue 2', display_name: 'Subpanel 1' },
+    ];
+
+    // Act
+    const circuits = getCircuitsForGroup('epcube1', readings, mapping, hierarchy, vueDevices as any);
+
+    // Assert — both panels get prefixed Unmonitored
+    const balances = circuits.filter((c) => c.channel_num === 'Balance');
+    expect(balances).toHaveLength(2);
+    expect(balances.find((b) => b.device_gid === 111)!.display_name).toBe('M: Unmonitored');
+    expect(balances.find((b) => b.device_gid === 222)!.display_name).toBe('S1: Unmonitored');
   });
 });

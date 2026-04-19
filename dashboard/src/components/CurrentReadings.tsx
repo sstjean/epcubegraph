@@ -46,7 +46,7 @@ export function CurrentReadings() {
   const [retryAttempt, setRetryAttempt] = useState(0);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const retryingRef = useRef(false);
-  const { vueCurrentReadings, vueDeviceMapping, vueError, hierarchyEntries } = useVueData();
+  const { vueCurrentReadings, vueDeviceMapping, vueDevices, vueError, hierarchyEntries } = useVueData();
 
   const loadData = async () => {
     if (retryingRef.current) return;
@@ -157,7 +157,7 @@ export function CurrentReadings() {
       {loading && !error && retryAttempt === 0 && <p class="status-message">Loading devices…</p>}
       {!loading && !error && groups.length === 0 && <p class="status-message">No devices found.</p>}
       {view === 'flow' && groups.length > 0 && (
-        <EnergyFlowDiagram groups={groups} vueCurrentReadings={vueCurrentReadings} vueDeviceMapping={vueDeviceMapping} hierarchyEntries={hierarchyEntries} />
+        <EnergyFlowDiagram groups={groups} vueCurrentReadings={vueCurrentReadings} vueDeviceMapping={vueDeviceMapping} vueDevices={vueDevices} hierarchyEntries={hierarchyEntries} />
       )}
       {view === 'gauges' && (
         <div class="device-cards">

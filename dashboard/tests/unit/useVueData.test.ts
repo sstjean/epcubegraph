@@ -5,19 +5,21 @@ vi.mock('../../src/api', () => ({
   fetchVueBulkCurrentReadings: vi.fn(),
   fetchSettings: vi.fn(),
   fetchHierarchy: vi.fn(),
+  fetchVueDevices: vi.fn(),
 }));
 
 vi.mock('../../src/telemetry', () => ({
   trackException: vi.fn(),
 }));
 
-import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../../src/api';
+import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../../src/api';
 import { trackException } from '../../src/telemetry';
 import { useVueData, isValidVueDeviceMapping } from '../../src/hooks/useVueData';
 
 const mockFetchVueReadings = fetchVueBulkCurrentReadings as ReturnType<typeof vi.fn>;
 const mockFetchSettings = fetchSettings as ReturnType<typeof vi.fn>;
 const mockFetchHierarchy = fetchHierarchy as ReturnType<typeof vi.fn>;
+const mockFetchVueDevices = fetchVueDevices as ReturnType<typeof vi.fn>;
 const mockTrackException = trackException as ReturnType<typeof vi.fn>;
 
 const vueReadingsResponse = {
@@ -48,6 +50,7 @@ describe('useVueData', () => {
     mockFetchVueReadings.mockResolvedValue(vueReadingsResponse);
     mockFetchSettings.mockResolvedValue(settingsResponse);
     mockFetchHierarchy.mockResolvedValue(hierarchyResponse);
+    mockFetchVueDevices.mockResolvedValue({ devices: [] });
   });
 
   afterEach(() => {
@@ -60,6 +63,7 @@ describe('useVueData', () => {
     mockFetchVueReadings.mockReturnValue(new Promise(() => {}));
     mockFetchSettings.mockReturnValue(new Promise(() => {}));
     mockFetchHierarchy.mockReturnValue(new Promise(() => {}));
+    mockFetchVueDevices.mockReturnValue(new Promise(() => {}));
 
     // Act
     const { result } = renderHook(() => useVueData());
@@ -206,6 +210,18 @@ describe('useVueData', () => {
 
     // Assert
     expect(result.current.hierarchyEntries).toEqual([]);
+  });
+
+  it('catches vueDevices fetch errors gracefully and defaults to empty array', async () => {
+    // Arrange
+    mockFetchVueDevices.mockRejectedValue(new Error('vue devices down'));
+
+    // Act
+    const { result } = renderHook(() => useVueData());
+    await flushInitialLoad();
+
+    // Assert
+    expect(result.current.vueDevices).toEqual([]);
   });
 
   it('tracks exception when settings fetch fails', async () => {

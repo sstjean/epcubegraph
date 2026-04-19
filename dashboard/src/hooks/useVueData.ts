@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy } from '../api';
-import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, PanelHierarchyEntry } from '../types';
+import { fetchVueBulkCurrentReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../api';
+import type { VueBulkCurrentReadingsResponse, VueDeviceMapping, VueDeviceInfo, PanelHierarchyEntry } from '../types';
 import { toTrackedError, errorMessage } from '../utils/errors';
 
 export function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMapping {
@@ -17,6 +17,7 @@ export function isValidVueDeviceMapping(parsed: unknown): parsed is VueDeviceMap
 export interface UseVueDataResult {
   vueCurrentReadings: VueBulkCurrentReadingsResponse | undefined;
   vueDeviceMapping: VueDeviceMapping | undefined;
+  vueDevices: VueDeviceInfo[];
   vueError: string | null;
   hierarchyEntries: PanelHierarchyEntry[];
 }
@@ -25,6 +26,7 @@ export function useVueData(): UseVueDataResult {
   const [vueCurrentReadings, setVueCurrentReadings] = useState<VueBulkCurrentReadingsResponse | undefined>();
   const [vueDeviceMapping, setVueDeviceMapping] = useState<VueDeviceMapping | undefined>();
   const [vueError, setVueError] = useState<string | null>(null);
+  const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
   const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
   const vuePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vueSettingsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -47,12 +49,14 @@ export function useVueData(): UseVueDataResult {
 
   const loadVueSettings = async () => {
     try {
-      const [settingsResp, hierarchyResp] = await Promise.all([
+      const [settingsResp, hierarchyResp, vueDevicesResp] = await Promise.all([
         fetchSettings(),
         fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
+        fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
       ]);
       if (!mountedRef.current) return;
       setHierarchyEntries(hierarchyResp.entries);
+      setVueDevices(vueDevicesResp.devices);
 
       const mappingSetting = settingsResp.settings.find((s) => s.key === 'vue_device_mapping');
       if (mappingSetting) {
@@ -89,5 +93,5 @@ export function useVueData(): UseVueDataResult {
     return () => clearInterval(vueSettingsPollingRef.current!);
   }, []);
 
-  return { vueCurrentReadings, vueDeviceMapping, vueError, hierarchyEntries };
+  return { vueCurrentReadings, vueDeviceMapping, vueDevices, vueError, hierarchyEntries };
 }
