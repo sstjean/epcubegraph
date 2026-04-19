@@ -400,8 +400,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
       expect(screen.getByText('EP Cube 3483')).toBeTruthy();
-      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
-      expect(aliasInput.value).toBe('Main Panel');
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -451,10 +451,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
     const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
-    // Assert — panel now shows as assigned with display_name as default alias
+    // Assert — panel now shows as assigned
     await waitFor(() => {
-      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
-      expect(aliasInput.value).toBe('Main Panel');
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -476,14 +476,17 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
+    await waitFor(() => {
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
 
     const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — alias input disappears, dropdown reset to None
+    // Assert — dropdown reset to None
     await waitFor(() => {
-      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
+      expect(select.value).toBe('');
     });
   });
 
@@ -506,7 +509,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
 
     // Act
     render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
+    await waitFor(() => {
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -612,39 +618,6 @@ describe('SettingsPage — Vue Device Mapping', () => {
     });
   });
 
-  it('updates alias when edited', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
-
-    const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
-    fireEvent.input(aliasInput, { target: { value: 'Updated Name' } });
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(mockUpdateSetting).toHaveBeenCalledWith(
-        'vue_device_mapping',
-        expect.stringContaining('"alias":"Updated Name"'),
-      );
-    });
-  });
-
   it('handles fetchDevices error gracefully', async () => {
     // Arrange
     setupMocks();
@@ -710,7 +683,8 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assert — renders mapping section with no assigned panel (old format ignored)
     await waitFor(() => {
       expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('');
     });
   });
 
@@ -730,11 +704,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Act
     render(<SettingsPage />);
 
-    // Assert — epcube3483 mapping loaded (input with alias value), unknown_device silently ignored
+    // Assert — epcube3483 mapping loaded (dropdown selected), unknown_device silently ignored
     await waitFor(() => {
-      const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
-      expect(aliasInput.value).toBe('Main Panel');
-      expect(screen.queryByLabelText(/Alias for panel 999/i)).toBeNull();
+      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(select.value).toBe('480380');
     });
   });
 
@@ -776,7 +749,10 @@ describe('SettingsPage — Vue Device Mapping', () => {
     const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
 
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
+    await waitFor(() => {
+      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+      expect(s.value).toBe('480380');
+    });
 
     fireEvent.click(screen.getByText('Save Mapping'));
 
@@ -826,8 +802,9 @@ describe('SettingsPage — Vue Device Mapping', () => {
     const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — no panel assigned (no alias input visible)
-    expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
+    // Assert — no panel assigned (dropdown value is empty)
+    const selectAfter = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
+    expect(selectAfter.value).toBe('');
   });
 
   it('removes panel from device with no prior mapping entry', async () => {
@@ -845,46 +822,16 @@ describe('SettingsPage — Vue Device Mapping', () => {
     // Assign a panel
     const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: '480380' } });
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
+    await waitFor(() => {
+      expect(select.value).toBe('480380');
+    });
 
     // Deselect by choosing None
     fireEvent.change(select, { target: { value: '' } });
 
-    // Assert — panel removed, alias input disappears
+    // Assert — panel removed, dropdown reset to None
     await waitFor(() => {
-      expect(screen.queryByLabelText(/Alias for panel/i)).toBeNull();
-    });
-  });
-
-  it('updates alias field for assigned panel', async () => {
-    // Arrange — single panel assigned to device
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Alias for panel 480380/i));
-
-    const aliasInput = screen.getByLabelText(/Alias for panel 480380/i) as HTMLInputElement;
-    fireEvent.input(aliasInput, { target: { value: 'Updated Panel' } });
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert — saved alias reflects edit
-    await waitFor(() => {
-      const savedValue = (mockUpdateSetting as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-      const parsed = JSON.parse(savedValue);
-      expect(parsed.epcube3483.alias).toBe('Updated Panel');
+      expect(select.value).toBe('');
     });
   });
 

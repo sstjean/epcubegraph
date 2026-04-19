@@ -164,14 +164,6 @@ export function SettingsPage() {
     setMappingMessage(null);
   }
 
-  function handleMappingFieldChange(deviceId: string, field: 'alias', value: string) {
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: { ...prev[deviceId]!, [field]: value },
-    }));
-    setMappingMessage(null);
-  }
-
   async function handleSaveMapping() {
     setMappingMessage(null);
     setError(null);
@@ -320,16 +312,6 @@ export function SettingsPage() {
                       </option>
                     ))}
                   </select>
-                  {panel && (
-                    <div class="mapping-panel-row">
-                      <input
-                        type="text"
-                        aria-label={`Alias for panel ${panel.gid}`}
-                        value={panel.alias}
-                        onInput={(e) => handleMappingFieldChange(group.baseDeviceId, 'alias', (e.target as HTMLInputElement).value)}
-                      />
-                    </div>
-                  )}
                 </div>
               );
             })}
