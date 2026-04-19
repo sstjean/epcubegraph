@@ -1,3 +1,5 @@
+#### _**This project was coded entirely by Github Copilot using Claude Opus 4.6 and the Spec-Driven Development framework.  I guided the architecture and provided the requirements but did not edit a single line of code by hand, except for this paragraph. 😉**_
+
 # EP Cube Graph
 
 A full-stack energy monitoring system for **Canadian Solar EP Cube** solar/battery gateways and **Emporia Vue** circuit-level monitors. Collects real-time telemetry, stores it in PostgreSQL, and presents it through an interactive web dashboard.
