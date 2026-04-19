@@ -915,8 +915,6 @@ jobs:
 
       - name: Terraform Destroy
         working-directory: infra
-        id: destroy
-        continue-on-error: true
         env:
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -928,33 +926,6 @@ jobs:
           TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
         run: terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
 
-      # Re-authenticate — OIDC token may have expired during long destroy
-      - name: Azure Re-Login for Retry (OIDC)
-        if: steps.destroy.outcome == 'failure'
-        uses: azure/login@v3
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Terraform Destroy — Retry
-        if: steps.destroy.outcome == 'failure'
-        working-directory: infra
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          TF_VAR_environment_name: ${{ steps.env.outputs.env_name }}
-          TF_VAR_epcube_username: ${{ secrets.EPCUBE_USERNAME }}
-          TF_VAR_epcube_password: ${{ secrets.EPCUBE_PASSWORD }}
-          TF_VAR_emporia_username: ${{ secrets.EMPORIA_USERNAME }}
-          TF_VAR_emporia_password: ${{ secrets.EMPORIA_PASSWORD }}
-        run: |
-          echo "⚠ First destroy failed — refreshing state and retrying with fresh token..."
-          terraform refresh -input=false
-          terraform destroy -auto-approve -input=false -var-file=custom-domains-${{ github.event.inputs.environment }}.tfvars
-
-      # Re-authenticate — OIDC token may have expired during long destroy sequence
       - name: Azure Re-Login for Cleanup (OIDC)
         uses: azure/login@v3
         with:
@@ -969,7 +940,7 @@ jobs:
             --container-name tfstate \
             --name "${{ steps.env.outputs.state_key }}" \
             --auth-mode login \
-            --output none 2>/dev/null || true
+            --output none
           echo "✓ State file ${{ steps.env.outputs.state_key }} deleted"
 
       # Bootstrap destroy — remove RG, KV, runner PE (reverse order)
