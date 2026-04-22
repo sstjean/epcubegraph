@@ -15,25 +15,38 @@ A full-stack energy monitoring system for **Canadian Solar EP Cube** solar/batte
 
 ## Architecture
 
-```
-                    ┌─────────────────────────────────────────────────────────┐
-                    │           Azure Container Apps Environment              │
-                    │                                                         │
-                    │  ┌────────────────────┐                                │
-EP Cube Cloud ◄────┤  │  epcube-exporter   │───writes──►  Azure Database    │
-Emporia Vue API ◄──┤  │  (Python 3.12)     │              for PostgreSQL    │
-                    │  └────────────────────┘              Flexible Server   │
-                    │                                           ▲             │
-                    │  ┌────────────────────┐                   │             │
-                    │  │  Web API           │───queries─────────┘             │
-                    │  │  (.NET 10)         │                                │
-                    │  │  Entra ID auth     │                                │
-                    │  └─────────┬──────────┘                                │
-                    └────────────┼────────────────────────────────────────────┘
-                                 │
-                                 ▼
-                    Azure Static Web Apps
-                    (Preact dashboard SPA)
+```mermaid
+graph TD
+    subgraph External["External APIs"]
+        EPC["EP Cube Cloud<br/><i>monitoring-us.epcube.com</i>"]
+        VUE["Emporia Vue API"]
+    end
+
+    subgraph ACA["Azure Container Apps Environment"]
+        EXP["epcube-exporter<br/><i>Python 3.12</i>"]
+        API["Web API<br/><i>.NET 10</i><br/><i>Entra ID auth</i>"]
+    end
+
+    PG["Azure Database for<br/>PostgreSQL Flexible Server"]
+    SWA["Azure Static Web Apps<br/><i>Preact dashboard SPA</i>"]
+    KV["Azure Key Vault<br/><i>Private endpoint</i>"]
+
+    EXP -- "polls" --> EPC
+    EXP -- "polls" --> VUE
+    EXP -- "writes telemetry" --> PG
+    API -- "queries via Npgsql" --> PG
+    SWA -- "REST + JWT" --> API
+    ACA -. "secrets" .-> KV
+
+    style External fill:#f0f0f0,stroke:#999,color:#333
+    style ACA fill:#e6f3ff,stroke:#0078D4,color:#333
+    style PG fill:#4169E1,stroke:#2c4fa0,color:#fff
+    style SWA fill:#512BD4,stroke:#3a1d96,color:#fff
+    style KV fill:#0078D4,stroke:#005a9e,color:#fff
+    style EPC fill:#f5f5f5,stroke:#999,color:#333
+    style VUE fill:#f5f5f5,stroke:#999,color:#333
+    style EXP fill:#3776AB,stroke:#2a5980,color:#fff
+    style API fill:#512BD4,stroke:#3a1d96,color:#fff
 ```
 
 ### Data Flow
@@ -151,13 +164,13 @@ npm install && npm run dev          # http://localhost:5173
 ### Testing
 
 ```bash
-# API — 375+ tests, 100% line + branch coverage
+# API — 391 tests, 100% line + branch coverage
 cd api && dotnet test EpCubeGraph.sln
 
-# Dashboard — 484 tests, 100% statement/branch/function/line coverage
+# Dashboard — 544 tests, 100% statement/branch/function/line coverage
 cd dashboard && npm run typecheck && npm run test:coverage
 
-# Exporter — 169 tests
+# Exporter — 177 tests
 cd local/epcube-exporter && python -m pytest test_exporter.py
 ```
 

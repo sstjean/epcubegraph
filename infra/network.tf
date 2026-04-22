@@ -46,10 +46,11 @@ resource "azurerm_subnet" "endpoints" {
 }
 
 resource "azurerm_subnet" "postgres" {
-  name                 = "postgres"
-  resource_group_name  = azurerm_resource_group.main.name
-  virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = var.subnet_postgres_prefix
+  name                            = "postgres"
+  resource_group_name             = azurerm_resource_group.main.name
+  virtual_network_name            = azurerm_virtual_network.main.name
+  address_prefixes                = var.subnet_postgres_prefix
+  default_outbound_access_enabled = false
 
   delegation {
     name = "postgres-flexible-server"
