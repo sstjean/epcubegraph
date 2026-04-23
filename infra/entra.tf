@@ -38,6 +38,12 @@ resource "azuread_application" "api" {
 resource "azuread_application_identifier_uri" "api" {
   application_id = azuread_application.api.id
   identifier_uri = "api://${azuread_application.api.client_id}"
+
+  # Force destroy ordering: identifier URI must be deleted before the service
+  # principal. Deleting the SP first causes Entra ID to temporarily make the
+  # application inaccessible, and the concurrent URI delete fails with 404.
+  # See: https://github.com/hashicorp/terraform-provider-azuread/issues/428
+  depends_on = [azuread_service_principal.api]
 }
 
 resource "azuread_service_principal" "api" {
