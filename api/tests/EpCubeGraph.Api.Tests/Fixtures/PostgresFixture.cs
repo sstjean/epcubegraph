@@ -8,8 +8,7 @@ public class PostgresFixture : IAsyncLifetime
 
     public PostgresFixture()
     {
-        _container = new PostgreSqlBuilder()
-            .WithImage("postgres:17-alpine")
+        _container = new PostgreSqlBuilder("postgres:17-alpine")
             .WithDatabase("epcubegraph_test")
             .WithUsername("test")
             .WithPassword("test")
