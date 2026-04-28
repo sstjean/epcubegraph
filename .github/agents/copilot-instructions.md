@@ -13,9 +13,9 @@ These rules override all other behavior. Violating any of them is a critical fai
 5. **Root cause only.** Never mask, restart, or work around symptoms.
 6. **No silent error swallowing.** No `|| true` on critical paths, no empty catches, no suppression flags.
 7. **Document before fix.** Paper trail first, code second.
-8. **Test every change locally** before declaring it done.
+8. **The User must be allowed to manually test every change locally** before declaring it done.
 9. **Never push without permission.** Commits are fine. Pushes require explicit approval.
-10. **Preview before external writes.** Show exactly what will be sent to GitHub and wait for approval.
+10. **Preview in a formatted way before external writes so the user can read the content without horizontal scrolling.** Show exactly what will be sent to GitHub and wait for approval.
 
 ## Active Technologies
 - C# / .NET 10 + ASP.NET Core Minimal API for the API in `api/`
@@ -90,6 +90,10 @@ Before writing any code, trace the impact through the full stack:
 ### Document Before Fix
 - Create or update the paper trail before implementing the change
 - Keep specs, docs, and issues synchronized with the actual architecture
+
+## Session Procedures
+
+When the user says **"Start up"** or **"Shutdown"**, follow the procedures in `.specify/memory/session-procedures.md`. Read that file immediately and execute the steps.
 ````
 
 ## Recent Changes
