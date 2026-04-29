@@ -695,19 +695,19 @@ class TestHTTPHandler(unittest.TestCase):
         """Valid session cookie grants access to debug page."""
         with patch.object(exporter, "DISABLE_AUTH", False), \
              patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
-            # Create a session
             session_id = "test-session-123"
             with exporter._auth_lock:
                 exporter._sessions[session_id] = {
                     "expires": time.time() + 3600,
                     "user": "test@example.com",
                 }
-            signed = exporter._sign_session(session_id)
-            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-            h.send_response.assert_called_with(200)
-            # Cleanup
-            with exporter._auth_lock:
-                exporter._sessions.pop(session_id, None)
+            try:
+                signed = exporter._sign_session(session_id)
+                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+                h.send_response.assert_called_with(200)
+            finally:
+                with exporter._auth_lock:
+                    exporter._sessions.pop(session_id, None)
 
     def test_expired_session_denied(self):
         """Expired session cookie is rejected."""
@@ -719,12 +719,13 @@ class TestHTTPHandler(unittest.TestCase):
                     "expires": time.time() - 1,  # already expired
                     "user": "test@example.com",
                 }
-            signed = exporter._sign_session(session_id)
-            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-            h.send_response.assert_called_with(401)
-            # Cleanup
-            with exporter._auth_lock:
-                exporter._sessions.pop(session_id, None)
+            try:
+                signed = exporter._sign_session(session_id)
+                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+                h.send_response.assert_called_with(401)
+            finally:
+                with exporter._auth_lock:
+                    exporter._sessions.pop(session_id, None)
 
     def test_status_alias_works(self):
         with patch.object(exporter, "DISABLE_AUTH", True):
@@ -2883,12 +2884,11 @@ class TestParseDeviceMetricsNaN(unittest.TestCase):
 class TestStaleDataNaN(unittest.TestCase):
     """_data_looks_stale handles NaN without raising."""
 
-    def test_nan_field_treated_as_non_zero(self):
-        # NaN is not zero — should not be treated as stale
+    def test_nan_rejected_to_zero_makes_stale(self):
+        # _safe_float rejects NaN → 0, so all fields become 0 → stale
         data = {"solarPower": "NaN", "gridPower": 0, "backUpPower": 0,
                 "batterySoc": 0, "batteryCurrentElectricity": 0}
         c = _make_collector()
-        # NaN is rejected (becomes 0), so all fields are 0 → stale
         self.assertTrue(c._data_looks_stale(data))
 
 
@@ -2989,7 +2989,8 @@ class TestConcurrentPollGuard(unittest.TestCase):
         # After poll completes, flag should be cleared
         self.assertFalse(c._polling)
 
-    def test_overlapping_vue_poll_skipped(self):
+    @patch("exporter.PyEmVue")
+    def test_overlapping_vue_poll_skipped(self, mock_pyemvue):
         vue_mock = MagicMock()
         vue_mock.get_device_list_usage.return_value = {}
         pg = MagicMock()

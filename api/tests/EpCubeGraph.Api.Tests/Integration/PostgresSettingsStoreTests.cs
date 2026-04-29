@@ -4,16 +4,21 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class PostgresSettingsStoreTests : IClassFixture<PostgresFixture>
+public class PostgresSettingsStoreTests : IClassFixture<PostgresFixture>, IAsyncLifetime
 {
+    private readonly PostgresFixture _fixture;
     private readonly PostgresSettingsStore _store;
     private readonly string _connectionString;
 
     public PostgresSettingsStoreTests(PostgresFixture fixture)
     {
+        _fixture = fixture;
         _connectionString = fixture.ConnectionString;
         _store = new PostgresSettingsStore(_connectionString);
     }
+
+    public async Task InitializeAsync() => await _fixture.ClearDataAsync();
+    public Task DisposeAsync() => Task.CompletedTask;
 
     // ── Settings ──
 
