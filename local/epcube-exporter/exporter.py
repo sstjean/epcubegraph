@@ -93,7 +93,7 @@ logging.basicConfig(
 )
 
 # ---------------------------------------------------------------------------
-# PostgreSQL writer (optional — enabled via POSTGRES_DSN)
+# PostgreSQL writer (required — POSTGRES_DSN must be set)
 # ---------------------------------------------------------------------------
 
 from typing import Any
@@ -756,13 +756,12 @@ class EpCubeCollector:
             })
 
             # ── Accumulate Postgres readings (pure function) ──
-            if self._pg:
-                base_id = f"epcube{dev_id}"
-                pg_devices.append((f"{base_id}_battery", "storage_battery", dev_name,
-                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
-                pg_devices.append((f"{base_id}_solar", "home_solar", dev_name,
-                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
-                pg_readings.extend(build_postgres_readings(base_id, now_utc, m))
+            base_id = f"epcube{dev_id}"
+            pg_devices.append((f"{base_id}_battery", "storage_battery", dev_name,
+                               "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+            pg_devices.append((f"{base_id}_solar", "home_solar", dev_name,
+                               "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn))
+            pg_readings.extend(build_postgres_readings(base_id, now_utc, m))
 
         # Also try to get daily energy totals
         # Build a lookup from device id to snapshot entry for merging
@@ -791,15 +790,14 @@ class EpCubeCollector:
                     snap_dev["backup_kwh"] = backup_kwh
 
                 # Accumulate daily totals for Postgres
-                if self._pg:
-                    bat_dev_id = f"epcube{dev['id']}_battery"
-                    sol_dev_id = f"epcube{dev['id']}_solar"
-                    pg_readings.extend([
-                        (sol_dev_id, "solar_cumulative_generation_kwh", now_utc, solar_kwh),
-                        (bat_dev_id, "grid_import_kwh", now_utc, grid_from),
-                        (bat_dev_id, "grid_export_kwh", now_utc, grid_to),
-                        (bat_dev_id, "home_supply_cumulative_kwh", now_utc, backup_kwh),
-                    ])
+                bat_dev_id = f"epcube{dev['id']}_battery"
+                sol_dev_id = f"epcube{dev['id']}_solar"
+                pg_readings.extend([
+                    (sol_dev_id, "solar_cumulative_generation_kwh", now_utc, solar_kwh),
+                    (bat_dev_id, "grid_import_kwh", now_utc, grid_from),
+                    (bat_dev_id, "grid_export_kwh", now_utc, grid_to),
+                    (bat_dev_id, "home_supply_cumulative_kwh", now_utc, backup_kwh),
+                ])
 
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
@@ -816,8 +814,8 @@ class EpCubeCollector:
 
         log.info("Poll complete: %d device(s)", len(self._devices))
 
-        # ── Write to PostgreSQL (if configured) ──
-        if self._pg and (pg_devices or pg_readings):
+        # ── Write to PostgreSQL ──
+        if pg_devices or pg_readings:
             try:
                 for d in pg_devices:
                     self._pg.upsert_device(*d)
@@ -1077,7 +1075,7 @@ def _cleanup_expired():
             del _pending_auth[st]
 
 
-class MetricsHandler(BaseHTTPRequestHandler):
+class ExporterHandler(BaseHTTPRequestHandler):
     collector = None  # Set by main (EpCubeCollector or None)
     vue_collector = None  # Set by main (VueCollector or None)
     _jwks_client = None  # Lazily initialized
@@ -1117,11 +1115,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
             token = auth_header[7:]
             try:
                 import jwt
-                if MetricsHandler._jwks_client is None:
+                if ExporterHandler._jwks_client is None:
                     jwks_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
-                    MetricsHandler._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
+                    ExporterHandler._jwks_client = jwt.PyJWKClient(jwks_url, cache_keys=True)
 
-                signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(token)
+                signing_key = ExporterHandler._jwks_client.get_signing_key_from_jwt(token)
                 jwt.decode(
                     token,
                     signing_key.key,
@@ -1250,11 +1248,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
         access_token = token_resp.get("access_token", "")
         try:
             import jwt as pyjwt
-            if MetricsHandler._jwks_client is None:
+            if ExporterHandler._jwks_client is None:
                 jwks_url = f"https://login.microsoftonline.com/{AZURE_TENANT_ID}/discovery/v2.0/keys"
-                MetricsHandler._jwks_client = pyjwt.PyJWKClient(jwks_url, cache_keys=True)
+                ExporterHandler._jwks_client = pyjwt.PyJWKClient(jwks_url, cache_keys=True)
 
-            signing_key = MetricsHandler._jwks_client.get_signing_key_from_jwt(access_token)
+            signing_key = ExporterHandler._jwks_client.get_signing_key_from_jwt(access_token)
             claims = pyjwt.decode(
                 access_token,
                 signing_key.key,
@@ -1590,20 +1588,19 @@ class VueCollector:
                 # Persist device and channel metadata
                 for ch in channels:
                     self._channel_names[(ch.device_gid, ch.channel_num)] = ch.name or ""
-                if self._pg_writer:
-                    self._pg_writer.upsert_device(
-                        device_gid=d.device_gid, device_name=d.device_name,
-                        model=getattr(d, "model", None),
-                        firmware=getattr(d, "firmware", None),
-                        connected=d.connected,
+                self._pg_writer.upsert_device(
+                    device_gid=d.device_gid, device_name=d.device_name,
+                    model=getattr(d, "model", None),
+                    firmware=getattr(d, "firmware", None),
+                    connected=d.connected,
+                )
+                for ch in channels:
+                    self._pg_writer.upsert_channel(
+                        device_gid=ch.device_gid, channel_num=ch.channel_num,
+                        name=ch.name,
+                        channel_multiplier=getattr(ch, "channel_multiplier", None),
+                        channel_type=getattr(ch, "channel_type_gid", None),
                     )
-                    for ch in channels:
-                        self._pg_writer.upsert_channel(
-                            device_gid=ch.device_gid, channel_num=ch.channel_num,
-                            name=ch.name,
-                            channel_multiplier=getattr(ch, "channel_multiplier", None),
-                            channel_type=getattr(ch, "channel_type_gid", None),
-                        )
 
             self._last_device_refresh = time.time()
             log.info("Vue: discovered %d device(s), %d circuit(s)", self._device_count, self._circuit_count)
@@ -1667,7 +1664,7 @@ class VueCollector:
             return
 
         # Write readings to PostgreSQL
-        if readings and self._pg_writer:
+        if readings:
             self._pg_writer.write_readings(readings)
 
         with self._lock:
@@ -1736,7 +1733,7 @@ class VueCollector:
                     readings.append((device_gid, ch_num, today, ch_usage.usage))
 
             log.info("Vue daily: collected %d readings for %s", len(readings), today)
-            if readings and self._pg_writer:
+            if readings:
                 self._pg_writer.upsert_daily_readings(readings)
                 log.info("Vue daily: wrote %d readings for %s", len(readings), today)
 
@@ -1990,16 +1987,17 @@ def main():
         log.error("At least one credential set required: EPCUBE_USERNAME/PASSWORD or EMPORIA_USERNAME/PASSWORD")
         sys.exit(1)
 
-    # Initialize Postgres writer if configured
-    pg_writer = None
-    vue_pg_writer = None
-    if POSTGRES_DSN:
-        if psycopg2 is None:
-            log.error("POSTGRES_DSN is set but psycopg2 is not installed")
-            sys.exit(1)
-        pg_writer = PostgresWriter(POSTGRES_DSN)
-        vue_pg_writer = VuePostgresWriter(POSTGRES_DSN)
-        log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
+    if not POSTGRES_DSN:
+        log.error("POSTGRES_DSN is required — all telemetry is written to PostgreSQL")
+        sys.exit(1)
+
+    # Initialize Postgres writers
+    if psycopg2 is None:
+        log.error("psycopg2 is not installed")
+        sys.exit(1)
+    pg_writer = PostgresWriter(POSTGRES_DSN)
+    vue_pg_writer = VuePostgresWriter(POSTGRES_DSN)
+    log.info("PostgreSQL storage enabled: %s", POSTGRES_DSN.split("@")[-1] if "@" in POSTGRES_DSN else "(DSN)")
 
     # Start EP Cube collector if credentials are configured
     collector = None
@@ -2017,19 +2015,18 @@ def main():
         vue_collector = VueCollector(emporia_username, emporia_password, pg_writer=vue_pg_writer)
         vue_poll_thread = threading.Thread(target=vue_poll_loop, args=(vue_collector,), daemon=True)
         vue_poll_thread.start()
-        # Start downsampling loop if PostgreSQL is configured
-        if vue_pg_writer:
-            ds_thread = threading.Thread(target=downsampling_loop, args=(vue_pg_writer,), daemon=True)
-            ds_thread.start()
-            daily_thread = threading.Thread(target=vue_daily_poll_loop, args=(vue_collector,), daemon=True)
-            daily_thread.start()
+        # Start downsampling loop
+        ds_thread = threading.Thread(target=downsampling_loop, args=(vue_pg_writer,), daemon=True)
+        ds_thread.start()
+        daily_thread = threading.Thread(target=vue_daily_poll_loop, args=(vue_collector,), daemon=True)
+        daily_thread.start()
     else:
         log.warning("EMPORIA_USERNAME/PASSWORD not set — Vue collector disabled")
 
     # Start HTTP server
-    MetricsHandler.collector = collector
-    MetricsHandler.vue_collector = vue_collector
-    server = HTTPServer(("0.0.0.0", HTTP_PORT), MetricsHandler)
+    ExporterHandler.collector = collector
+    ExporterHandler.vue_collector = vue_collector
+    server = HTTPServer(("0.0.0.0", HTTP_PORT), ExporterHandler)
     log.info("Serving on :%d (poll interval: %ds)", HTTP_PORT, POLL_INTERVAL)
     if DISABLE_AUTH:
         log.info("Auth DISABLED — debug page is unauthenticated (local dev mode)")

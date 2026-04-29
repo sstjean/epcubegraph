@@ -111,7 +111,7 @@ infra/
 
 - Telemetry endpoints require Entra ID bearer tokens.
 - `user_impersonation` is enforced as the default authorization scope.
-- `/metrics` and exporter `/health` remain unauthenticated because they expose operational state, not user telemetry.
+- Exporter `/health` remains unauthenticated because it exposes operational state, not user telemetry.
 
 ### Local Development
 
@@ -129,7 +129,7 @@ infra/
 
 | Decision | Why It Exists | Simpler Alternative Rejected Because |
 |----------|---------------|--------------------------------------|
-| Unauthenticated operational endpoints (`/metrics`, exporter `/health`) | They support monitoring and expose no user telemetry | Requiring auth for operational endpoints adds friction without protecting sensitive data paths |
+| Unauthenticated operational endpoints (exporter `/health`) | They support monitoring and expose no user telemetry | Requiring auth for operational endpoints adds friction without protecting sensitive data paths |
 | Exporter remains Python while API is C# | The captcha and cloud-auth implementation already exists and is validated in Python | Rewriting the exporter now would expand scope without improving current functionality |
 
 ## Current State

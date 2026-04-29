@@ -30,7 +30,8 @@ import exporter
 
 def _make_collector():
     """Create a collector ready for testing (no real auth)."""
-    c = exporter.EpCubeCollector("user@test.com", "password")
+    pg = MagicMock()
+    c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg)
     return c
 
 
@@ -94,7 +95,7 @@ def _mock_api_for(devices, home_info=None, elec_data=None):
 # Testable HTTP handler (avoids BaseHTTPRequestHandler.__init__)
 # ---------------------------------------------------------------------------
 
-class _TestableHandler(exporter.MetricsHandler):
+class _TestableHandler(exporter.ExporterHandler):
     """Subclass that bypasses the real __init__ so we can call do_GET in tests."""
     def __init__(self):
         # Skip BaseHTTPRequestHandler.__init__ which needs request/client/server
@@ -1234,19 +1235,6 @@ class TestPollWithPostgres(unittest.TestCase):
         # Should have called write_readings via execute_values
         self.assertTrue(mock_pg.extras.execute_values.called)
 
-    def test_poll_without_postgres_still_works(self):
-        """Poll works fine when pg_writer is None."""
-        c = _make_collector()  # no pg_writer
-        dev = _make_device()
-        c._devices = [dev]
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
-            c.poll()
-
-        # Poll should complete and update snapshot history
-        self.assertTrue(len(c._history) > 0)
-
     @patch.object(exporter, "psycopg2")
     def test_poll_continues_on_postgres_error(self, mock_pg):
         """Poll should not fail if Postgres write raises an exception."""
@@ -1296,12 +1284,14 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
 
     @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p",
                               "EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_both_credentials_starts_both(self):
         # Arrange
         with patch.object(exporter, "EpCubeCollector") as mock_epc, \
              patch.object(exporter, "VueCollector") as mock_vue, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1318,8 +1308,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
             mock_vue.assert_called_once()
 
     @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_only_epcube_credentials_starts_epcube_only(self):
         # Arrange
         env = os.environ.copy()
@@ -1327,6 +1317,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
         env.pop("EMPORIA_PASSWORD", None)
         with patch.dict(os.environ, env, clear=True), \
              patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1344,8 +1336,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
             self.assertEqual(len(vue_threads), 0, "Vue thread should not start without Vue credentials")
 
     @patch.dict(os.environ, {"EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_only_vue_credentials_starts_vue_only(self):
         # Arrange
         env = os.environ.copy()
@@ -1353,6 +1345,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
         env.pop("EPCUBE_PASSWORD", None)
         with patch.dict(os.environ, env, clear=True), \
              patch.object(exporter, "VueCollector") as mock_vue, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1375,7 +1369,7 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
 
         # Act & Assert
         with patch.dict(os.environ, env, clear=True), \
-             patch.object(exporter, "POSTGRES_DSN", ""), \
+             patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test"), \
              self.assertRaises(SystemExit) as ctx:
             exporter.main()
         self.assertEqual(ctx.exception.code, 1)
@@ -1706,7 +1700,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.login.assert_called_once_with(username="user@test.com", password="password")
@@ -1720,7 +1714,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("bad@test.com", "badpass")
+        collector = exporter.VueCollector("bad@test.com", "badpass", pg_writer=MagicMock())
 
         # Assert
         self.assertFalse(collector._authenticated)
@@ -1733,7 +1727,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.get_devices.assert_called_once()
@@ -1753,7 +1747,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll()
@@ -1834,7 +1828,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         before = time.time()
@@ -1852,7 +1846,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value = {}
         mock_pyemvue_cls.return_value = mock_vue
 
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertFalse(collector._authenticated)
 
         # Act — poll should retry login
@@ -1900,7 +1894,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertEqual(collector._device_count, 1)
 
         # Add a new device
@@ -1947,7 +1941,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert — only 1 device, not 2, but channels merged from both entries
         self.assertEqual(collector._device_count, 1)
@@ -1971,7 +1965,7 @@ class TestVuePollInterval(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Simulate one iteration of vue_poll_loop
         collector._poll_interval = mock_read_interval.return_value
@@ -1995,7 +1989,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         for ch in mock_vue.get_device_list_usage.return_value[12345].channels.values():
             ch.usage = None
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._had_successful_poll = True  # had data before → this is rate limiting, not offline
 
         # Act
@@ -2009,7 +2003,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         collector._recovery_count = collector.RECOVERY_THRESHOLD - 1
 
@@ -2024,7 +2018,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         mock_pg = MagicMock()
         collector._pg_writer = mock_pg
@@ -2050,7 +2044,7 @@ class TestVueDebugPage(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
 
         # Act
@@ -2069,7 +2063,7 @@ class TestVueDebugPage(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2269,7 +2263,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2289,7 +2283,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2315,7 +2309,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 0.0,
@@ -2337,7 +2331,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2352,7 +2346,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2524,7 +2518,7 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
 class TestReadVueDailyPollInterval(unittest.TestCase):
     """Tests for _read_vue_daily_poll_interval_from_db."""
 
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_returns_default_when_no_dsn(self):
         # Act
         result = exporter._read_vue_daily_poll_interval_from_db()
@@ -2590,7 +2584,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll_daily()
@@ -2667,7 +2661,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         mock_vue.get_device_list_usage.side_effect = Exception("API down")
 
         # Act — should not raise
@@ -2680,7 +2674,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._authenticated = False
 
         # Act
@@ -2697,7 +2691,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=None)
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act — should not raise
         collector.poll_daily()
@@ -2713,7 +2707,7 @@ class TestVueDailyPollLoop(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         call_count = 0
 
         def sleep_side_effect(secs):
