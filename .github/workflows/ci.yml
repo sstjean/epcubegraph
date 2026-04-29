@@ -3,18 +3,8 @@ name: CI
 on:
   push:
     branches: ['**']
-    paths-ignore:
-      - 'specs/**'
-      - '.specify/**'
-      - '**/*.md'
-      - '.gitignore'
   pull_request:
     branches: [main]
-    paths-ignore:
-      - 'specs/**'
-      - '.specify/**'
-      - '**/*.md'
-      - '.gitignore'
   workflow_dispatch:
 
 env:
@@ -26,7 +16,29 @@ env:
   GIT_CONFIG_VALUE_0: 'main'
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'api/**'
+              - 'dashboard/**'
+              - 'local/**'
+              - 'infra/**'
+              - 'scripts/**'
+              - '.github/workflows/**'
+              - 'global.json'
+              - 'Dockerfile'
+
   build-and-test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -100,6 +112,8 @@ jobs:
           path: api/TestResults/**/coverage.cobertura.xml
 
   exporter-tests:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -118,6 +132,8 @@ jobs:
         run: pytest test_exporter.py -v
 
   docker-local:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -128,6 +144,8 @@ jobs:
         run: docker compose -f docker-compose.local.yml build
 
   docker-api:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -142,6 +160,8 @@ jobs:
             .
 
   validate-infra:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -165,6 +185,8 @@ jobs:
         run: terraform fmt -check -recursive
 
   validate-tools:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -174,6 +196,8 @@ jobs:
         run: ./scripts/validate-tool-sync.sh
 
   dashboard:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
 
     steps:

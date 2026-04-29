@@ -8,18 +8,22 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="coverlet.collector" Version="6.0.4" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.3" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
-    <PackageReference Include="Testcontainers" Version="4.3.0" />
-    <PackageReference Include="Testcontainers.PostgreSql" Version="4.3.0" />
+    <PackageReference Include="coverlet.collector" Version="8.0.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.7" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageReference Include="Testcontainers" Version="4.11.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.11.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <!-- Pin transitive: GHSA-37gx-xxp4-5rgx + GHSA-w3x6-4m5h-cxqf.
          Microsoft.Identity.Web → DataProtection → Cryptography.Xml 10.0.0 (vulnerable).
          Runtime uses framework DLL (safe), but NuGet audit flags the package version.
          Remove when Microsoft.AspNetCore.DataProtection bumps its dependency. -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.7" />
+    <!-- Pin transitive: GHSA-9mv3-2cwr-p262.
+         Microsoft.AspNetCore.Mvc.Testing → DataProtection 10.0.0 (vulnerable).
+         Remove when Mvc.Testing bumps its DataProtection dependency. -->
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.7" />
   </ItemGroup>
 
   <ItemGroup>
