@@ -1,105 +1,87 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-04-28
+**Last Updated**: 2026-04-29
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main`
-**Last merged**: PR #127 — Session procedures + NuGet updates + CI fix
+**Last merged**: PR #130 — Remove vestigial /metrics endpoint and all Prometheus/VictoriaMetrics references
 **Unpushed commits**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-04-28)
+## ⚡ Current State (2026-04-29)
 
-### PR #127 — Session Procedures + NuGet + CI Fix (MERGED ✅)
-- New: `.specify/memory/session-procedures.md` — Start Up / Shutdown procedures
-- New: `.specify/memory/PROJECT_SUMMARY.md` — moved from Copilot memory to repo for portability
-- Updated: `.github/agents/copilot-instructions.md` — references session-procedures.md
-- CI fix: moved `paths-ignore` from workflow-level to job-level using `dorny/paths-filter@v3`
-  - Fixes docs-only PRs being blocked by required status checks (github.com/orgs/community/discussions/13690)
-- NuGet packages updated to latest:
-  - API: Microsoft.Identity.Web 4.8.0, Npgsql 10.0.2, Swashbuckle.AspNetCore 10.1.7
-  - API: Pin OpenTelemetry.Api 1.15.3 (GHSA-g94r-2vxg-569j)
-  - Tests: Microsoft.AspNetCore.Mvc.Testing 10.0.7, Microsoft.NET.Test.Sdk 18.5.1
-  - Tests: Testcontainers 4.11.0, xunit.runner.visualstudio 3.1.5
-  - Tests: Pin Microsoft.AspNetCore.DataProtection 10.0.7 (GHSA-9mv3-2cwr-p262)
-  - Tests: coverlet.collector pinned to 8.0.1 (10.0.0 has async state machine coverage regression — coverlet-coverage/coverlet#1337, #1767, fix in PR #1904)
-- PostgresFixture: adapted to Testcontainers 4.11.0 constructor change
-- Zero NuGet vulnerabilities, 391 API tests pass, 100% coverage
+### PR #130 — Remove /metrics + Prometheus purge (MERGED ✅)
+- **Issue #93 closed** — vestigial `/metrics` endpoint and all Prometheus/VictoriaMetrics references removed
+- Exporter: removed `/metrics` handler, `get_metrics()`, `_metrics_text`, all Prometheus text generation from `poll()`
+- Exporter: renamed `METRICS_PORT` → `HTTP_PORT`, `MetricsHandler` → `ExporterHandler`
+- Exporter: `POSTGRES_DSN` now required at startup (PostgreSQL is the only data sink)
+- Exporter: removed all conditional `if self._pg` / `if self._pg_writer` guards
+- Mock-exporter: removed `_generate_metrics()`, `_labels()`, `/metrics` handler; added `/health` handler
+- Deleted dead `local/deploy-local.sh` (referenced VictoriaMetrics services that no longer exist)
+- Scripts: replaced `/metrics` checks with `/health` in `deploy.sh` and `validate-deployment.sh`
+- Infra: updated vmagent comment in `container-apps.tf`, compose file comments
+- API: removed Prometheus comment in Models.cs, renamed `StepSeconds_PrometheusFormat` test
+- Specs: purged Prometheus/VictoriaMetrics/scrape references from specs 001 and 002
+- Full grep verification: zero matches outside `specs/093-remove-vestigial-metrics/`
+- TDD: 3 failing tests (Red), implementation (Green), test cleanup
+- Copilot PR review: 4 comments, all addressed (POSTGRES_DSN required, ExporterHandler rename, docs fixes)
+- Net: 25 files changed, 659 insertions, 759 deletions
 
-### PR #126 — Entra ID Destroy Race Fix (MERGED ✅)
-- `depends_on = [azuread_service_principal.api]` added to `azuread_application_identifier_uri.api`
-- Fixes known azuread provider destroy ordering issue (hashicorp/terraform-provider-azuread#428)
-- No state surgery needed — production state doesn't track this resource
+### Terraform 1.15.0 Backend Fix (in PR #130)
+- Terraform 1.15.0 released 2026-04-29 added backend block validation to `terraform validate`
+- Empty `backend "azurerm" {}` blocks now fail with "Missing required argument"
+- Fix: changed to partial configuration with empty-string keys per Terraform docs
+- Both `infra/main.tf` and `infra/bootstrap/main.tf` updated
 
-### PR #125 — Public Repo Readiness (MERGED ✅)
-- MIT license added
-- README.md full rewrite (Mermaid architecture diagram, security, dev setup)
-- Staging custom domains disabled (eliminates SWA domain lock on destroy/recreate)
-- Postgres subnet `default_outbound_access_enabled = false` for SFI compliance
+### Issue #120 — Feature 010 (CLOSED ✅)
+- Closed as completed (PR #124 was already merged)
 
-### Feature 010 — Simplify Vue Mapping (COMPLETE ✅, PR #124 merged)
-- Mapping format: `Record<string, VuePanelMapping[]>` → `Record<string, VuePanelMapping>`
-- Settings UI: multi-panel add/remove → single `<select>` dropdown
-- Type guard, input validation, migration guard for old format
-- SRP extractions: buildDeviceGroups, resolvePanelsFromMapping, resolveAuthHeaders, etc.
-- Constitution §III SRP added (v1.19.0)
-- CI/CD: PR trigger, fork protection, runner fixes, destroy error masking removed
-- 544 dashboard + 391 API + 177 exporter = 1112 tests, 100% coverage
-
-### Production Outage — PostgreSQL Auto-Stop (RESOLVED)
+### Production Outage — PostgreSQL Auto-Stop (UNRESOLVED)
 - **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL while exporter was actively writing
 - See Copilot repo memory `postgres-auto-stop-runbook.md` for debugging steps
 - **Open**: recurrence unknown, no exemption mechanism identified yet
 
-### Feature 007 — COMPLETE (all 7 phases, merged to main, deployed to prod)
-- **#108** Feature issue created and closed
-- Circuits page with panel grouping, daily kWh, Balance dedup
-- Flow diagram circuit overlay with Unmonitored rename + panel prefix
-- Exporter daily kWh poll loop wired up (scale=1D)
-- Graceful empty states with 10-failure stale data threshold
-- Settings page: all polling intervals enabled
-- useVueData hook, errors.ts utilities, derivePanelPrefix
-- Background thread safety pattern enforced (all 4 loops)
-- API Startup.GetRequiredConnectionString extracted for testability
-
 ### Tests
 - Dashboard: 544 tests, 100% all metrics (stmts/branches/funcs/lines)
-- API: 391 tests, 100% line + 100% branch (112/112)
-- Exporter: 177 tests
-- **Total: 1112 tests**
+- API: 391 tests, 100% line + 100% branch
+- Exporter: 168 tests (was 177; removed 9 Prometheus tests, added 3 new)
+- **Total: 1103 tests**
 
 ### Open Issues
 | # | Title | Label |
 |---|-------|-------|
-| 123 | Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated | tech-debt |
-| 120 | Feature 010: Simplify Vue Device Mapping | enhancement (should be closed — PR #124 merged) |
 | 115 | Separate Application Insights per environment | enhancement |
-| 93 | Remove vestigial /metrics endpoint | tech-debt |
 | 74 | Custom domains on devsbx.xyz | — |
 | 66 | Calendar-aware time range selector | enhancement |
 | 52 | Port exporter Python→C# | enhancement |
-| 5 | iPhone App | feature (spec only) |
 | 6 | iPad App | feature (spec only) |
+| 5 | iPhone App | feature (spec only) |
+
+### Closed This Session
+| # | Title | Reason |
+|---|-------|--------|
+| 120 | Feature 010: Simplify Vue Device Mapping | completed (PR #124 merged) |
+| 93 | Remove vestigial /metrics endpoint | completed (PR #130 merged) |
+| 123 | Defense-in-depth: exporter NaN/HTML/concurrency | completed (PR #130 — POSTGRES_DSN required) |
 
 ### What's Next
-1. Close #120 (Feature 010 merged — still open)
-2. #123 Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated
-3. #93 Remove vestigial /metrics endpoint + exporter SRP (Prometheus removal)
-4. #113 Panel Hierarchy UI editor
-5. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
+1. #123 may need re-opening — only the `_tablesCreated` race was partially addressed (POSTGRES_DSN now required eliminates the no-writer path, but NaN/HTML/concurrency items remain)
+2. #115 Separate Application Insights per environment
+3. #113 Panel Hierarchy UI editor
+4. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
+5. Monitor Terraform 1.15.x — verify empty-string partial backend config continues to work
 
 ### Pending
-- Staging destroy running (run 25086514154) — tearing down epcubegraph-session-* resources
-- Dependabot PR opened: `dependabot/npm_and_yarn/dashboard/npm_and_yarn-5f44a83626`
+- Staging destroy running (run 25126867218) — tearing down epcubegraph-b093-rem-* resources
 
 ### Decisions Made This Session
-- "Start Up" / "Shutdown" = session context procedures, not Docker
-- Canonical session state lives in repo (`.specify/memory/`), not Copilot memory
-- Copilot repo memory files are pointers only to in-repo canonical files
-- CI `paths-ignore` moved to job-level `dorny/paths-filter` to fix docs-only PR merge blocks
-- coverlet.collector pinned to 8.0.1 due to 10.0.0 async state machine regression
+- POSTGRES_DSN is now required — no use case for running exporter without database after Prometheus removal
+- Terraform partial backend config uses empty-string keys (not empty block) per HashiCorp docs
+- `deploy-local.sh` deleted — dead code, only referenced itself, VictoriaMetrics services removed long ago
+- Mock-exporter keeps PostgreSQL write loop but removes all Prometheus text generation
+- All Prometheus/VictoriaMetrics/vmagent/scrape terminology purged from entire codebase
 
 ### Production Services
 | Service | URL |
