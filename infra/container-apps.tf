@@ -191,7 +191,7 @@ resource "azurerm_container_app" "exporter" {
   }
 
   # External ingress — debug page requires JWT auth in code
-  # /metrics and /health remain unauthenticated for vmagent scraping
+  # /health remains unauthenticated for liveness checks
   ingress {
     external_enabled = true
     target_port      = var.exporter_port

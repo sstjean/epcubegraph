@@ -127,11 +127,11 @@ cmd_status() {
 
   echo ""
 
-  # Check if epcube-exporter metrics endpoint is reachable
-  if curl -sf http://localhost:9250/metrics >/dev/null 2>&1; then
-    ok "epcube-exporter metrics endpoint is reachable at http://localhost:9250/metrics"
+  # Check if epcube-exporter health endpoint is reachable
+  if curl -sf http://localhost:9250/health >/dev/null 2>&1; then
+    ok "epcube-exporter health endpoint is reachable at http://localhost:9250/health"
   else
-    warn "epcube-exporter metrics endpoint is not reachable at http://localhost:9250/metrics"
+    warn "epcube-exporter health endpoint is not reachable at http://localhost:9250/health"
   fi
 }
 
@@ -148,7 +148,7 @@ cmd_destroy() {
   require_docker
   require_compose
 
-  warn "This will stop all containers AND delete the vmagent WAL data volume."
+  warn "This will stop all containers AND delete data volumes."
   read -rp "Are you sure? [y/N] " confirm
   if [[ "${confirm}" =~ ^[Yy]$ ]]; then
     ${COMPOSE_CMD} -f "${COMPOSE_FILE}" down -v

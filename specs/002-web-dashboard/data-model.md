@@ -24,7 +24,7 @@ interface Device {
   manufacturer?: string;
   product_code?: string;
   uid?: string;
-  online: boolean;      // true if scrape_success=1 within staleness window
+  online: boolean;      // true if last poll within staleness window
 }
 
 interface DeviceListResponse {

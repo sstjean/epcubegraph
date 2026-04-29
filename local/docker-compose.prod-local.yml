@@ -16,7 +16,7 @@
 #   cd ../api/src/EpCubeGraph.Api && EPCUBE_DISABLE_AUTH=true ASPNETCORE_ENVIRONMENT=Development dotnet run
 #
 # Web UIs:
-#   cloud exporter:  http://localhost:9250/metrics
+#   cloud exporter:  http://localhost:9250/health
 #   PostgreSQL:      localhost:5432 (user: epcube, db: epcubegraph)
 
 services:

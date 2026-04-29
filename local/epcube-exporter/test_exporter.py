@@ -601,7 +601,6 @@ class TestHTTPHandler(unittest.TestCase):
     def setUp(self):
         self.collector = _make_collector()
         self.collector._last_poll = time.time()
-        self.collector._metrics_text = "# test metric\ntest_metric 42\n"
 
     def _make_handler(self, path, headers=None):
         """Build a testable handler without opening a real socket."""
@@ -616,14 +615,9 @@ class TestHTTPHandler(unittest.TestCase):
         h.do_GET()
         return h
 
-    def test_metrics_returns_200(self):
+    def test_metrics_returns_404(self):
         h = self._make_handler("/metrics")
-        h.send_response.assert_called_with(200)
-
-    def test_metrics_no_auth_required(self):
-        with patch.object(exporter, "DISABLE_AUTH", False):
-            h = self._make_handler("/metrics")
-            h.send_response.assert_called_with(200)
+        h.send_response.assert_called_with(404)
 
     def test_health_returns_200_when_healthy(self):
         h = self._make_handler("/health")
@@ -831,183 +825,6 @@ class TestSnapshotData(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Prometheus metrics format tests
-# ---------------------------------------------------------------------------
-
-class TestPrometheusMetrics(unittest.TestCase):
-
-    def test_metrics_contain_expected_names(self):
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
-            c.poll()
-
-        metrics = c.get_metrics()
-        expected_metrics = [
-            "epcube_solar_instantaneous_generation_watts",
-            "epcube_battery_state_of_capacity_percent",
-            "epcube_battery_power_watts",
-            "epcube_grid_power_watts",
-            "epcube_home_load_power_watts",
-            "epcube_self_sufficiency_rate",
-            "epcube_solar_cumulative_generation_kwh",
-            "epcube_grid_import_kwh",
-            "epcube_grid_export_kwh",
-            "epcube_battery_stored_kwh",
-            "epcube_battery_peak_stored_kwh",
-            "epcube_home_supply_cumulative_kwh",
-            "epcube_scrape_success",
-            "epcube_device_info",
-        ]
-        for name in expected_metrics:
-            self.assertIn(name, metrics, f"Missing metric: {name}")
-
-    def test_metrics_labels_format(self):
-        c = _make_collector()
-        devs = [_make_device(dev_id="9999")]
-        c._devices = devs
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
-            c.poll()
-
-        metrics = c.get_metrics()
-        self.assertIn('device="epcube9999_battery"', metrics)
-        self.assertIn('device="epcube9999_solar"', metrics)
-        self.assertIn('ip="cloud"', metrics)
-
-    def test_battery_stored_kwh_exported(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(batteryCurrentElectricity="15.5")
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_battery_stored_kwh", metrics)
-        self.assertIn('epcube_battery_stored_kwh{device="epcube1234_battery"', metrics)
-        self.assertIn("15.5", metrics.split("epcube_battery_stored_kwh{")[1].split("\n")[0])
-
-    def test_home_supply_cumulative_kwh_exported(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        elec_data = _make_electricity_data(backUpElectricity=10.0)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, elec_data=elec_data)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_home_supply_cumulative_kwh", metrics)
-        self.assertIn('epcube_home_supply_cumulative_kwh{device="epcube1234_battery"', metrics)
-        self.assertIn("10.0", metrics.split("epcube_home_supply_cumulative_kwh{")[1].split("\n")[0])
-
-    def test_device_info_includes_system_status_label(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(systemStatus=1)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        # system_status label should appear on epcube_device_info lines
-        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
-        self.assertTrue(len(info_lines) >= 2)  # battery + solar
-        for line in info_lines:
-            self.assertIn('system_status="Self-Use"', line)
-
-    def test_device_info_includes_ress_count_label(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(ressNumber=3)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
-        self.assertTrue(len(info_lines) >= 2)
-        for line in info_lines:
-            self.assertIn('ress_count="3"', line)
-
-    def test_battery_peak_stored_kwh_exported(self):
-        """Peak battery stored tracks max and is exported as a Prometheus metric."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
-
-        # Act — first poll sets peak to 20.0
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home1)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_battery_peak_stored_kwh", metrics)
-        line = [l for l in metrics.splitlines()
-                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
-        self.assertIn('device="epcube1234_battery"', line)
-        self.assertTrue(line.endswith("20.0"))
-
-    def test_battery_peak_retains_max_in_metric(self):
-        """After discharge, peak metric still reflects the day's high-water mark."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-
-        # Act — first poll at 20 kWh, second at 15 kWh
-        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home1)):
-            c.poll()
-        c._history[-1]["time_minute"] = "old"  # force new snapshot
-
-        home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home2)):
-            c.poll()
-
-        # Assert — peak should still be 20.0
-        metrics = c.get_metrics()
-        line = [l for l in metrics.splitlines()
-                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
-        self.assertTrue(line.endswith("20.0"))
-
-
-# ---------------------------------------------------------------------------
 # Negative zero normalization tests
 # ---------------------------------------------------------------------------
 
@@ -1063,36 +880,6 @@ class TestNegativeZeroNormalization(unittest.TestCase):
 
         # Assert
         self.assertEqual(result, -5.0)
-
-    def test_metrics_no_negative_zero_with_zero_grid_power(self):
-        """When API returns gridPower=0, negation must NOT produce -0 in metrics."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(
-            solarPower=0, batterySoc=50, batteryPower=0,
-            gridPower=0, backUpPower=0, selfHelpRate=0,
-            batteryCurrentElectricity="0",
-        )
-        elec_data = _make_electricity_data(
-            solarElectricity=0, gridElectricityFrom=0,
-            gridElectricityTo=0, backUpElectricity=0,
-        )
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info, elec_data)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        for line in metrics.splitlines():
-            if line.startswith("#") or not line.strip():
-                continue
-            self.assertNotRegex(line, r'\s-0(\.0+)?$',
-                                f"Negative zero found in metric line: {line}")
 
     def test_snapshot_no_negative_zero_with_zero_grid_power(self):
         """Snapshot values must not contain negative zero."""
@@ -1296,9 +1083,10 @@ class TestStaleDataReauth(unittest.TestCase):
                 c.poll()
 
         self.assertEqual(c._token, "fresh-token")
-        # Verify metrics were generated with good data (non-zero)
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
-        self.assertIn("75", c._metrics_text)
+        # Verify poll completed with good data (snapshot has non-zero values)
+        self.assertTrue(len(c._history) > 0)
+        snap_dev = c._history[-1]["devices"][0]
+        self.assertEqual(snap_dev["battery_soc"], 75)
 
 
 # ---------------------------------------------------------------------------
@@ -1456,8 +1244,8 @@ class TestPollWithPostgres(unittest.TestCase):
         with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()
 
-        # Prometheus metrics should still be generated
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+        # Poll should complete and update snapshot history
+        self.assertTrue(len(c._history) > 0)
 
     @patch.object(exporter, "psycopg2")
     def test_poll_continues_on_postgres_error(self, mock_pg):
@@ -1473,8 +1261,30 @@ class TestPollWithPostgres(unittest.TestCase):
         with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()  # Should NOT raise
 
-        # Prometheus metrics should still be generated
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+        # Poll should complete and update snapshot history
+        self.assertTrue(len(c._history) > 0)
+
+
+# ---------------------------------------------------------------------------
+# Test: poll() does not produce _metrics_text attribute
+# ---------------------------------------------------------------------------
+
+class TestPollNoMetricsText(unittest.TestCase):
+    """Verify that EpCubeCollector has no _metrics_text attribute after poll()."""
+
+    def test_poll_no_metrics_text_attribute(self):
+        # Arrange
+        c = _make_collector()
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        # Act
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Assert
+        self.assertFalse(hasattr(c, "_metrics_text"))
 
 
 # ---------------------------------------------------------------------------
@@ -2596,6 +2406,20 @@ class TestEpCubePageNavLink(unittest.TestCase):
         # Assert — no Vue circuit data (nav link is OK, circuit tables are not)
         self.assertNotIn("vue_readings", html)
         self.assertNotIn("Vue:   Device", html)
+
+    def test_status_page_no_metrics_link(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert
+        self.assertNotIn("/metrics", html)
 
 
 # ---------------------------------------------------------------------------

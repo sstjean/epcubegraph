@@ -16,7 +16,7 @@ Azure deployments host the API and exporter in Azure Container Apps and use Azur
 ## Technical Context
 
 **Language/Version**: C# / .NET 10 for API, Python 3.12 for exporter  
-**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web, Npgsql, prometheus-net.AspNetCore, Swashbuckle.AspNetCore, psycopg2, OpenCV, PyCryptodome  
+**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web, Npgsql, Swashbuckle.AspNetCore, psycopg2, OpenCV, PyCryptodome  
 **Storage**: PostgreSQL 17 locally; Azure Database for PostgreSQL Flexible Server in Azure  
 **Testing**: xUnit + coverlet + WebApplicationFactory + Testcontainers.PostgreSql for API, Python exporter tests for the writer and cloud polling logic  
 **Target Platform**: Azure Container Apps + Azure Database for PostgreSQL Flexible Server  

@@ -1,11 +1,9 @@
 """
-EP Cube Cloud Exporter — Bridges EP Cube cloud API to Prometheus metrics.
+EP Cube Cloud Exporter — Polls EP Cube cloud API and writes to PostgreSQL.
 
-Polls the EP Cube monitoring API (monitoring-us.epcube.com) and exposes 
-Prometheus-compatible metrics on :9250/metrics for VictoriaMetrics to scrape.
-
-Produces the same epcube_* metric names as the mock exporter so the API
-and dashboard work without changes.
+Polls the EP Cube monitoring API (monitoring-us.epcube.com) and writes
+device telemetry directly to PostgreSQL. Also serves a debug status page
+and health endpoint.
 
 Authentication: Automatically solves the AJ-Captcha block puzzle and logs in.
 Proactively refreshes the JWT before expiry (5-minute margin).  Also detects
@@ -17,7 +15,7 @@ Required env vars:
   EPCUBE_PASSWORD  — EP Cube cloud account password
 
 Optional env vars:
-  EPCUBE_PORT      — HTTP port for metrics (default: 9250)
+  EPCUBE_PORT      — HTTP port (default: 9250)
   EPCUBE_INTERVAL  — Poll interval in seconds (default: 60)
 """
 import base64
@@ -68,7 +66,7 @@ def _configure_azure_monitor():
 # ---------------------------------------------------------------------------
 __version__ = "2.0.0"
 CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
-METRICS_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
+HTTP_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DEFAULT_POLL_INTERVAL = POLL_INTERVAL  # Fallback when DB has no setting
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
@@ -604,7 +602,7 @@ def authenticate(username, password):
 # ---------------------------------------------------------------------------
 
 class EpCubeCollector:
-    """Polls the EP Cube cloud API and produces Prometheus metrics."""
+    """Polls the EP Cube cloud API and writes telemetry to PostgreSQL."""
 
     # Keep last 10 minutes of snapshots (at 60s interval = ~10 entries)
     HISTORY_MAX = 10
@@ -616,7 +614,6 @@ class EpCubeCollector:
         self._token_exp = 0  # JWT expiry timestamp
         self._devices = []
         self._lock = threading.Lock()
-        self._metrics_text = ""
         self._last_poll = 0.0
         self._history = collections.deque(maxlen=self.HISTORY_MAX)
         self._poll_count = 0
@@ -682,10 +679,9 @@ class EpCubeCollector:
                          d.get("name", "?"), d["id"], d.get("sgSn", "?"), d.get("isOnline", "?"))
 
     def poll(self):
-        """Fetch data from all devices and update metrics text."""
+        """Fetch data from all devices and write to PostgreSQL."""
         self._ensure_auth()
 
-        lines = []
         pg_readings = []  # (device_id, metric_name, timestamp, value)
         pg_devices = []   # (device_id, class, alias, manufacturer, product_code, uid)
         now_utc = datetime.now(timezone.utc)
@@ -724,52 +720,8 @@ class EpCubeCollector:
                 self._poll_errors += 1
                 continue
 
-            # Build Prometheus labels matching mock exporter format
-            bat_labels = {
-                "device": f"epcube{dev_id}_battery",
-                "ip": "cloud",
-                "class": "storage_battery",
-            }
-            sol_labels = {
-                "device": f"epcube{dev_id}_solar",
-                "ip": "cloud",
-                "class": "home_solar",
-            }
-
-            bl = ",".join(f'{k}="{v}"' for k, v in bat_labels.items())
-            sl = ",".join(f'{k}="{v}"' for k, v in sol_labels.items())
-
             # ── Parse metrics from API response (pure function) ──
             m = parse_device_metrics(data)
-
-            # ── Prometheus text format (vestigial — see #93) ──
-            lines.append("# HELP epcube_solar_instantaneous_generation_watts Current solar generation")
-            lines.append("# TYPE epcube_solar_instantaneous_generation_watts gauge")
-            lines.append(f"epcube_solar_instantaneous_generation_watts{{{sl}}} {m['solar_w']}")
-
-            lines.append("# HELP epcube_battery_state_of_capacity_percent Battery SoC")
-            lines.append("# TYPE epcube_battery_state_of_capacity_percent gauge")
-            lines.append(f"epcube_battery_state_of_capacity_percent{{{bl}}} {m['soc']}")
-
-            lines.append("# HELP epcube_grid_power_watts Grid power (positive=import, negative=export)")
-            lines.append("# TYPE epcube_grid_power_watts gauge")
-            lines.append(f"epcube_grid_power_watts{{{bl}}} {m['grid_w']}")
-
-            lines.append("# HELP epcube_home_load_power_watts Home load power consumption")
-            lines.append("# TYPE epcube_home_load_power_watts gauge")
-            lines.append(f"epcube_home_load_power_watts{{{bl}}} {m['backup_w']}")
-
-            lines.append("# HELP epcube_battery_power_watts Battery power (positive=charge, negative=discharge)")
-            lines.append("# TYPE epcube_battery_power_watts gauge")
-            lines.append(f"epcube_battery_power_watts{{{bl}}} {m['battery_w']}")
-
-            lines.append("# HELP epcube_self_sufficiency_rate Self-sufficiency percentage")
-            lines.append("# TYPE epcube_self_sufficiency_rate gauge")
-            lines.append(f"epcube_self_sufficiency_rate{{{bl}}} {m['self_sufficiency']}")
-
-            lines.append("# HELP epcube_battery_stored_kwh Current battery energy level")
-            lines.append("# TYPE epcube_battery_stored_kwh gauge")
-            lines.append(f"epcube_battery_stored_kwh{{{bl}}} {m['bat_stored_kwh']}")
 
             # ── Capture snapshot for debug UI ──
             _STATUS_MAP = {
@@ -782,10 +734,6 @@ class EpCubeCollector:
             today_str = datetime.now(_TZ).strftime("%Y-%m-%d")
             bat_peak_kwh = update_battery_peak(self._bat_peak, dev_id, m["bat_stored_kwh"], today_str)
             m["bat_peak_kwh"] = bat_peak_kwh
-
-            lines.append("# HELP epcube_battery_peak_stored_kwh Peak battery energy level today")
-            lines.append("# TYPE epcube_battery_peak_stored_kwh gauge")
-            lines.append(f"epcube_battery_peak_stored_kwh{{{bl}}} {bat_peak_kwh}")
 
             snapshot["devices"].append({
                 "name": dev_name,
@@ -807,27 +755,6 @@ class EpCubeCollector:
                 "backup_kwh": 0.0,
             })
 
-            # ── Scrape health ──
-            now_ts = int(time.time())
-            for d_labels in [bat_labels, sol_labels]:
-                dl = ",".join(f'{k}="{v}"' for k, v in d_labels.items())
-                lines.append(f"epcube_scrape_success{{{dl}}} 1")
-                lines.append(f"epcube_last_scrape_timestamp_seconds{{{dl}}} {now_ts}")
-
-            # ── Device info ──
-            status_label = _STATUS_MAP.get(m["system_status_raw"], str(m["system_status_raw"]))
-            for dl in [bat_labels, sol_labels]:
-                info_labels = {
-                    **dl,
-                    "manufacturer": "Canadian Solar",
-                    "product_code": f"EP Cube (devType={dev_type})",
-                    "uid": sg_sn,
-                    "system_status": status_label,
-                    "ress_count": str(m["ress_count"]),
-                }
-                il = ",".join(f'{k}="{v}"' for k, v in info_labels.items())
-                lines.append(f"epcube_device_info{{{il}}} 1")
-
             # ── Accumulate Postgres readings (pure function) ──
             if self._pg:
                 base_id = f"epcube{dev_id}"
@@ -847,26 +774,13 @@ class EpCubeCollector:
                 today = datetime.now(_TZ).strftime("%Y-%m-%d")
                 elec = self._api(f"/home/queryDataElectricityV2?devId={dev['id']}&scopeType=1&queryDateStr={today}")
                 edata = elec.get("data", {})
-                bl = f'device="epcube{dev["id"]}_battery",ip="cloud",class="storage_battery"'
 
                 solar_kwh = _nz(float(edata.get("solarElectricity", 0)))
-                lines.append("# HELP epcube_solar_cumulative_generation_kwh Total energy generated today")
-                lines.append("# TYPE epcube_solar_cumulative_generation_kwh gauge")
-                lines.append(f"epcube_solar_cumulative_generation_kwh{{{bl}}} {solar_kwh}")
 
                 grid_from = _nz(float(edata.get("gridElectricityFrom", 0)))
                 grid_to = _nz(float(edata.get("gridElectricityTo", 0)))
-                lines.append("# HELP epcube_grid_import_kwh Grid energy imported today")
-                lines.append("# TYPE epcube_grid_import_kwh gauge")
-                lines.append(f"epcube_grid_import_kwh{{{bl}}} {grid_from}")
-                lines.append("# HELP epcube_grid_export_kwh Grid energy exported today")
-                lines.append("# TYPE epcube_grid_export_kwh gauge")
-                lines.append(f"epcube_grid_export_kwh{{{bl}}} {grid_to}")
 
                 backup_kwh = _nz(float(edata.get("backUpElectricity", 0)))
-                lines.append("# HELP epcube_home_supply_cumulative_kwh Daily cumulative home supply")
-                lines.append("# TYPE epcube_home_supply_cumulative_kwh gauge")
-                lines.append(f"epcube_home_supply_cumulative_kwh{{{bl}}} {backup_kwh}")
 
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])
@@ -890,9 +804,7 @@ class EpCubeCollector:
             except Exception as e:
                 log.warning("Failed to fetch daily energy for device %s: %s", dev.get("name"), e)
 
-        lines.append("")
         with self._lock:
-            self._metrics_text = "\n".join(lines)
             self._last_poll = time.time()
             self._poll_count += 1
             self._consecutive_errors = 0
@@ -902,7 +814,7 @@ class EpCubeCollector:
             else:
                 self._history.append(snapshot)
 
-        log.info("Poll complete: %d metric lines for %d device(s)", len(lines), len(self._devices))
+        log.info("Poll complete: %d device(s)", len(self._devices))
 
         # ── Write to PostgreSQL (if configured) ──
         if self._pg and (pg_devices or pg_readings):
@@ -930,9 +842,6 @@ class EpCubeCollector:
                 checks.append(f"{self._consecutive_errors} consecutive errors")
             return {"healthy": len(checks) == 0, "checks": checks}
 
-    def get_metrics(self):
-        with self._lock:
-            return self._metrics_text
 
     def get_status(self):
         """Return debug status dict for the web UI."""
@@ -1085,7 +994,7 @@ def _render_status_page(status, health):
   .nav a:hover {{ text-decoration: underline; }}
 </style>
 </head><body>
-<div class="nav"><a href="/vue">Emporia Vue</a> &middot; <a href="/metrics">/metrics</a> &middot; <a href="/health">/health</a></div>
+<div class="nav"><a href="/vue">Emporia Vue</a> &middot; <a href="/health">/health</a></div>
 <h1>&#9889; epcube-exporter — debug status
 <span style="font-size:0.6em;background:{'#00d4aa' if health['healthy'] else '#e74c3c'};color:#fff;padding:0.2em 0.7em;border-radius:12px;margin-left:0.8em;vertical-align:middle">{'&#10003; healthy' if health['healthy'] else '&#10007; ' + ', '.join(health['checks'])}</span>
 </h1>
@@ -1383,17 +1292,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/.auth/callback"):
             self._handle_callback()
             return
-        if self.path == "/metrics":
-            if self.collector:
-                body = self.collector.get_metrics().encode()
-            else:
-                body = b"# No EP Cube collector configured\n"
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-        elif self.path == "/health":
+        if self.path == "/health":
             if self.collector:
                 health = self.collector.get_health()
             else:
@@ -2130,8 +2029,8 @@ def main():
     # Start HTTP server
     MetricsHandler.collector = collector
     MetricsHandler.vue_collector = vue_collector
-    server = HTTPServer(("0.0.0.0", METRICS_PORT), MetricsHandler)
-    log.info("Serving metrics on :%d/metrics (poll interval: %ds)", METRICS_PORT, POLL_INTERVAL)
+    server = HTTPServer(("0.0.0.0", HTTP_PORT), MetricsHandler)
+    log.info("Serving on :%d (poll interval: %ds)", HTTP_PORT, POLL_INTERVAL)
     if DISABLE_AUTH:
         log.info("Auth DISABLED — debug page is unauthenticated (local dev mode)")
     else:
