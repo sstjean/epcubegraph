@@ -16,7 +16,7 @@ Azure deployments host the API and exporter in Azure Container Apps and use Azur
 ## Technical Context
 
 **Language/Version**: C# / .NET 10 for API, Python 3.12 for exporter  
-**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web, Npgsql, prometheus-net.AspNetCore, Swashbuckle.AspNetCore, psycopg2, OpenCV, PyCryptodome  
+**Primary Dependencies**: ASP.NET Core Minimal API, Microsoft.Identity.Web, Npgsql, Swashbuckle.AspNetCore, psycopg2, OpenCV, PyCryptodome  
 **Storage**: PostgreSQL 17 locally; Azure Database for PostgreSQL Flexible Server in Azure  
 **Testing**: xUnit + coverlet + WebApplicationFactory + Testcontainers.PostgreSql for API, Python exporter tests for the writer and cloud polling logic  
 **Target Platform**: Azure Container Apps + Azure Database for PostgreSQL Flexible Server  
@@ -111,7 +111,7 @@ infra/
 
 - Telemetry endpoints require Entra ID bearer tokens.
 - `user_impersonation` is enforced as the default authorization scope.
-- `/metrics` and exporter `/health` remain unauthenticated because they expose operational state, not user telemetry.
+- Exporter `/health` remains unauthenticated because it exposes operational state, not user telemetry.
 
 ### Local Development
 
@@ -129,7 +129,7 @@ infra/
 
 | Decision | Why It Exists | Simpler Alternative Rejected Because |
 |----------|---------------|--------------------------------------|
-| Unauthenticated operational endpoints (`/metrics`, exporter `/health`) | They support monitoring and expose no user telemetry | Requiring auth for operational endpoints adds friction without protecting sensitive data paths |
+| Unauthenticated operational endpoints (exporter `/health`) | They support monitoring and expose no user telemetry | Requiring auth for operational endpoints adds friction without protecting sensitive data paths |
 | Exporter remains Python while API is C# | The captcha and cloud-auth implementation already exists and is validated in Python | Rewriting the exporter now would expand scope without improving current functionality |
 
 ## Current State

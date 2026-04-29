@@ -26,7 +26,12 @@ terraform {
   # Remote state in Azure Blob Storage (centralus, private endpoint only).
   # Config values loaded via -backend-config flags in cd.yml.
   # Storage account access is via private endpoint from the self-hosted runner.
-  backend "azurerm" {}
+  backend "azurerm" {
+    resource_group_name  = ""
+    storage_account_name = ""
+    container_name       = ""
+    key                  = ""
+  }
 }
 
 provider "azurerm" {

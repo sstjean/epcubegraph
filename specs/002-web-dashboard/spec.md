@@ -107,7 +107,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 - The telemetry API from feature 001-data-ingestor is available and operational.
 - A single user (the system owner) is the primary consumer; multi-user dashboards are not required.
 - The system has 2 EP Cube gateway devices. The dashboard layout is a fixed 2-device grid; dynamic device discovery or unlimited scaling is not required.
-- The backend data store is PostgreSQL. The API uses a clean REST JSON contract — no Prometheus compatibility constraint. The dashboard consumes this API exclusively.
+- The backend data store is PostgreSQL. The API uses a clean REST JSON contract. The dashboard consumes this API exclusively.
 - Historical telemetry data is retained indefinitely (no automatic deletion or expiry). The dashboard time range presets and custom ranges may access the full history of stored data.
 
 
@@ -128,7 +128,7 @@ The dashboard provides interactive graphs (e.g., line charts) showing solar gene
 ### Session 2026-03-22
 
 - Q: How many EP Cube gateway devices should the dashboard support simultaneously? → A: 2 devices, displayed in a grid layout.
-- Q: Does the data store migration change any dashboard-facing API contract? → A: Yes — migration to PostgreSQL is complete. The API was redesigned with a clean JSON format. No Prometheus compatibility needed.
+- Q: Does the data store migration change any dashboard-facing API contract? → A: Yes — migration to PostgreSQL is complete. The API was redesigned with a clean JSON format.
 - Q: What is the minimum data retention period for historical telemetry? → A: Indefinite (never delete, grow forever).
 - Q: When the API returns data for only 1 of the 2 devices, how should the dashboard behave? → A: Show both cards; display the missing device as "offline" using the existing stale-data indicator (FR-006).
 - Q: Should the dashboard expose any operational health signal beyond what the user sees in the UI? → A: Integrate Application Insights for client-side error telemetry.

@@ -60,7 +60,7 @@ Protect telemetry endpoints with Microsoft Entra ID bearer-token authentication 
 ### Current Shape
 
 - Telemetry endpoints require auth
-- `/metrics` and exporter `/health` stay unauthenticated because they expose operational state only
+- Exporter `/health` stays unauthenticated because it exposes operational state only
 - Exporter debug pages use browser auth in Azure and a development-only bypass locally
 
 ## Topic 4: Exporter-to-Database Write Path
@@ -94,7 +94,6 @@ Expose operational health and metrics without exposing user telemetry.
 
 ### Current Shape
 
-- API `/metrics` via `prometheus-net`
 - API structured JSON logging
 - Exporter `/health`
 - Exporter authenticated status pages for runtime inspection

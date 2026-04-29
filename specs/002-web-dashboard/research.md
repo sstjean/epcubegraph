@@ -151,7 +151,7 @@ Responses use the active JSON contract (`metric`, `readings`, `series`, and type
 
 ### Impact Assessment
 
-Since we own all clients, the API contract redesign is an opportunity to simplify. The dashboard's `types.ts`, `api.ts`, and graph data conversion will be updated during the migration. No backward compatibility with Prometheus ecosystem tools is needed.
+Since we own all clients, the API contract redesign is an opportunity to simplify. The dashboard's `types.ts`, `api.ts`, and graph data conversion will be updated during the migration. No backward compatibility with legacy monitoring tools is needed.
 
 ### No Action Required Now
 
@@ -191,7 +191,7 @@ Custom date ranges use the same tier table, selected by range duration. No cap o
 | SPA Hosting | Azure SWA Free | $0/month | Already implemented |
 | Client Telemetry | @microsoft/applicationinsights-web v3 (classic mode) | $0 (free tier) | Low — ~50 lines of init + wrapper code |
 | Charting | uPlot v1.6.31 (canvas) | $0 | Already installed |
-| API Contract | Current format (will change during Azure SQL migration — no Prometheus compatibility needed since we own all clients) | $0 | Low — types.ts changes deferred |
+| API Contract | Current format (will change during Azure SQL migration — we own all clients) | $0 | Low — types.ts changes deferred |
 | Data Tiering | Client-side step calculation | $0 | Low — step parameter in query |
 
 All decisions prioritize Simplicity (Constitution I), avoid YAGNI (Constitution II), use Azure-native services (Platform Constraints), and are fully Terraform-provisioned (DevOps: IaC).

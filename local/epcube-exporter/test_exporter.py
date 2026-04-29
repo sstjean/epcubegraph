@@ -30,7 +30,8 @@ import exporter
 
 def _make_collector():
     """Create a collector ready for testing (no real auth)."""
-    c = exporter.EpCubeCollector("user@test.com", "password")
+    pg = MagicMock()
+    c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg)
     return c
 
 
@@ -94,7 +95,7 @@ def _mock_api_for(devices, home_info=None, elec_data=None):
 # Testable HTTP handler (avoids BaseHTTPRequestHandler.__init__)
 # ---------------------------------------------------------------------------
 
-class _TestableHandler(exporter.MetricsHandler):
+class _TestableHandler(exporter.ExporterHandler):
     """Subclass that bypasses the real __init__ so we can call do_GET in tests."""
     def __init__(self):
         # Skip BaseHTTPRequestHandler.__init__ which needs request/client/server
@@ -601,7 +602,6 @@ class TestHTTPHandler(unittest.TestCase):
     def setUp(self):
         self.collector = _make_collector()
         self.collector._last_poll = time.time()
-        self.collector._metrics_text = "# test metric\ntest_metric 42\n"
 
     def _make_handler(self, path, headers=None):
         """Build a testable handler without opening a real socket."""
@@ -616,14 +616,9 @@ class TestHTTPHandler(unittest.TestCase):
         h.do_GET()
         return h
 
-    def test_metrics_returns_200(self):
+    def test_metrics_returns_404(self):
         h = self._make_handler("/metrics")
-        h.send_response.assert_called_with(200)
-
-    def test_metrics_no_auth_required(self):
-        with patch.object(exporter, "DISABLE_AUTH", False):
-            h = self._make_handler("/metrics")
-            h.send_response.assert_called_with(200)
+        h.send_response.assert_called_with(404)
 
     def test_health_returns_200_when_healthy(self):
         h = self._make_handler("/health")
@@ -831,183 +826,6 @@ class TestSnapshotData(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Prometheus metrics format tests
-# ---------------------------------------------------------------------------
-
-class TestPrometheusMetrics(unittest.TestCase):
-
-    def test_metrics_contain_expected_names(self):
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
-            c.poll()
-
-        metrics = c.get_metrics()
-        expected_metrics = [
-            "epcube_solar_instantaneous_generation_watts",
-            "epcube_battery_state_of_capacity_percent",
-            "epcube_battery_power_watts",
-            "epcube_grid_power_watts",
-            "epcube_home_load_power_watts",
-            "epcube_self_sufficiency_rate",
-            "epcube_solar_cumulative_generation_kwh",
-            "epcube_grid_import_kwh",
-            "epcube_grid_export_kwh",
-            "epcube_battery_stored_kwh",
-            "epcube_battery_peak_stored_kwh",
-            "epcube_home_supply_cumulative_kwh",
-            "epcube_scrape_success",
-            "epcube_device_info",
-        ]
-        for name in expected_metrics:
-            self.assertIn(name, metrics, f"Missing metric: {name}")
-
-    def test_metrics_labels_format(self):
-        c = _make_collector()
-        devs = [_make_device(dev_id="9999")]
-        c._devices = devs
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
-            c.poll()
-
-        metrics = c.get_metrics()
-        self.assertIn('device="epcube9999_battery"', metrics)
-        self.assertIn('device="epcube9999_solar"', metrics)
-        self.assertIn('ip="cloud"', metrics)
-
-    def test_battery_stored_kwh_exported(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(batteryCurrentElectricity="15.5")
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_battery_stored_kwh", metrics)
-        self.assertIn('epcube_battery_stored_kwh{device="epcube1234_battery"', metrics)
-        self.assertIn("15.5", metrics.split("epcube_battery_stored_kwh{")[1].split("\n")[0])
-
-    def test_home_supply_cumulative_kwh_exported(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        elec_data = _make_electricity_data(backUpElectricity=10.0)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, elec_data=elec_data)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_home_supply_cumulative_kwh", metrics)
-        self.assertIn('epcube_home_supply_cumulative_kwh{device="epcube1234_battery"', metrics)
-        self.assertIn("10.0", metrics.split("epcube_home_supply_cumulative_kwh{")[1].split("\n")[0])
-
-    def test_device_info_includes_system_status_label(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(systemStatus=1)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        # system_status label should appear on epcube_device_info lines
-        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
-        self.assertTrue(len(info_lines) >= 2)  # battery + solar
-        for line in info_lines:
-            self.assertIn('system_status="Self-Use"', line)
-
-    def test_device_info_includes_ress_count_label(self):
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(ressNumber=3)
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home_info)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        info_lines = [l for l in metrics.splitlines() if l.startswith("epcube_device_info{")]
-        self.assertTrue(len(info_lines) >= 2)
-        for line in info_lines:
-            self.assertIn('ress_count="3"', line)
-
-    def test_battery_peak_stored_kwh_exported(self):
-        """Peak battery stored tracks max and is exported as a Prometheus metric."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
-
-        # Act — first poll sets peak to 20.0
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home1)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        self.assertIn("epcube_battery_peak_stored_kwh", metrics)
-        line = [l for l in metrics.splitlines()
-                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
-        self.assertIn('device="epcube1234_battery"', line)
-        self.assertTrue(line.endswith("20.0"))
-
-    def test_battery_peak_retains_max_in_metric(self):
-        """After discharge, peak metric still reflects the day's high-water mark."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-
-        # Act — first poll at 20 kWh, second at 15 kWh
-        home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home1)):
-            c.poll()
-        c._history[-1]["time_minute"] = "old"  # force new snapshot
-
-        home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info=home2)):
-            c.poll()
-
-        # Assert — peak should still be 20.0
-        metrics = c.get_metrics()
-        line = [l for l in metrics.splitlines()
-                if l.startswith("epcube_battery_peak_stored_kwh{")][0]
-        self.assertTrue(line.endswith("20.0"))
-
-
-# ---------------------------------------------------------------------------
 # Negative zero normalization tests
 # ---------------------------------------------------------------------------
 
@@ -1063,36 +881,6 @@ class TestNegativeZeroNormalization(unittest.TestCase):
 
         # Assert
         self.assertEqual(result, -5.0)
-
-    def test_metrics_no_negative_zero_with_zero_grid_power(self):
-        """When API returns gridPower=0, negation must NOT produce -0 in metrics."""
-        # Arrange
-        c = _make_collector()
-        devs = [_make_device()]
-        c._devices = devs
-        c._token = "fake-token"
-        home_info = _make_home_device_info(
-            solarPower=0, batterySoc=50, batteryPower=0,
-            gridPower=0, backUpPower=0, selfHelpRate=0,
-            batteryCurrentElectricity="0",
-        )
-        elec_data = _make_electricity_data(
-            solarElectricity=0, gridElectricityFrom=0,
-            gridElectricityTo=0, backUpElectricity=0,
-        )
-
-        # Act
-        with patch.object(exporter, "_api_request",
-                          side_effect=_mock_api_for(devs, home_info, elec_data)):
-            c.poll()
-
-        # Assert
-        metrics = c.get_metrics()
-        for line in metrics.splitlines():
-            if line.startswith("#") or not line.strip():
-                continue
-            self.assertNotRegex(line, r'\s-0(\.0+)?$',
-                                f"Negative zero found in metric line: {line}")
 
     def test_snapshot_no_negative_zero_with_zero_grid_power(self):
         """Snapshot values must not contain negative zero."""
@@ -1296,9 +1084,10 @@ class TestStaleDataReauth(unittest.TestCase):
                 c.poll()
 
         self.assertEqual(c._token, "fresh-token")
-        # Verify metrics were generated with good data (non-zero)
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
-        self.assertIn("75", c._metrics_text)
+        # Verify poll completed with good data (snapshot has non-zero values)
+        self.assertTrue(len(c._history) > 0)
+        snap_dev = c._history[-1]["devices"][0]
+        self.assertEqual(snap_dev["battery_soc"], 75)
 
 
 # ---------------------------------------------------------------------------
@@ -1446,19 +1235,6 @@ class TestPollWithPostgres(unittest.TestCase):
         # Should have called write_readings via execute_values
         self.assertTrue(mock_pg.extras.execute_values.called)
 
-    def test_poll_without_postgres_still_works(self):
-        """Poll works fine when pg_writer is None."""
-        c = _make_collector()  # no pg_writer
-        dev = _make_device()
-        c._devices = [dev]
-        c._token = "fake-token"
-
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
-            c.poll()
-
-        # Prometheus metrics should still be generated
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
-
     @patch.object(exporter, "psycopg2")
     def test_poll_continues_on_postgres_error(self, mock_pg):
         """Poll should not fail if Postgres write raises an exception."""
@@ -1473,8 +1249,30 @@ class TestPollWithPostgres(unittest.TestCase):
         with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()  # Should NOT raise
 
-        # Prometheus metrics should still be generated
-        self.assertIn("epcube_battery_state_of_capacity_percent", c._metrics_text)
+        # Poll should complete and update snapshot history
+        self.assertTrue(len(c._history) > 0)
+
+
+# ---------------------------------------------------------------------------
+# Test: poll() does not produce _metrics_text attribute
+# ---------------------------------------------------------------------------
+
+class TestPollNoMetricsText(unittest.TestCase):
+    """Verify that EpCubeCollector has no _metrics_text attribute after poll()."""
+
+    def test_poll_no_metrics_text_attribute(self):
+        # Arrange
+        c = _make_collector()
+        dev = _make_device()
+        c._devices = [dev]
+        c._token = "fake-token"
+
+        # Act
+        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+            c.poll()
+
+        # Assert
+        self.assertFalse(hasattr(c, "_metrics_text"))
 
 
 # ---------------------------------------------------------------------------
@@ -1486,12 +1284,14 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
 
     @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p",
                               "EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_both_credentials_starts_both(self):
         # Arrange
         with patch.object(exporter, "EpCubeCollector") as mock_epc, \
              patch.object(exporter, "VueCollector") as mock_vue, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1508,8 +1308,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
             mock_vue.assert_called_once()
 
     @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_only_epcube_credentials_starts_epcube_only(self):
         # Arrange
         env = os.environ.copy()
@@ -1517,6 +1317,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
         env.pop("EMPORIA_PASSWORD", None)
         with patch.dict(os.environ, env, clear=True), \
              patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1534,8 +1336,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
             self.assertEqual(len(vue_threads), 0, "Vue thread should not start without Vue credentials")
 
     @patch.dict(os.environ, {"EMPORIA_USERNAME": "eu", "EMPORIA_PASSWORD": "ep"}, clear=False)
-    @patch.object(exporter, "psycopg2", None)
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_only_vue_credentials_starts_vue_only(self):
         # Arrange
         env = os.environ.copy()
@@ -1543,6 +1345,8 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
         env.pop("EPCUBE_PASSWORD", None)
         with patch.dict(os.environ, env, clear=True), \
              patch.object(exporter, "VueCollector") as mock_vue, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
              patch("threading.Thread") as mock_thread, \
              patch.object(exporter.HTTPServer, "__init__", return_value=None), \
              patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
@@ -1565,7 +1369,7 @@ class TestFlexibleCredentialStartup(unittest.TestCase):
 
         # Act & Assert
         with patch.dict(os.environ, env, clear=True), \
-             patch.object(exporter, "POSTGRES_DSN", ""), \
+             patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test"), \
              self.assertRaises(SystemExit) as ctx:
             exporter.main()
         self.assertEqual(ctx.exception.code, 1)
@@ -1896,7 +1700,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.login.assert_called_once_with(username="user@test.com", password="password")
@@ -1910,7 +1714,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("bad@test.com", "badpass")
+        collector = exporter.VueCollector("bad@test.com", "badpass", pg_writer=MagicMock())
 
         # Assert
         self.assertFalse(collector._authenticated)
@@ -1923,7 +1727,7 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.get_devices.assert_called_once()
@@ -1943,7 +1747,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll()
@@ -2024,7 +1828,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         before = time.time()
@@ -2042,7 +1846,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value = {}
         mock_pyemvue_cls.return_value = mock_vue
 
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertFalse(collector._authenticated)
 
         # Act — poll should retry login
@@ -2090,7 +1894,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertEqual(collector._device_count, 1)
 
         # Add a new device
@@ -2137,7 +1941,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert — only 1 device, not 2, but channels merged from both entries
         self.assertEqual(collector._device_count, 1)
@@ -2161,7 +1965,7 @@ class TestVuePollInterval(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Simulate one iteration of vue_poll_loop
         collector._poll_interval = mock_read_interval.return_value
@@ -2185,7 +1989,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         for ch in mock_vue.get_device_list_usage.return_value[12345].channels.values():
             ch.usage = None
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._had_successful_poll = True  # had data before → this is rate limiting, not offline
 
         # Act
@@ -2199,7 +2003,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         collector._recovery_count = collector.RECOVERY_THRESHOLD - 1
 
@@ -2214,7 +2018,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         mock_pg = MagicMock()
         collector._pg_writer = mock_pg
@@ -2240,7 +2044,7 @@ class TestVueDebugPage(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
 
         # Act
@@ -2259,7 +2063,7 @@ class TestVueDebugPage(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2459,7 +2263,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2479,7 +2283,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2505,7 +2309,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 0.0,
@@ -2527,7 +2331,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2542,7 +2346,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
@@ -2596,6 +2400,20 @@ class TestEpCubePageNavLink(unittest.TestCase):
         # Assert — no Vue circuit data (nav link is OK, circuit tables are not)
         self.assertNotIn("vue_readings", html)
         self.assertNotIn("Vue:   Device", html)
+
+    def test_status_page_no_metrics_link(self):
+        # Arrange
+        c = _make_collector()
+        c._last_poll = time.time()
+        c._consecutive_errors = 0
+        status = c.get_status()
+        health = c.get_health()
+
+        # Act
+        html = exporter._render_status_page(status, health)
+
+        # Assert
+        self.assertNotIn("/metrics", html)
 
 
 # ---------------------------------------------------------------------------
@@ -2700,7 +2518,7 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
 class TestReadVueDailyPollInterval(unittest.TestCase):
     """Tests for _read_vue_daily_poll_interval_from_db."""
 
-    @patch.object(exporter, "POSTGRES_DSN", "")
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_returns_default_when_no_dsn(self):
         # Act
         result = exporter._read_vue_daily_poll_interval_from_db()
@@ -2766,7 +2584,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll_daily()
@@ -2843,7 +2661,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         mock_vue.get_device_list_usage.side_effect = Exception("API down")
 
         # Act — should not raise
@@ -2856,7 +2674,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._authenticated = False
 
         # Act
@@ -2873,7 +2691,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=None)
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act — should not raise
         collector.poll_daily()
@@ -2889,7 +2707,7 @@ class TestVueDailyPollLoop(unittest.TestCase):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password")
+        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         call_count = 0
 
         def sleep_side_effect(secs):

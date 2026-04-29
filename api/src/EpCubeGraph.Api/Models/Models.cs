@@ -27,8 +27,6 @@ public record HealthResponse(
     [property: JsonPropertyName("status")] string Status,
     [property: JsonPropertyName("datastore")] string Datastore);
 
-// New clean response types — no Prometheus JSON shape
-
 public record Reading(
     [property: JsonPropertyName("device_id")] string DeviceId,
     [property: JsonPropertyName("timestamp")] long Timestamp,

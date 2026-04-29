@@ -5,7 +5,7 @@
 # (via ./deploy.sh).
 #
 # Services:
-#   mock-exporter  → generates fake EP Cube metrics and writes to PostgreSQL
+#   mock-exporter  → generates fake EP Cube data and writes to PostgreSQL
 #   postgres       → local database
 #
 # Usage:

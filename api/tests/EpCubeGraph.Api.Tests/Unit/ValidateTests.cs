@@ -241,9 +241,9 @@ public class ValidateTests
     }
 
     [Fact]
-    public void StepSeconds_PrometheusFormat_ReturnsError()
+    public void StepSeconds_DurationFormat_ReturnsError()
     {
-        // "1m" Prometheus duration format is not valid — must be plain seconds
+        // "1m" duration format is not valid — must be plain seconds
         var result = Validate.StepSeconds("1m", "step");
 
         Assert.NotNull(result);
