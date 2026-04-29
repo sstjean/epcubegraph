@@ -22,8 +22,10 @@ import base64
 import collections
 import hashlib
 import hmac
+import html
 import json
 import logging
+import math
 import os
 import secrets
 import sys
@@ -415,6 +417,17 @@ def _jwt_exp(token):
         return 0
 
 
+def _safe_float(v, default=0.0):
+    """Convert to float, rejecting NaN/Infinity. Returns default on failure."""
+    try:
+        f = float(v)
+    except (ValueError, TypeError):
+        return float(default)
+    if math.isnan(f) or math.isinf(f):
+        return float(default)
+    return f
+
+
 def _nz(v):
     """Normalize negative zero to positive zero."""
     return 0.0 if v == 0 else v
@@ -425,22 +438,22 @@ def parse_device_metrics(data):
 
     Pure function — no side effects, no I/O.
     """
-    solar_kw = _nz(float(data.get("solarPower", 0)))
-    grid_kw = _nz(float(data.get("gridPower", 0)))
-    backup_kw = _nz(float(data.get("backUpPower", 0)))
+    solar_kw = _nz(_safe_float(data.get("solarPower", 0)))
+    grid_kw = _nz(_safe_float(data.get("gridPower", 0)))
+    backup_kw = _nz(_safe_float(data.get("backUpPower", 0)))
     battery_kw = _nz(round(solar_kw + grid_kw - backup_kw, 2))
     return {
         "solar_kw": solar_kw,
         "solar_w": _nz(round(solar_kw * 1000, 1)),
-        "soc": _nz(float(data.get("batterySoc", 0))),
+        "soc": _nz(_safe_float(data.get("batterySoc", 0))),
         "grid_kw": grid_kw,
         "grid_w": _nz(round(grid_kw * 1000, 1)),
         "backup_kw": backup_kw,
         "backup_w": _nz(round(backup_kw * 1000, 1)),
         "battery_kw": battery_kw,
         "battery_w": _nz(round(battery_kw * 1000, 1)),
-        "self_sufficiency": _nz(float(data.get("selfHelpRate", 0))),
-        "bat_stored_kwh": _nz(float(data.get("batteryCurrentElectricity", 0))),
+        "self_sufficiency": _nz(_safe_float(data.get("selfHelpRate", 0))),
+        "bat_stored_kwh": _nz(_safe_float(data.get("batteryCurrentElectricity", 0))),
         "system_status_raw": data.get("systemStatus", "?"),
         "ress_count": data.get("ressNumber", "?"),
     }
@@ -624,6 +637,7 @@ class EpCubeCollector:
         self._poll_interval = DEFAULT_POLL_INTERVAL
         self._next_poll_at = 0.0
         self._pg = pg_writer
+        self._polling = False
 
     def _ensure_auth(self):
         if not self._token or self._token_expiring_soon():
@@ -661,7 +675,7 @@ class EpCubeCollector:
         if not data:
             return True
         _FIELDS = ("solarPower", "gridPower", "backUpPower", "batterySoc", "batteryCurrentElectricity")
-        return all(float(data.get(f, 0)) == 0 for f in _FIELDS)
+        return all(_safe_float(data.get(f, 0)) == 0 for f in _FIELDS)
 
     def _api(self, path):
         try:
@@ -680,6 +694,19 @@ class EpCubeCollector:
 
     def poll(self):
         """Fetch data from all devices and write to PostgreSQL."""
+        with self._lock:
+            if self._polling:
+                log.warning("Poll already in progress, skipping")
+                return
+            self._polling = True
+        try:
+            self._poll_inner()
+        finally:
+            with self._lock:
+                self._polling = False
+
+    def _poll_inner(self):
+        """Internal poll implementation."""
         self._ensure_auth()
 
         pg_readings = []  # (device_id, metric_name, timestamp, value)
@@ -774,12 +801,12 @@ class EpCubeCollector:
                 elec = self._api(f"/home/queryDataElectricityV2?devId={dev['id']}&scopeType=1&queryDateStr={today}")
                 edata = elec.get("data", {})
 
-                solar_kwh = _nz(float(edata.get("solarElectricity", 0)))
+                solar_kwh = _nz(_safe_float(edata.get("solarElectricity", 0)))
 
-                grid_from = _nz(float(edata.get("gridElectricityFrom", 0)))
-                grid_to = _nz(float(edata.get("gridElectricityTo", 0)))
+                grid_from = _nz(_safe_float(edata.get("gridElectricityFrom", 0)))
+                grid_to = _nz(_safe_float(edata.get("gridElectricityTo", 0)))
 
-                backup_kwh = _nz(float(edata.get("backUpElectricity", 0)))
+                backup_kwh = _nz(_safe_float(edata.get("backUpElectricity", 0)))
 
                 # Merge daily totals into snapshot
                 snap_dev = snap_by_id.get(dev["id"])
@@ -883,7 +910,7 @@ def _render_status_page(status, health):
             key = dev["id"]
             if key not in device_seen:
                 device_seen.add(key)
-                device_order.append((key, dev["name"]))
+                device_order.append((key, html.escape(dev["name"])))
     device_order.sort(key=lambda d: d[0])
 
     if not history or not device_order:
@@ -1527,6 +1554,7 @@ class VueCollector:
         self._start_time = time.time()
         self._last_readings = {}  # {(device_gid, channel_num): watts}
         self._channel_names = {}  # {(device_gid, channel_num): name}
+        self._polling = False
 
         self._login()
 
@@ -1609,6 +1637,19 @@ class VueCollector:
 
     def poll(self):
         """Fetch usage data from all Vue devices and write to PostgreSQL."""
+        with self._lock:
+            if self._polling:
+                log.warning("Vue poll already in progress, skipping")
+                return
+            self._polling = True
+        try:
+            self._poll_inner()
+        finally:
+            with self._lock:
+                self._polling = False
+
+    def _poll_inner(self):
+        """Internal poll implementation."""
         # Retry login if not authenticated
         if not self._authenticated:
             self._login()

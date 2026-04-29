@@ -7,10 +7,12 @@ namespace EpCubeGraph.Api.Tests.Integration;
 public class PostgresSettingsStoreTests : IClassFixture<PostgresFixture>
 {
     private readonly PostgresSettingsStore _store;
+    private readonly string _connectionString;
 
     public PostgresSettingsStoreTests(PostgresFixture fixture)
     {
-        _store = new PostgresSettingsStore(fixture.ConnectionString);
+        _connectionString = fixture.ConnectionString;
+        _store = new PostgresSettingsStore(_connectionString);
     }
 
     // ── Settings ──
@@ -220,5 +222,23 @@ public class PostgresSettingsStoreTests : IClassFixture<PostgresFixture>
 
         // Assert
         Assert.False(deleted);
+    }
+
+    // ── Concurrency ──
+
+    [Fact]
+    public async Task ConcurrentEnsureTables_DoesNotThrow()
+    {
+        // Arrange — fresh store so tables haven't been created yet
+        var store = new PostgresSettingsStore(_connectionString);
+
+        // Act — fire 10 concurrent operations that each trigger EnsureTablesAsync
+        var tasks = Enumerable.Range(0, 10)
+            .Select(_ => store.GetAllSettingsAsync())
+            .ToArray();
+
+        // Assert — no exceptions from the concurrent CREATE TABLE IF NOT EXISTS calls
+        var results = await Task.WhenAll(tasks);
+        Assert.All(results, r => Assert.NotNull(r));
     }
 }
