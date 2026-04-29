@@ -3,7 +3,7 @@
 **Last Updated**: 2026-04-28
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main`
-**Last merged**: PR #126 — Entra ID destroy race fix (depends_on)
+**Last merged**: PR #127 — Session procedures + NuGet updates + CI fix
 **Unpushed commits**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
@@ -12,10 +12,21 @@
 
 ## ⚡ Current State (2026-04-28)
 
-### PR #127 — Session Procedures (OPEN)
-- New: `.specify/memory/session-procedures.md` with Start Up and Shutdown steps
-- Updated: `.github/agents/copilot-instructions.md` references session-procedures.md
-- New: `.specify/memory/PROJECT_SUMMARY.md` (this file) — moved from Copilot memory to repo for portability
+### PR #127 — Session Procedures + NuGet + CI Fix (MERGED ✅)
+- New: `.specify/memory/session-procedures.md` — Start Up / Shutdown procedures
+- New: `.specify/memory/PROJECT_SUMMARY.md` — moved from Copilot memory to repo for portability
+- Updated: `.github/agents/copilot-instructions.md` — references session-procedures.md
+- CI fix: moved `paths-ignore` from workflow-level to job-level using `dorny/paths-filter@v3`
+  - Fixes docs-only PRs being blocked by required status checks (github.com/orgs/community/discussions/13690)
+- NuGet packages updated to latest:
+  - API: Microsoft.Identity.Web 4.8.0, Npgsql 10.0.2, Swashbuckle.AspNetCore 10.1.7
+  - API: Pin OpenTelemetry.Api 1.15.3 (GHSA-g94r-2vxg-569j)
+  - Tests: Microsoft.AspNetCore.Mvc.Testing 10.0.7, Microsoft.NET.Test.Sdk 18.5.1
+  - Tests: Testcontainers 4.11.0, xunit.runner.visualstudio 3.1.5
+  - Tests: Pin Microsoft.AspNetCore.DataProtection 10.0.7 (GHSA-9mv3-2cwr-p262)
+  - Tests: coverlet.collector pinned to 8.0.1 (10.0.0 has async state machine coverage regression — coverlet-coverage/coverlet#1337, #1767, fix in PR #1904)
+- PostgresFixture: adapted to Testcontainers 4.11.0 constructor change
+- Zero NuGet vulnerabilities, 391 API tests pass, 100% coverage
 
 ### PR #126 — Entra ID Destroy Race Fix (MERGED ✅)
 - `depends_on = [azuread_service_principal.api]` added to `azuread_application_identifier_uri.api`
@@ -65,7 +76,6 @@
 | 123 | Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated | tech-debt |
 | 120 | Feature 010: Simplify Vue Device Mapping | enhancement (should be closed — PR #124 merged) |
 | 115 | Separate Application Insights per environment | enhancement |
-| 113 | Add Panel Hierarchy UI editor to Settings | enhancement |
 | 93 | Remove vestigial /metrics endpoint | tech-debt |
 | 74 | Custom domains on devsbx.xyz | — |
 | 66 | Calendar-aware time range selector | enhancement |
@@ -74,11 +84,22 @@
 | 6 | iPad App | feature (spec only) |
 
 ### What's Next
-1. Merge PR #127 (session procedures)
-2. Close #120 (Feature 010 merged)
-3. #123 Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated
-4. #93 Remove vestigial /metrics endpoint + exporter SRP (Prometheus removal)
-5. #113 Panel Hierarchy UI editor
+1. Close #120 (Feature 010 merged — still open)
+2. #123 Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated
+3. #93 Remove vestigial /metrics endpoint + exporter SRP (Prometheus removal)
+4. #113 Panel Hierarchy UI editor
+5. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
+
+### Pending
+- Staging destroy running (run 25086514154) — tearing down epcubegraph-session-* resources
+- Dependabot PR opened: `dependabot/npm_and_yarn/dashboard/npm_and_yarn-5f44a83626`
+
+### Decisions Made This Session
+- "Start Up" / "Shutdown" = session context procedures, not Docker
+- Canonical session state lives in repo (`.specify/memory/`), not Copilot memory
+- Copilot repo memory files are pointers only to in-repo canonical files
+- CI `paths-ignore` moved to job-level `dorny/paths-filter` to fix docs-only PR merge blocks
+- coverlet.collector pinned to 8.0.1 due to 10.0.0 async state machine regression
 
 ### Production Services
 | Service | URL |
