@@ -3,7 +3,7 @@ using Npgsql;
 
 namespace EpCubeGraph.Api.Services;
 
-public class PostgresSettingsStore : ISettingsStore
+public class PostgresSettingsStore : ISettingsStore, IDisposable
 {
     private readonly string _connectionString;
     private readonly SemaphoreSlim _ensureTablesLock = new(1, 1);
@@ -12,6 +12,12 @@ public class PostgresSettingsStore : ISettingsStore
     public PostgresSettingsStore(string connectionString)
     {
         _connectionString = connectionString;
+    }
+
+    public void Dispose()
+    {
+        _ensureTablesLock.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private async Task EnsureTablesAsync(CancellationToken ct)
