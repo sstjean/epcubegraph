@@ -695,19 +695,19 @@ class TestHTTPHandler(unittest.TestCase):
         """Valid session cookie grants access to debug page."""
         with patch.object(exporter, "DISABLE_AUTH", False), \
              patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
-            # Create a session
             session_id = "test-session-123"
             with exporter._auth_lock:
                 exporter._sessions[session_id] = {
                     "expires": time.time() + 3600,
                     "user": "test@example.com",
                 }
-            signed = exporter._sign_session(session_id)
-            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-            h.send_response.assert_called_with(200)
-            # Cleanup
-            with exporter._auth_lock:
-                exporter._sessions.pop(session_id, None)
+            try:
+                signed = exporter._sign_session(session_id)
+                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+                h.send_response.assert_called_with(200)
+            finally:
+                with exporter._auth_lock:
+                    exporter._sessions.pop(session_id, None)
 
     def test_expired_session_denied(self):
         """Expired session cookie is rejected."""
@@ -719,12 +719,13 @@ class TestHTTPHandler(unittest.TestCase):
                     "expires": time.time() - 1,  # already expired
                     "user": "test@example.com",
                 }
-            signed = exporter._sign_session(session_id)
-            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-            h.send_response.assert_called_with(401)
-            # Cleanup
-            with exporter._auth_lock:
-                exporter._sessions.pop(session_id, None)
+            try:
+                signed = exporter._sign_session(session_id)
+                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+                h.send_response.assert_called_with(401)
+            finally:
+                with exporter._auth_lock:
+                    exporter._sessions.pop(session_id, None)
 
     def test_status_alias_works(self):
         with patch.object(exporter, "DISABLE_AUTH", True):
@@ -2828,6 +2829,182 @@ class TestBuildPostgresReadings(unittest.TestCase):
         bat = [r for r in readings if r[1] == "battery_power_watts"]
         self.assertEqual(len(bat), 1)
         self.assertEqual(bat[0][0], "epcube1_battery")
+
+
+class TestSafeFloat(unittest.TestCase):
+    """Tests for _safe_float — NaN/Infinity rejection."""
+
+    def test_normal_value(self):
+        self.assertAlmostEqual(exporter._safe_float(3.5), 3.5)
+
+    def test_string_value(self):
+        self.assertAlmostEqual(exporter._safe_float("3.5"), 3.5)
+
+    def test_nan_returns_zero(self):
+        self.assertEqual(exporter._safe_float(float("nan")), 0.0)
+
+    def test_nan_string_returns_zero(self):
+        self.assertEqual(exporter._safe_float("NaN"), 0.0)
+
+    def test_infinity_returns_zero(self):
+        self.assertEqual(exporter._safe_float(float("inf")), 0.0)
+
+    def test_negative_infinity_returns_zero(self):
+        self.assertEqual(exporter._safe_float(float("-inf")), 0.0)
+
+    def test_inf_string_returns_zero(self):
+        self.assertEqual(exporter._safe_float("Infinity"), 0.0)
+
+    def test_zero_returns_zero(self):
+        self.assertEqual(exporter._safe_float(0), 0.0)
+
+    def test_default_on_invalid(self):
+        self.assertEqual(exporter._safe_float("not_a_number", 0), 0.0)
+
+
+class TestParseDeviceMetricsNaN(unittest.TestCase):
+    """parse_device_metrics rejects NaN/Infinity from cloud API."""
+
+    def test_nan_solar_power_becomes_zero(self):
+        data = {"solarPower": "NaN", "gridPower": 0, "backUpPower": 0,
+                "batterySoc": 50, "selfHelpRate": 80,
+                "batteryCurrentElectricity": 10, "systemStatus": 4, "ressNumber": 1}
+        m = exporter.parse_device_metrics(data)
+        self.assertEqual(m["solar_kw"], 0.0)
+        self.assertEqual(m["solar_w"], 0.0)
+
+    def test_inf_grid_power_becomes_zero(self):
+        data = {"solarPower": 1.0, "gridPower": "Infinity", "backUpPower": 0,
+                "batterySoc": 50, "selfHelpRate": 80,
+                "batteryCurrentElectricity": 10, "systemStatus": 4, "ressNumber": 1}
+        m = exporter.parse_device_metrics(data)
+        self.assertEqual(m["grid_kw"], 0.0)
+
+
+class TestStaleDataNaN(unittest.TestCase):
+    """_data_looks_stale handles NaN without raising."""
+
+    def test_nan_rejected_to_zero_makes_stale(self):
+        # _safe_float rejects NaN → 0, so all fields become 0 → stale
+        data = {"solarPower": "NaN", "gridPower": 0, "backUpPower": 0,
+                "batterySoc": 0, "batteryCurrentElectricity": 0}
+        c = _make_collector()
+        self.assertTrue(c._data_looks_stale(data))
+
+
+class TestStatusPageHtmlEscaping(unittest.TestCase):
+    """Device names in the status page must be HTML-escaped."""
+
+    def _make_status(self, **overrides):
+        status = {
+            "version": exporter.__version__,
+            "uptime_s": 100,
+            "poll_count": 1,
+            "poll_errors": 0,
+            "last_poll": time.time(),
+            "poll_interval": 60,
+            "next_poll_at": time.time() + 30,
+            "devices": 1,
+            "history": [],
+        }
+        status.update(overrides)
+        return status
+
+    def _make_health(self):
+        return {"healthy": True, "checks": []}
+
+    def test_device_name_with_html_is_escaped(self):
+        snap = {
+            "time": "2026-04-29T12:00:00Z",
+            "time_minute": "2026-04-29T12:00Z",
+            "devices": [{
+                "name": "<script>alert('xss')</script>",
+                "id": "1234",
+                "solar_kw": 1.0, "battery_soc": 50, "battery_kw": 0.0,
+                "grid_kw": 0.0, "backup_kw": 1.0, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "bat_peak_kwh": 10.0, "ress_count": 1,
+                "solar_kwh": 5.0, "grid_import_kwh": 0.0,
+                "grid_export_kwh": 0.0, "backup_kwh": 3.0,
+            }],
+        }
+        html_out = exporter._render_status_page(
+            self._make_status(history=[snap]), self._make_health())
+        # Raw XSS payload must not appear in device name context
+        self.assertNotIn("<script>alert(", html_out)
+        # Escaped version should appear
+        self.assertIn("&lt;script&gt;", html_out)
+
+    def test_device_name_with_ampersand_is_escaped(self):
+        snap = {
+            "time": "2026-04-29T12:00:00Z",
+            "time_minute": "2026-04-29T12:00Z",
+            "devices": [{
+                "name": "Solar & Battery",
+                "id": "5678",
+                "solar_kw": 1.0, "battery_soc": 50, "battery_kw": 0.0,
+                "grid_kw": 0.0, "backup_kw": 1.0, "self_sufficiency": 100,
+                "system_status": "Normal", "bat_stored_kwh": 10.0,
+                "bat_peak_kwh": 10.0, "ress_count": 1,
+                "solar_kwh": 5.0, "grid_import_kwh": 0.0,
+                "grid_export_kwh": 0.0, "backup_kwh": 3.0,
+            }],
+        }
+        html_out = exporter._render_status_page(
+            self._make_status(history=[snap]), self._make_health())
+        self.assertIn("Solar &amp; Battery", html_out)
+
+
+class TestConcurrentPollGuard(unittest.TestCase):
+    """poll() must skip if another poll is already in progress."""
+
+    @patch("exporter._api_request")
+    @patch("exporter.authenticate", return_value="fake-token")
+    def test_overlapping_epcube_poll_skipped(self, mock_auth, mock_api):
+        devices = [_make_device()]
+        mock_api.side_effect = _mock_api_for(devices)
+        c = _make_collector()
+        c._token = "fake-token"
+        c._token_exp = time.time() + 9999
+        c._devices = devices
+
+        # Simulate a poll in progress
+        c._polling = True
+        c.poll()
+        # Should have been skipped — no API calls made
+        mock_api.assert_not_called()
+
+    @patch("exporter._api_request")
+    @patch("exporter.authenticate", return_value="fake-token")
+    def test_poll_sets_and_clears_polling_flag(self, mock_auth, mock_api):
+        devices = [_make_device()]
+        mock_api.side_effect = _mock_api_for(devices)
+        c = _make_collector()
+        c._token = "fake-token"
+        c._token_exp = time.time() + 9999
+        c._devices = devices
+
+        self.assertFalse(c._polling)
+        c.poll()
+        # After poll completes, flag should be cleared
+        self.assertFalse(c._polling)
+
+    @patch("exporter.PyEmVue")
+    def test_overlapping_vue_poll_skipped(self, mock_pyemvue):
+        vue_mock = MagicMock()
+        vue_mock.get_device_list_usage.return_value = {}
+        pg = MagicMock()
+        vc = exporter.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = [123]
+        vc._vue = vue_mock
+        vc._last_device_refresh = time.time()  # prevent discover_devices
+
+        # Simulate poll in progress
+        vc._polling = True
+        vc.poll()
+        # Should have been skipped — no API calls
+        vue_mock.get_device_list_usage.assert_not_called()
 
 
 class TestUpdateBatteryPeak(unittest.TestCase):

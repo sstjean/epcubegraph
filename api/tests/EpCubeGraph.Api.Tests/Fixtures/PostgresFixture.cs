@@ -176,7 +176,20 @@ public class PostgresFixture : IAsyncLifetime
         await conn.OpenAsync();
 
         using var cmd = new Npgsql.NpgsqlCommand(
-            "DELETE FROM readings; DELETE FROM devices; DELETE FROM vue_readings_daily; DELETE FROM vue_readings_1min; DELETE FROM vue_readings; DELETE FROM vue_channels; DELETE FROM vue_devices; DELETE FROM panel_hierarchy; DELETE FROM display_name_overrides;",
+            """
+            DO $$ BEGIN
+                DELETE FROM settings;
+            EXCEPTION WHEN undefined_table THEN NULL;
+            END $$;
+            DELETE FROM readings; DELETE FROM devices;
+            DELETE FROM vue_readings_daily; DELETE FROM vue_readings_1min;
+            DELETE FROM vue_readings; DELETE FROM vue_channels; DELETE FROM vue_devices;
+            DO $$ BEGIN
+                DELETE FROM panel_hierarchy;
+                DELETE FROM display_name_overrides;
+            EXCEPTION WHEN undefined_table THEN NULL;
+            END $$;
+            """,
             conn);
         await cmd.ExecuteNonQueryAsync();
     }
