@@ -3,9 +3,10 @@ using Npgsql;
 
 namespace EpCubeGraph.Api.Services;
 
-public class PostgresSettingsStore : ISettingsStore
+public class PostgresSettingsStore : ISettingsStore, IDisposable
 {
     private readonly string _connectionString;
+    private readonly SemaphoreSlim _ensureTablesLock = new(1, 1);
     private bool _tablesCreated;
 
     public PostgresSettingsStore(string connectionString)
@@ -13,39 +14,55 @@ public class PostgresSettingsStore : ISettingsStore
         _connectionString = connectionString;
     }
 
+    public void Dispose()
+    {
+        _ensureTablesLock.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
     private async Task EnsureTablesAsync(CancellationToken ct)
     {
         if (_tablesCreated) return;
 
-        await using var conn = new NpgsqlConnection(_connectionString);
-        await conn.OpenAsync(ct);
+        await _ensureTablesLock.WaitAsync(ct);
+        try
+        {
+            if (_tablesCreated) return;
 
-        const string sql = """
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value JSONB NOT NULL,
-                last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW()
-            );
+            await using var conn = new NpgsqlConnection(_connectionString);
+            await conn.OpenAsync(ct);
 
-            CREATE TABLE IF NOT EXISTS panel_hierarchy (
-                id SERIAL PRIMARY KEY,
-                parent_device_gid BIGINT NOT NULL,
-                child_device_gid BIGINT NOT NULL,
-                UNIQUE (parent_device_gid, child_device_gid)
-            );
+            const string sql = """
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value JSONB NOT NULL,
+                    last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
 
-            CREATE TABLE IF NOT EXISTS display_name_overrides (
-                id SERIAL PRIMARY KEY,
-                device_gid BIGINT NOT NULL,
-                channel_number TEXT,
-                display_name TEXT NOT NULL,
-                UNIQUE (device_gid, channel_number)
-            );
-            """;
+                CREATE TABLE IF NOT EXISTS panel_hierarchy (
+                    id SERIAL PRIMARY KEY,
+                    parent_device_gid BIGINT NOT NULL,
+                    child_device_gid BIGINT NOT NULL,
+                    UNIQUE (parent_device_gid, child_device_gid)
+                );
 
-        await using var cmd = new NpgsqlCommand(sql, conn);
-        await cmd.ExecuteNonQueryAsync(ct);
-        _tablesCreated = true;
+                CREATE TABLE IF NOT EXISTS display_name_overrides (
+                    id SERIAL PRIMARY KEY,
+                    device_gid BIGINT NOT NULL,
+                    channel_number TEXT,
+                    display_name TEXT NOT NULL,
+                    UNIQUE (device_gid, channel_number)
+                );
+                """;
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            await cmd.ExecuteNonQueryAsync(ct);
+            _tablesCreated = true;
+        }
+        finally
+        {
+            _ensureTablesLock.Release();
+        }
     }
 
     // ── Settings ──
