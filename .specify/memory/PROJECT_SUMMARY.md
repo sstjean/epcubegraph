@@ -1,42 +1,28 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-04-29
+**Last Updated**: 2026-05-03
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main`
-**Last merged**: PR #130 — Remove vestigial /metrics endpoint and all Prometheus/VictoriaMetrics references
+**Last merged**: PR #132 — Defense-in-depth: NaN/HTML/concurrency + _tablesCreated race + SWA config fix
 **Unpushed commits**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-04-29)
+## ⚡ Current State (2026-05-03)
 
-### PR #130 — Remove /metrics + Prometheus purge (MERGED ✅)
-- **Issue #93 closed** — vestigial `/metrics` endpoint and all Prometheus/VictoriaMetrics references removed
-- Exporter: removed `/metrics` handler, `get_metrics()`, `_metrics_text`, all Prometheus text generation from `poll()`
-- Exporter: renamed `METRICS_PORT` → `HTTP_PORT`, `MetricsHandler` → `ExporterHandler`
-- Exporter: `POSTGRES_DSN` now required at startup (PostgreSQL is the only data sink)
-- Exporter: removed all conditional `if self._pg` / `if self._pg_writer` guards
-- Mock-exporter: removed `_generate_metrics()`, `_labels()`, `/metrics` handler; added `/health` handler
-- Deleted dead `local/deploy-local.sh` (referenced VictoriaMetrics services that no longer exist)
-- Scripts: replaced `/metrics` checks with `/health` in `deploy.sh` and `validate-deployment.sh`
-- Infra: updated vmagent comment in `container-apps.tf`, compose file comments
-- API: removed Prometheus comment in Models.cs, renamed `StepSeconds_PrometheusFormat` test
-- Specs: purged Prometheus/VictoriaMetrics/scrape references from specs 001 and 002
-- Full grep verification: zero matches outside `specs/093-remove-vestigial-metrics/`
-- TDD: 3 failing tests (Red), implementation (Green), test cleanup
-- Copilot PR review: 4 comments, all addressed (POSTGRES_DSN required, ExporterHandler rename, docs fixes)
-- Net: 25 files changed, 659 insertions, 759 deletions
-
-### Terraform 1.15.0 Backend Fix (in PR #130)
-- Terraform 1.15.0 released 2026-04-29 added backend block validation to `terraform validate`
-- Empty `backend "azurerm" {}` blocks now fail with "Missing required argument"
-- Fix: changed to partial configuration with empty-string keys per Terraform docs
-- Both `infra/main.tf` and `infra/bootstrap/main.tf` updated
-
-### Issue #120 — Feature 010 (CLOSED ✅)
-- Closed as completed (PR #124 was already merged)
+### PR #132 — Defense-in-Depth (MERGED ✅)
+- **Issue #123 closed** — NaN/HTML/concurrency hardening across exporter and API
+- Exporter: `_safe_float()` rejects NaN/Infinity → 0; used in metric parsing + stale detection
+- Exporter: HTML-escapes device names in status page (XSS prevention)
+- Exporter: lock-guarded `_polling` flag prevents overlapping polls (both EpCube and Vue collectors)
+- API: `SemaphoreSlim` + double-check locking on `EnsureTablesAsync` prevents concurrent DDL
+- API: `PostgresSettingsStore` implements `IDisposable` to dispose the `SemaphoreSlim`
+- API: integration tests split into self-contained per-concern files (no shared state between test classes)
+- Dashboard: moved `staticwebapp.config.json` to `public/` so Vite includes it in `dist/` — fixes 404 on SPA route refresh
+- TDD: 17 new exporter tests (185 total), 1 new API integration test (392 total)
+- Net: 19 files changed, 1462 insertions, 967 deletions
 
 ### Production Outage — PostgreSQL Auto-Stop (UNRESOLVED)
 - **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL while exporter was actively writing
@@ -45,9 +31,9 @@
 
 ### Tests
 - Dashboard: 544 tests, 100% all metrics (stmts/branches/funcs/lines)
-- API: 391 tests, 100% line + 100% branch
-- Exporter: 168 tests (was 177; removed 9 Prometheus tests, added 3 new)
-- **Total: 1103 tests**
+- API: 392 tests, 100% line + 100% branch
+- Exporter: 185 tests
+- **Total: 1121 tests**
 
 ### Open Issues
 | # | Title | Label |
@@ -62,26 +48,23 @@
 ### Closed This Session
 | # | Title | Reason |
 |---|-------|--------|
-| 120 | Feature 010: Simplify Vue Device Mapping | completed (PR #124 merged) |
-| 93 | Remove vestigial /metrics endpoint | completed (PR #130 merged) |
-| 123 | Defense-in-depth: exporter NaN/HTML/concurrency | completed (PR #130 — POSTGRES_DSN required) |
+| 123 | Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated race | completed (PR #132 merged) |
 
 ### What's Next
-1. #123 may need re-opening — only the `_tablesCreated` race was partially addressed (POSTGRES_DSN now required eliminates the no-writer path, but NaN/HTML/concurrency items remain)
-2. #115 Separate Application Insights per environment
-3. #113 Panel Hierarchy UI editor
-4. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
-5. Monitor Terraform 1.15.x — verify empty-string partial backend config continues to work
+1. Check CD deploy to main succeeded — verify production is healthy
+2. Destroy staging using the GitHub Actions workflow (resources from PR #132)
+3. Delete `123-defense-in-depth` branch (remote + local)
+4. #115 Separate Application Insights per environment
+5. #113 Panel Hierarchy UI editor
+6. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
+7. Monitor Terraform 1.15.x — verify empty-string partial backend config continues to work
 
 ### Pending
-- Staging destroy running (run 25126867218) — tearing down epcubegraph-b093-rem-* resources
+- CD deploy to main running — check status next session
 
 ### Decisions Made This Session
-- POSTGRES_DSN is now required — no use case for running exporter without database after Prometheus removal
-- Terraform partial backend config uses empty-string keys (not empty block) per HashiCorp docs
-- `deploy-local.sh` deleted — dead code, only referenced itself, VictoriaMetrics services removed long ago
-- Mock-exporter keeps PostgreSQL write loop but removes all Prometheus text generation
-- All Prometheus/VictoriaMetrics/vmagent/scrape terminology purged from entire codebase
+- `staticwebapp.config.json` must live in `dashboard/public/` (not `dashboard/`) so Vite copies it to `dist/` during build — without this, SWA navigation fallback is not deployed and SPA route refreshes return 404
+- Integration test classes must be fully self-contained — no shared state between test classes
 
 ### Production Services
 | Service | URL |
