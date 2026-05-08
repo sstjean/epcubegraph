@@ -37,6 +37,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - PostgreSQL 17 — existing `settings` table, `vue_device_mapping` key (jsonb value) (010-simplify-vue-mapping)
 - Python 3.12 (exporter), C# / .NET 10 (API), Bash (scripts), HCL (Terraform) + psycopg2 (exporter), Npgsql (API), unittest (exporter tests), xUnit (API tests) (093-remove-vestigial-metrics)
 - PostgreSQL 17 — no schema changes, data flow unchanged (093-remove-vestigial-metrics)
+- Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter), Npgsql (API), Preact + uPlot (dashboard), MSAL.js (auth) (124-device-discovery)
+- PostgreSQL 17 — existing `epcubegraph` database. Schema changes: `devices` table (add `status` column), new `pending_replacements` table. New settings key: `discovery_interval_seconds`. (124-device-discovery)
 
 ## Project Structure
 
@@ -99,6 +101,6 @@ When the user says **"Start up"** or **"Shutdown"**, follow the procedures in `.
 ````
 
 ## Recent Changes
+- 124-device-discovery: Added Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter), Npgsql (API), Preact + uPlot (dashboard), MSAL.js (auth)
 - 093-remove-vestigial-metrics: Added Python 3.12 (exporter), C# / .NET 10 (API), Bash (scripts), HCL (Terraform) + psycopg2 (exporter), Npgsql (API), unittest (exporter tests), xUnit (API tests)
 - 010-simplify-vue-mapping: Added TypeScript 5.8 (dashboard), C# / .NET 10 (API) + Preact 10.x, Vitest 4.x (dashboard); ASP.NET Core Minimal API, Npgsql (API)
-- 007-dashboard-vue-circuits: Added TypeScript 5.8 / Preact 10.x (dashboard), C# / .NET 10 (API), Python 3.12 (exporter) + Preact, preact-router, uPlot (dashboard); ASP.NET Core Minimal API, Npgsql (API); PyEmVue, psycopg2 (exporter)
