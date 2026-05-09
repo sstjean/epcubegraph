@@ -160,14 +160,14 @@ class VueCollector:
                             existing_nums.add(ch.channel_num)
 
             devices = list(merged.values())
-            self._device_gids = [info["device"].device_gid for info in devices]
-            self._device_count = len(devices)
-            self._circuit_count = sum(len(info["channels"]) for info in devices)
-            self._devices_info = []
+            device_gids = [info["device"].device_gid for info in devices]
+            device_count = len(devices)
+            circuit_count = sum(len(info["channels"]) for info in devices)
+            devices_info = []
             for info in devices:
                 d = info["device"]
                 channels = info["channels"]
-                self._devices_info.append({
+                devices_info.append({
                     "device_gid": d.device_gid,
                     "name": d.device_name,
                     "connected": d.connected,
@@ -177,8 +177,9 @@ class VueCollector:
                          d.device_name, d.device_gid, len(channels), d.connected)
 
                 # Persist device and channel metadata
+                channel_names = {}
                 for ch in channels:
-                    self._channel_names[(ch.device_gid, ch.channel_num)] = ch.name or ""
+                    channel_names[(ch.device_gid, ch.channel_num)] = ch.name or ""
                 self._pg_writer.upsert_device(
                     device_gid=d.device_gid, device_name=d.device_name,
                     model=getattr(d, "model", None),
@@ -193,8 +194,14 @@ class VueCollector:
                         channel_type=getattr(ch, "channel_type_gid", None),
                     )
 
+            with self._lock:
+                self._device_gids = device_gids
+                self._device_count = device_count
+                self._circuit_count = circuit_count
+                self._devices_info = devices_info
+                self._channel_names.update(channel_names)
             self._last_device_refresh = time.time()
-            log.info("Vue: discovered %d device(s), %d circuit(s)", self._device_count, self._circuit_count)
+            log.info("Vue: discovered %d device(s), %d circuit(s)", device_count, circuit_count)
         except Exception:
             log.exception("Vue: device discovery failed")
 
@@ -233,6 +240,7 @@ class VueCollector:
         multiplier = _SCALE_WATTS_MULTIPLIER.get(self._current_scale, 3_600_000)
         all_none = True
         readings = []
+        last_readings_update = {}
 
         try:
             usage = self._vue.get_device_list_usage(
@@ -254,7 +262,7 @@ class VueCollector:
                         all_none = False
                         watts = ch_usage.usage * multiplier
                         readings.append((device_gid, ch_num, ts, watts))
-                        self._last_readings[(device_gid, ch_num)] = watts
+                        last_readings_update[(device_gid, ch_num)] = watts
                 except Exception:
                     log.exception("Vue: error processing device %d", device_gid)
                     with self._lock:
@@ -273,6 +281,7 @@ class VueCollector:
 
         with self._lock:
             self._last_poll = time.time()
+            self._last_readings.update(last_readings_update)
             if readings:
                 self._consecutive_errors = 0
 

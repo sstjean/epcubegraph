@@ -297,20 +297,22 @@ a { color: #00d4aa; }</style>
 
         rows = ""
         for ch_num, name, watts in circuits:
-            display_name = name if name else ch_num
+            display_name = html.escape(name if name else ch_num)
+            ch_num_escaped = html.escape(str(ch_num))
             if watts >= 1000:
                 watts_str = f"{watts / 1000:.1f} kW"
             else:
                 watts_str = f"{watts:.0f} W"
             row_cls = ' class="val-pos"' if watts > 0 else ""
-            rows += f"<tr><td>{ch_num}</td><td>{display_name}</td><td style='text-align:right'{row_cls}>{watts_str}</td></tr>\n"
+            rows += f"<tr><td>{ch_num_escaped}</td><td>{display_name}</td><td style='text-align:right'{row_cls}>{watts_str}</td></tr>\n"
 
         if not rows:
             rows = '<tr><td colspan="3" style="color:#888">No readings yet</td></tr>'
 
+        dev_name_escaped = html.escape(dev['name'])
         devices_html += f"""
         <div style="margin-bottom:1.5em">
-        <h3>{dev['name']} <span class="badge {status_cls}">{status_txt}</span>
+        <h3>{dev_name_escaped} <span class="badge {status_cls}">{status_txt}</span>
             <span class="badge" style="color:#888">GID: {gid}</span></h3>
         <table>
         <tr><th>Channel</th><th>Circuit</th><th style="text-align:right">Power</th></tr>

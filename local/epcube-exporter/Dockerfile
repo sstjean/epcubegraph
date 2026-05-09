@@ -7,7 +7,7 @@ RUN apt-get update && \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
-COPY *.py .
+COPY config.py auth.py db.py epcube_collector.py vue_collector.py http_handler.py exporter.py ./
 
 EXPOSE 9250
 CMD ["python", "-u", "exporter.py"]
