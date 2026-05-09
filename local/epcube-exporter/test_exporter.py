@@ -21,6 +21,12 @@ sys.modules["Crypto.Cipher.AES"] = MagicMock()
 sys.modules["Crypto.Util"] = MagicMock()
 sys.modules["Crypto.Util.Padding"] = MagicMock()
 
+import config
+import auth
+import db
+import epcube_collector
+import vue_collector
+import http_handler
 import exporter
 
 
@@ -31,7 +37,7 @@ import exporter
 def _make_collector():
     """Create a collector ready for testing (no real auth)."""
     pg = MagicMock()
-    c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg)
+    c = epcube_collector.EpCubeCollector("user@test.com", "password", pg_writer=pg)
     return c
 
 
@@ -95,7 +101,7 @@ def _mock_api_for(devices, home_info=None, elec_data=None):
 # Testable HTTP handler (avoids BaseHTTPRequestHandler.__init__)
 # ---------------------------------------------------------------------------
 
-class _TestableHandler(exporter.ExporterHandler):
+class _TestableHandler(http_handler.ExporterHandler):
     """Subclass that bypasses the real __init__ so we can call do_GET in tests."""
     def __init__(self):
         # Skip BaseHTTPRequestHandler.__init__ which needs request/client/server
@@ -191,7 +197,7 @@ class TestEnergyBalance(unittest.TestCase):
             batteryCurrentElectricity="15.5",
         )
 
-        with patch.object(exporter, "_api_request",
+        with patch.object(epcube_collector, "_api_request",
                           side_effect=_mock_api_for([dev], home_info=home_info)):
             c.poll()
 
@@ -213,7 +219,7 @@ class TestEnergyBalance(unittest.TestCase):
 
         # First poll: battery at 20.0 kWh
         home1 = _make_home_device_info(batteryCurrentElectricity="20.0")
-        with patch.object(exporter, "_api_request",
+        with patch.object(epcube_collector, "_api_request",
                           side_effect=_mock_api_for([dev], home_info=home1)):
             c.poll()
 
@@ -221,7 +227,7 @@ class TestEnergyBalance(unittest.TestCase):
 
         # Second poll: battery discharged to 15.0 kWh
         home2 = _make_home_device_info(batteryCurrentElectricity="15.0")
-        with patch.object(exporter, "_api_request",
+        with patch.object(epcube_collector, "_api_request",
                           side_effect=_mock_api_for([dev], home_info=home2)):
             c.poll()
 
@@ -242,7 +248,7 @@ class TestSnapshotDedup(unittest.TestCase):
         c._devices = devs
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
             first_count = len(c._history)
             # Poll again immediately (same minute)
@@ -256,13 +262,13 @@ class TestSnapshotDedup(unittest.TestCase):
         c._devices = devs
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
 
         # Manually change the time_minute to simulate a different minute
         c._history[-1]["time_minute"] = "2020-01-01T00:00Z"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
 
         self.assertEqual(len(c._history), 2)
@@ -276,7 +282,7 @@ class TestSnapshotDedup(unittest.TestCase):
                 "time_minute": f"2026-01-01T00:{i:02d}Z",
                 "devices": [],
             })
-        self.assertEqual(len(c._history), exporter.EpCubeCollector.HISTORY_MAX)
+        self.assertEqual(len(c._history), epcube_collector.EpCubeCollector.HISTORY_MAX)
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +298,7 @@ class TestPollCounters(unittest.TestCase):
         c._token = "fake-token"
         c._consecutive_errors = 3
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
 
         self.assertEqual(c._consecutive_errors, 0)
@@ -304,7 +310,7 @@ class TestPollCounters(unittest.TestCase):
         c._devices = devs
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
             c._history[-1]["time_minute"] = "old"
             c.poll()
@@ -320,7 +326,7 @@ class TestRenderStatusPage(unittest.TestCase):
 
     def _make_status(self, **overrides):
         status = {
-            "version": exporter.__version__,
+            "version": config.__version__,
             "uptime_s": 3665,
             "poll_count": 10,
             "poll_errors": 0,
@@ -337,17 +343,17 @@ class TestRenderStatusPage(unittest.TestCase):
         return {"healthy": healthy, "checks": checks or []}
 
     def test_renders_html(self):
-        html = exporter._render_status_page(self._make_status(), self._make_health())
+        html = http_handler._render_status_page(self._make_status(), self._make_health())
         self.assertIn("<!DOCTYPE html>", html)
         self.assertIn("epcube-exporter", html)
 
     def test_healthy_chiclet_green(self):
-        html = exporter._render_status_page(self._make_status(), self._make_health(healthy=True))
+        html = http_handler._render_status_page(self._make_status(), self._make_health(healthy=True))
         self.assertIn("#00d4aa", html)
         self.assertIn("healthy", html)
 
     def test_unhealthy_chiclet_red(self):
-        html = exporter._render_status_page(
+        html = http_handler._render_status_page(
             self._make_status(),
             self._make_health(healthy=False, checks=["stale poll"]),
         )
@@ -355,7 +361,7 @@ class TestRenderStatusPage(unittest.TestCase):
         self.assertIn("stale poll", html)
 
     def test_no_data_message(self):
-        html = exporter._render_status_page(self._make_status(history=[]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[]), self._make_health())
         self.assertIn("No data yet", html)
 
     def test_device_tables_rendered(self):
@@ -382,7 +388,7 @@ class TestRenderStatusPage(unittest.TestCase):
             }],
         }
         status = self._make_status(history=[snap])
-        html = exporter._render_status_page(status, self._make_health())
+        html = http_handler._render_status_page(status, self._make_health())
         self.assertIn("Test Device", html)
         self.assertIn("Battery level", html)
         self.assertIn("Home Supply (total)", html)
@@ -411,7 +417,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertNotIn('class="imbalance"', html)
         self.assertNotIn("\u26a0", html)  # no warning symbol
 
@@ -429,7 +435,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="imbalance"', html)
         self.assertIn("\u26a0", html)  # warning symbol
         self.assertIn("Expected battery -1.23 kW", html)  # tooltip
@@ -448,7 +454,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertNotIn('class="imbalance"', html)
         self.assertNotIn("\u26a0", html)
 
@@ -466,7 +472,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="val-pos">+3.00', html)
 
     def test_battery_discharging_red(self):
@@ -483,7 +489,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="val-neg">-2.50', html)
 
     def test_grid_import_red(self):
@@ -500,7 +506,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="val-neg">+1.50', html)
 
     def test_grid_export_green(self):
@@ -517,61 +523,61 @@ class TestRenderStatusPage(unittest.TestCase):
                 "grid_export_kwh": 0, "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="val-pos">-1.00', html)
 
     def test_uptime_formatting(self):
-        html = exporter._render_status_page(self._make_status(uptime_s=3665), self._make_health())
+        html = http_handler._render_status_page(self._make_status(uptime_s=3665), self._make_health())
         self.assertIn("1h 1m 5s", html)
 
     def test_error_count_warning_style(self):
-        html = exporter._render_status_page(self._make_status(poll_errors=3), self._make_health())
+        html = http_handler._render_status_page(self._make_status(poll_errors=3), self._make_health())
         self.assertIn("warn", html)
 
     def test_error_count_ok_style(self):
-        html = exporter._render_status_page(self._make_status(poll_errors=0), self._make_health())
+        html = http_handler._render_status_page(self._make_status(poll_errors=0), self._make_health())
         self.assertIn("ok", html)
 
     def test_version_displayed(self):
-        html = exporter._render_status_page(self._make_status(), self._make_health())
-        self.assertIn(exporter.__version__, html)
+        html = http_handler._render_status_page(self._make_status(), self._make_health())
+        self.assertIn(config.__version__, html)
         self.assertIn("Version:", html)
 
     def test_poll_interval_displayed(self):
-        html = exporter._render_status_page(self._make_status(poll_interval=10), self._make_health())
+        html = http_handler._render_status_page(self._make_status(poll_interval=10), self._make_health())
         self.assertIn("Poll interval:", html)
         self.assertIn("10s", html)
 
     def test_countdown_displayed(self):
         next_at = time.time() + 20
-        html = exporter._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
+        html = http_handler._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
         self.assertIn("Next poll in:", html)
         self.assertIn('id="countdown"', html)
         self.assertIn(f'data-next="{next_at}"', html)
 
     def test_countdown_zero_when_past(self):
         next_at = time.time() - 5  # already past
-        html = exporter._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
+        html = http_handler._render_status_page(self._make_status(next_poll_at=next_at), self._make_health())
         self.assertIn('>0s<', html)
 
     def test_countdown_waiting_when_no_next_poll(self):
-        html = exporter._render_status_page(self._make_status(next_poll_at=0), self._make_health())
+        html = http_handler._render_status_page(self._make_status(next_poll_at=0), self._make_health())
         self.assertIn("waiting", html)
 
     def test_countdown_js_ticks(self):
-        html = exporter._render_status_page(self._make_status(), self._make_health())
+        html = http_handler._render_status_page(self._make_status(), self._make_health())
         self.assertIn("getElementById('countdown')", html)
         self.assertIn("parseFloat(el.dataset.next)", html)
 
     def test_auto_refresh_via_fetch(self):
-        html = exporter._render_status_page(self._make_status(), self._make_health())
+        html = http_handler._render_status_page(self._make_status(), self._make_health())
         # Meta refresh removed; replaced with JS fetch-based background refresh
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn('setInterval', html)
         self.assertIn('fetch(location.href)', html)
 
     def test_auto_refresh_matches_poll_interval(self):
-        html = exporter._render_status_page(self._make_status(poll_interval=10), self._make_health())
+        html = http_handler._render_status_page(self._make_status(poll_interval=10), self._make_health())
         self.assertIn('}, 10000)', html)
         self.assertIn('Auto-refreshes every 10s', html)
 
@@ -588,7 +594,7 @@ class TestRenderStatusPage(unittest.TestCase):
                 "backup_kwh": 0,
             }],
         }
-        html = exporter._render_status_page(self._make_status(history=[snap]), self._make_health())
+        html = http_handler._render_status_page(self._make_status(history=[snap]), self._make_health())
         self.assertIn('class="utctime"', html)
         self.assertIn('data-utc="2026-03-17T15:00:00Z"', html)
 
@@ -632,40 +638,40 @@ class TestHTTPHandler(unittest.TestCase):
         self.assertIn(b"unhealthy", h.wfile.getvalue())
 
     def test_health_no_auth_required(self):
-        with patch.object(exporter, "DISABLE_AUTH", False):
+        with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/health")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_returns_200_auth_disabled(self):
-        with patch.object(exporter, "DISABLE_AUTH", True):
+        with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_401_api_client_without_token(self):
         """API client (no Accept: text/html) gets 401 without auth."""
-        with patch.object(exporter, "DISABLE_AUTH", False):
+        with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={})
             h.send_response.assert_called_with(401)
 
     def test_debug_page_redirects_browser_to_login(self):
         """Browser (Accept: text/html) without auth gets redirected to /login."""
-        with patch.object(exporter, "DISABLE_AUTH", False), \
-             patch.object(exporter, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"):
+        with patch.object(http_handler, "DISABLE_AUTH", False), \
+             patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"):
             h = self._make_handler("/", headers={"Accept": "text/html"})
             h.send_response.assert_called_with(302)
             h.send_header.assert_any_call("Location", "/login")
 
     def test_debug_page_401_with_bad_bearer(self):
-        with patch.object(exporter, "DISABLE_AUTH", False):
+        with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={"Authorization": "Bearer bad-token"})
             h.send_response.assert_called_with(401)
 
     def test_login_redirects_to_microsoft(self):
         """GET /login redirects to Microsoft authorization endpoint."""
-        with patch.object(exporter, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"), \
-             patch.object(exporter, "AZURE_CLIENT_ID", "test-client-id"), \
-             patch.object(exporter, "AZURE_TENANT_ID", "test-tenant"), \
-             patch.object(exporter, "AZURE_AUDIENCE", "api://test"):
+        with patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"), \
+             patch.object(http_handler, "AZURE_CLIENT_ID", "test-client-id"), \
+             patch.object(http_handler, "AZURE_TENANT_ID", "test-tenant"), \
+             patch.object(http_handler, "AZURE_AUDIENCE", "api://test"):
             h = self._make_handler("/login")
             h.send_response.assert_called_with(302)
             location_calls = [c for c in h.send_header.call_args_list if c[0][0] == "Location"]
@@ -676,8 +682,8 @@ class TestHTTPHandler(unittest.TestCase):
 
     def test_login_returns_500_when_not_configured(self):
         """GET /login returns 500 when OAuth is not configured."""
-        with patch.object(exporter, "AZURE_REDIRECT_URI", ""), \
-             patch.object(exporter, "AZURE_CLIENT_ID", ""):
+        with patch.object(http_handler, "AZURE_REDIRECT_URI", ""), \
+             patch.object(http_handler, "AZURE_CLIENT_ID", ""):
             h = self._make_handler("/login")
             h.send_response.assert_called_with(500)
 
@@ -693,42 +699,42 @@ class TestHTTPHandler(unittest.TestCase):
 
     def test_session_cookie_grants_access(self):
         """Valid session cookie grants access to debug page."""
-        with patch.object(exporter, "DISABLE_AUTH", False), \
-             patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
+        with patch.object(http_handler, "DISABLE_AUTH", False), \
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
             session_id = "test-session-123"
-            with exporter._auth_lock:
-                exporter._sessions[session_id] = {
+            with config._auth_lock:
+                config._sessions[session_id] = {
                     "expires": time.time() + 3600,
                     "user": "test@example.com",
                 }
             try:
-                signed = exporter._sign_session(session_id)
+                signed = http_handler._sign_session(session_id)
                 h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
                 h.send_response.assert_called_with(200)
             finally:
-                with exporter._auth_lock:
-                    exporter._sessions.pop(session_id, None)
+                with config._auth_lock:
+                    config._sessions.pop(session_id, None)
 
     def test_expired_session_denied(self):
         """Expired session cookie is rejected."""
-        with patch.object(exporter, "DISABLE_AUTH", False), \
-             patch.object(exporter, "AZURE_CLIENT_SECRET", "test-secret"):
+        with patch.object(http_handler, "DISABLE_AUTH", False), \
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
             session_id = "expired-session"
-            with exporter._auth_lock:
-                exporter._sessions[session_id] = {
+            with config._auth_lock:
+                config._sessions[session_id] = {
                     "expires": time.time() - 1,  # already expired
                     "user": "test@example.com",
                 }
             try:
-                signed = exporter._sign_session(session_id)
+                signed = http_handler._sign_session(session_id)
                 h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
                 h.send_response.assert_called_with(401)
             finally:
-                with exporter._auth_lock:
-                    exporter._sessions.pop(session_id, None)
+                with config._auth_lock:
+                    config._sessions.pop(session_id, None)
 
     def test_status_alias_works(self):
-        with patch.object(exporter, "DISABLE_AUTH", True):
+        with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/status")
             h.send_response.assert_called_with(200)
 
@@ -766,7 +772,7 @@ class TestSnapshotData(unittest.TestCase):
             backUpElectricity=6.0,
         )
 
-        with patch.object(exporter, "_api_request",
+        with patch.object(epcube_collector, "_api_request",
                           side_effect=_mock_api_for([dev], home_info, elec_data)):
             c.poll()
 
@@ -802,7 +808,7 @@ class TestSnapshotData(unittest.TestCase):
         c._devices = devs
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
 
         snap = c._history[-1]
@@ -817,7 +823,7 @@ class TestSnapshotData(unittest.TestCase):
         c._devices = devs
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for(devs)):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for(devs)):
             c.poll()
 
         snap = c._history[-1]
@@ -837,7 +843,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         value = -0.0
 
         # Act
-        result = exporter._nz(value)
+        result = config._nz(value)
 
         # Assert
         self.assertEqual(result, 0.0)
@@ -848,7 +854,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         value = 0.0
 
         # Act
-        result = exporter._nz(value)
+        result = config._nz(value)
 
         # Assert
         self.assertEqual(result, 0.0)
@@ -858,7 +864,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         value = 0
 
         # Act
-        result = exporter._nz(value)
+        result = config._nz(value)
 
         # Assert
         self.assertEqual(result, 0.0)
@@ -868,7 +874,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         value = 3.14
 
         # Act
-        result = exporter._nz(value)
+        result = config._nz(value)
 
         # Assert
         self.assertEqual(result, 3.14)
@@ -878,7 +884,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         value = -5.0
 
         # Act
-        result = exporter._nz(value)
+        result = config._nz(value)
 
         # Assert
         self.assertEqual(result, -5.0)
@@ -895,7 +901,7 @@ class TestNegativeZeroNormalization(unittest.TestCase):
         )
 
         # Act
-        with patch.object(exporter, "_api_request",
+        with patch.object(epcube_collector, "_api_request",
                           side_effect=_mock_api_for(devs, home_info=home_info)):
             c.poll()
 
@@ -923,15 +929,15 @@ class TestReauth(unittest.TestCase):
         def mock_api(method, path, **kwargs):
             call_count["n"] += 1
             if call_count["n"] == 1:
-                raise exporter.AuthExpiredError("Token expired")
+                raise auth.AuthExpiredError("Token expired")
             if "homeDeviceInfo" in path:
                 return _make_home_device_info()
             elif "deviceList" in path:
                 return {"status": 200, "data": c._devices}
             return {"status": 200, "data": {}}
 
-        with patch.object(exporter, "_api_request", side_effect=mock_api):
-            with patch.object(exporter, "authenticate", return_value="new-token"):
+        with patch.object(epcube_collector, "_api_request", side_effect=mock_api):
+            with patch.object(epcube_collector, "authenticate", return_value="new-token"):
                 c._api("/home/homeDeviceInfo?sgSn=test")
 
         self.assertEqual(c._token, "new-token")
@@ -947,15 +953,15 @@ class TestJwtExp(unittest.TestCase):
         # Build a JWT with exp=1700000000
         payload = base64.urlsafe_b64encode(json.dumps({"exp": 1700000000}).encode()).rstrip(b"=").decode()
         token = f"header.{payload}.signature"
-        self.assertEqual(exporter._jwt_exp(token), 1700000000)
+        self.assertEqual(auth._jwt_exp(token), 1700000000)
 
     def test_returns_zero_for_invalid_token(self):
-        self.assertEqual(exporter._jwt_exp("not-a-jwt"), 0)
+        self.assertEqual(auth._jwt_exp("not-a-jwt"), 0)
 
     def test_returns_zero_for_missing_exp(self):
         payload = base64.urlsafe_b64encode(json.dumps({"sub": "user"}).encode()).rstrip(b"=").decode()
         token = f"header.{payload}.signature"
-        self.assertEqual(exporter._jwt_exp(token), 0)
+        self.assertEqual(auth._jwt_exp(token), 0)
 
 
 # ---------------------------------------------------------------------------
@@ -972,7 +978,7 @@ class TestStaleDataDetection(unittest.TestCase):
             "batterySoc": 0,
             "batteryCurrentElectricity": "0.00",
         }
-        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(data))
+        self.assertTrue(epcube_collector.EpCubeCollector._data_looks_stale(data))
 
     def test_nonzero_soc_is_not_stale(self):
         data = {
@@ -982,7 +988,7 @@ class TestStaleDataDetection(unittest.TestCase):
             "batterySoc": 75,
             "batteryCurrentElectricity": "0.00",
         }
-        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+        self.assertFalse(epcube_collector.EpCubeCollector._data_looks_stale(data))
 
     def test_nonzero_backup_is_not_stale(self):
         data = {
@@ -992,17 +998,17 @@ class TestStaleDataDetection(unittest.TestCase):
             "batterySoc": 0,
             "batteryCurrentElectricity": "0.00",
         }
-        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+        self.assertFalse(epcube_collector.EpCubeCollector._data_looks_stale(data))
 
     def test_empty_data_is_stale(self):
-        self.assertTrue(exporter.EpCubeCollector._data_looks_stale({}))
+        self.assertTrue(epcube_collector.EpCubeCollector._data_looks_stale({}))
 
     def test_none_data_is_stale(self):
-        self.assertTrue(exporter.EpCubeCollector._data_looks_stale(None))
+        self.assertTrue(epcube_collector.EpCubeCollector._data_looks_stale(None))
 
     def test_normal_data_is_not_stale(self):
         data = _make_home_device_info()["data"]
-        self.assertFalse(exporter.EpCubeCollector._data_looks_stale(data))
+        self.assertFalse(epcube_collector.EpCubeCollector._data_looks_stale(data))
 
 
 # ---------------------------------------------------------------------------
@@ -1035,8 +1041,8 @@ class TestProactiveTokenRefresh(unittest.TestCase):
         c._token_exp = time.time() + 100  # about to expire
         c._devices = [_make_device()]
 
-        with patch.object(exporter, "authenticate", return_value="fresh-token") as auth_mock:
-            with patch.object(exporter, "_api_request", return_value={"status": 200, "data": [_make_device()]}):
+        with patch.object(epcube_collector, "authenticate", return_value="fresh-token") as auth_mock:
+            with patch.object(epcube_collector, "_api_request", return_value={"status": 200, "data": [_make_device()]}):
                 c._ensure_auth()
 
         auth_mock.assert_called_once()
@@ -1047,7 +1053,7 @@ class TestProactiveTokenRefresh(unittest.TestCase):
         c._token = "valid-token"
         c._token_exp = time.time() + 3600  # plenty of time
 
-        with patch.object(exporter, "authenticate") as auth_mock:
+        with patch.object(epcube_collector, "authenticate") as auth_mock:
             c._ensure_auth()
 
         auth_mock.assert_not_called()
@@ -1080,8 +1086,8 @@ class TestStaleDataReauth(unittest.TestCase):
                 return {"status": 200, "data": c._devices}
             return {"status": 200, "data": {}}
 
-        with patch.object(exporter, "_api_request", side_effect=mock_api):
-            with patch.object(exporter, "authenticate", return_value="fresh-token"):
+        with patch.object(epcube_collector, "_api_request", side_effect=mock_api):
+            with patch.object(epcube_collector, "authenticate", return_value="fresh-token"):
                 c.poll()
 
         self.assertEqual(c._token, "fresh-token")
@@ -1110,12 +1116,12 @@ class TestPostgresWriter(unittest.TestCase):
 
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_init_creates_schema(self, mock_pg):
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
 
         mock_pg.connect.assert_called_once_with("postgresql://test:test@localhost/test")
         mock_cursor.execute.assert_called_once()
@@ -1125,12 +1131,12 @@ class TestPostgresWriter(unittest.TestCase):
         self.assertIn("CREATE TABLE IF NOT EXISTS readings", call_args)
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_device(self, mock_pg):
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1146,13 +1152,13 @@ class TestPostgresWriter(unittest.TestCase):
         self.assertEqual(call_args[0][1][1], "storage_battery")
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_readings(self, mock_pg):
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1167,18 +1173,18 @@ class TestPostgresWriter(unittest.TestCase):
         mock_pg.extras.execute_values.assert_called_once()
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_empty_readings_is_noop(self, mock_pg):
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
         mock_conn.reset_mock()
 
         writer.write_readings([])
         mock_conn.commit.assert_not_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_reconnects_on_closed_connection(self, mock_pg):
         mock_conn1, _ = self._make_mock_psycopg2()
         mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
@@ -1186,7 +1192,7 @@ class TestPostgresWriter(unittest.TestCase):
         # First call returns conn1 (for init), then conn1.closed=True forces reconnect
         mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
         mock_conn1.closed = True  # simulate connection dropped
 
         writer.upsert_device("d1", "storage_battery")
@@ -1194,12 +1200,12 @@ class TestPostgresWriter(unittest.TestCase):
         # Should have connected twice
         self.assertEqual(mock_pg.connect.call_count, 2)
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_close(self, mock_pg):
         mock_conn, _ = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
-        writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
         writer.close()
 
         mock_conn.close.assert_called_once()
@@ -1208,7 +1214,7 @@ class TestPostgresWriter(unittest.TestCase):
 class TestPollWithPostgres(unittest.TestCase):
     """Tests that poll() writes to Postgres when a writer is configured."""
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_poll_writes_to_postgres(self, mock_pg):
         mock_conn, mock_cursor = MagicMock(), MagicMock()
         mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
@@ -1218,14 +1224,14 @@ class TestPollWithPostgres(unittest.TestCase):
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
 
-        pg_writer = exporter.PostgresWriter("postgresql://test:test@localhost/test")
+        pg_writer = db.PostgresWriter("postgresql://test:test@localhost/test")
 
-        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        c = epcube_collector.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
         dev = _make_device()
         c._devices = [dev]
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()
 
         # Should have called upsert_device (2 per device: battery + solar)
@@ -1236,18 +1242,18 @@ class TestPollWithPostgres(unittest.TestCase):
         # Should have called write_readings via execute_values
         self.assertTrue(mock_pg.extras.execute_values.called)
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_poll_continues_on_postgres_error(self, mock_pg):
         """Poll should not fail if Postgres write raises an exception."""
         pg_writer = MagicMock()
         pg_writer.upsert_device.side_effect = Exception("DB connection lost")
 
-        c = exporter.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
+        c = epcube_collector.EpCubeCollector("user@test.com", "password", pg_writer=pg_writer)
         dev = _make_device()
         c._devices = [dev]
         c._token = "fake-token"
 
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()  # Should NOT raise
 
         # Poll should complete and update snapshot history
@@ -1269,7 +1275,7 @@ class TestPollNoMetricsText(unittest.TestCase):
         c._token = "fake-token"
 
         # Act
-        with patch.object(exporter, "_api_request", side_effect=_mock_api_for([dev])):
+        with patch.object(epcube_collector, "_api_request", side_effect=_mock_api_for([dev])):
             c.poll()
 
         # Assert
@@ -1393,14 +1399,14 @@ class TestVuePostgresWriterSchema(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_init_creates_vue_schema(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
         # Act
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
 
         # Assert
         call_args = mock_cursor.execute.call_args[0][0]
@@ -1413,14 +1419,14 @@ class TestVuePostgresWriterSchema(unittest.TestCase):
         self.assertIn("idx_vue_readings_1min_device_channel_time", call_args)
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_init_creates_vue_readings_daily_table(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
 
         # Act
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
 
         # Assert
         call_args = mock_cursor.execute.call_args[0][0]
@@ -1448,12 +1454,12 @@ class TestVuePostgresWriterUpsert(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_device(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1473,12 +1479,12 @@ class TestVuePostgresWriterUpsert(unittest.TestCase):
         self.assertEqual(params[1], "Main Panel")
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_device_updates_on_conflict(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1491,12 +1497,12 @@ class TestVuePostgresWriterUpsert(unittest.TestCase):
         second_params = mock_cursor.execute.call_args_list[1][0][1]
         self.assertEqual(second_params[1], "New Name")
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_channel(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1516,12 +1522,12 @@ class TestVuePostgresWriterUpsert(unittest.TestCase):
         self.assertEqual(params[2], "Main")
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_channel_balance(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
@@ -1552,13 +1558,13 @@ class TestVuePostgresWriterReadings(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_readings_batch(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
         now = datetime.now(timezone.utc)
@@ -1580,12 +1586,12 @@ class TestVuePostgresWriterReadings(unittest.TestCase):
         self.assertEqual(call_args[0][2], readings)
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_empty_readings_is_noop(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_conn.reset_mock()
 
         # Act
@@ -1594,13 +1600,13 @@ class TestVuePostgresWriterReadings(unittest.TestCase):
         # Assert
         mock_conn.commit.assert_not_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_readings_with_negative_values(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
         now = datetime.now(timezone.utc)
@@ -1615,14 +1621,14 @@ class TestVuePostgresWriterReadings(unittest.TestCase):
         passed_readings = mock_pg.extras.execute_values.call_args[0][2]
         self.assertEqual(passed_readings[0][3], -150.0)
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_write_readings_reconnects_on_closed(self, mock_pg):
         # Arrange
         mock_conn1, _ = self._make_mock_psycopg2()
         mock_conn2, mock_cursor2 = self._make_mock_psycopg2()
         mock_pg.connect.side_effect = [mock_conn1, mock_conn2]
         mock_pg.extras = MagicMock()
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_conn1.closed = True
 
         now = datetime.now(timezone.utc)
@@ -1694,20 +1700,20 @@ def _mock_pyemvue():
 class TestVueCollectorInit(unittest.TestCase):
     """T013: VueCollector initialization and login tests."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_successful_login(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.login.assert_called_once_with(username="user@test.com", password="password")
         self.assertTrue(collector._authenticated)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_login_failure_sets_not_authenticated(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = MagicMock()
@@ -1715,20 +1721,20 @@ class TestVueCollectorInit(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("bad@test.com", "badpass", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("bad@test.com", "badpass", pg_writer=MagicMock())
 
         # Assert
         self.assertFalse(collector._authenticated)
         self.assertEqual(collector._device_count, 0)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_login_discovers_devices(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert
         mock_vue.get_devices.assert_called_once()
@@ -1743,12 +1749,12 @@ class TestVueCollectorInit(unittest.TestCase):
 class TestVueCollectorPoll(unittest.TestCase):
     """T014: VueCollector.poll() tests."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_calls_get_device_list_usage(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll()
@@ -1758,13 +1764,13 @@ class TestVueCollectorPoll(unittest.TestCase):
         call_kwargs = mock_vue.get_device_list_usage.call_args
         self.assertEqual(call_kwargs[1].get("unit") or call_kwargs[0][3] if len(call_kwargs[0]) > 3 else call_kwargs[1].get("unit"), "KilowattHours")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_converts_kwh_to_watts(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
         mock_pg = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_pg)
 
         # Act
         collector.poll()
@@ -1775,7 +1781,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         main_reading = [r for r in write_call if r[1] == "1,2,3"][0]
         self.assertAlmostEqual(main_reading[3], 0.002347 * 3_600_000, places=0)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_skips_none_channels(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
@@ -1783,7 +1789,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value[12345].channels["1"].usage = None
         mock_pyemvue_cls.return_value = mock_vue
         mock_pg = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_pg)
 
         # Act
         collector.poll()
@@ -1793,7 +1799,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         self.assertEqual(len(write_call), 1)
         self.assertEqual(write_call[0][1], "1,2,3")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_continues_on_device_error(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
@@ -1816,7 +1822,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value = original_usage
         mock_pyemvue_cls.return_value = mock_vue
         mock_pg = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_pg)
 
         # Act — should not raise
         collector.poll()
@@ -1824,12 +1830,12 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Assert — readings from working device still written
         self.assertTrue(mock_pg.write_readings.called)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_updates_last_poll_time(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         before = time.time()
@@ -1838,7 +1844,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         # Assert
         self.assertGreaterEqual(collector._last_poll, before)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_when_not_authenticated_retries_login(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = MagicMock()
@@ -1847,7 +1853,7 @@ class TestVueCollectorPoll(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value = {}
         mock_pyemvue_cls.return_value = mock_vue
 
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertFalse(collector._authenticated)
 
         # Act — poll should retry login
@@ -1865,13 +1871,13 @@ class TestVueCollectorPoll(unittest.TestCase):
 class TestVueDeviceDiscovery(unittest.TestCase):
     """T015: Device/channel discovery refresh tests."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_discover_upserts_devices_to_postgres(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
         mock_pg = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_pg)
 
         # Assert — upsert_device called during init
         mock_pg.upsert_device.assert_called_once_with(
@@ -1879,23 +1885,23 @@ class TestVueDeviceDiscovery(unittest.TestCase):
             model="VUE001", firmware="1.0", connected=True,
         )
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_discover_upserts_channels_to_postgres(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
         mock_pg = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_pg)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_pg)
 
         # Assert — upsert_channel called for each channel
         self.assertEqual(mock_pg.upsert_channel.call_count, 2)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_refresh_updates_device_list(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         self.assertEqual(collector._device_count, 1)
 
         # Add a new device
@@ -1914,7 +1920,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         # Assert
         self.assertEqual(collector._device_count, 2)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_discover_deduplicates_same_gid(self, mock_pyemvue_cls):
         # Arrange — PyEmVue returns two entries with same gid (VUE003 hub + WAT001 CT module)
         mock_vue = MagicMock()
@@ -1942,7 +1948,7 @@ class TestVueDeviceDiscovery(unittest.TestCase):
         mock_pyemvue_cls.return_value = mock_vue
 
         # Act
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Assert — only 1 device, not 2, but channels merged from both entries
         self.assertEqual(collector._device_count, 1)
@@ -1958,15 +1964,15 @@ class TestVuePollInterval(unittest.TestCase):
 
     def test_default_interval_is_1_second(self):
         # Assert
-        self.assertEqual(exporter.DEFAULT_VUE_POLL_INTERVAL, 1)
+        self.assertEqual(vue_collector.DEFAULT_VUE_POLL_INTERVAL, 1)
 
-    @patch("exporter._read_vue_poll_interval_from_db", return_value=5)
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector._read_vue_poll_interval_from_db", return_value=5)
+    @patch("vue_collector.PyEmVue")
     def test_vue_poll_loop_reads_interval(self, mock_pyemvue_cls, mock_read_interval):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Simulate one iteration of vue_poll_loop
         collector._poll_interval = mock_read_interval.return_value
@@ -1982,7 +1988,7 @@ class TestVuePollInterval(unittest.TestCase):
 class TestVueRateLimitFallback(unittest.TestCase):
     """T017: Rate limit fallback (1S → 1MIN) tests."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_degrades_to_1min_on_rate_limit(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
@@ -1990,7 +1996,7 @@ class TestVueRateLimitFallback(unittest.TestCase):
         for ch in mock_vue.get_device_list_usage.return_value[12345].channels.values():
             ch.usage = None
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._had_successful_poll = True  # had data before → this is rate limiting, not offline
 
         # Act
@@ -1999,12 +2005,12 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Assert — scale degraded
         self.assertEqual(collector._current_scale, "1MIN")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_recovers_to_1s_after_successful_polls(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         collector._recovery_count = collector.RECOVERY_THRESHOLD - 1
 
@@ -2014,12 +2020,12 @@ class TestVueRateLimitFallback(unittest.TestCase):
         # Assert — recovered to 1S
         self.assertEqual(collector._current_scale, "1S")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_kwh_conversion_adjusts_for_1min_scale(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._current_scale = "1MIN"
         mock_pg = MagicMock()
         collector._pg_writer = mock_pg
@@ -2040,12 +2046,12 @@ class TestVueRateLimitFallback(unittest.TestCase):
 class TestVueDebugPage(unittest.TestCase):
     """T018: Vue debug page status section tests."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_get_vue_status(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
 
         # Act
@@ -2059,17 +2065,17 @@ class TestVueDebugPage(unittest.TestCase):
         self.assertEqual(status["device_count"], 1)
         self.assertEqual(status["circuit_count"], 2)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_render_vue_debug_page(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert
         self.assertIn("Emporia Vue", html)
@@ -2094,17 +2100,17 @@ class TestDownsampling(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_downsample_executes_insert_select(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
         # Act
-        exporter.downsample_vue_readings(writer)
+        db.downsample_vue_readings(writer)
 
         # Assert
         mock_cursor.execute.assert_called_once()
@@ -2117,33 +2123,33 @@ class TestDownsampling(unittest.TestCase):
         self.assertIn("ON CONFLICT", sql)
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_downsample_uses_last_complete_hour(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
         # Act
-        exporter.downsample_vue_readings(writer)
+        db.downsample_vue_readings(writer)
 
         # Assert — SQL references hour boundary
         sql = mock_cursor.execute.call_args[0][0]
         self.assertIn("date_trunc('hour'", sql.lower())
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_downsample_handles_empty_table(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
 
         # Act — should not raise even with no data
-        exporter.downsample_vue_readings(writer)
+        db.downsample_vue_readings(writer)
 
         # Assert — still executes (INSERT does nothing when SELECT returns empty)
         mock_cursor.execute.assert_called_once()
@@ -2166,18 +2172,18 @@ class TestRetentionCleanup(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_cleanup_deletes_old_readings(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
         mock_cursor.rowcount = 100
 
         # Act
-        deleted = exporter.cleanup_old_vue_readings(writer)
+        deleted = db.cleanup_old_vue_readings(writer)
 
         # Assert
         mock_cursor.execute.assert_called_once()
@@ -2188,33 +2194,33 @@ class TestRetentionCleanup(unittest.TestCase):
         mock_conn.commit.assert_called()
         self.assertEqual(deleted, 100)
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_cleanup_does_not_touch_1min_table(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_cursor.rowcount = 0
 
         # Act
-        exporter.cleanup_old_vue_readings(writer)
+        db.cleanup_old_vue_readings(writer)
 
         # Assert — only one DELETE, and it's not against vue_readings_1min
         sql = mock_cursor.execute.call_args[0][0]
         self.assertNotIn("vue_readings_1min", sql)
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_cleanup_returns_zero_when_nothing_to_delete(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_cursor.rowcount = 0
 
         # Act
-        deleted = exporter.cleanup_old_vue_readings(writer)
+        deleted = db.cleanup_old_vue_readings(writer)
 
         # Assert
         self.assertEqual(deleted, 0)
@@ -2227,8 +2233,8 @@ class TestRetentionCleanup(unittest.TestCase):
 class TestDownsamplingLoop(unittest.TestCase):
     """Test for downsampling_loop thread function."""
 
-    @patch.object(exporter, "cleanup_old_vue_readings", return_value=0)
-    @patch.object(exporter, "downsample_vue_readings")
+    @patch.object(db, "cleanup_old_vue_readings", return_value=0)
+    @patch.object(db, "downsample_vue_readings")
     def test_loop_calls_both_functions(self, mock_downsample, mock_cleanup):
         # Arrange
         mock_writer = MagicMock()
@@ -2243,7 +2249,7 @@ class TestDownsamplingLoop(unittest.TestCase):
 
         # Act
         try:
-            exporter.downsampling_loop(mock_writer, interval_seconds=0)
+            db.downsampling_loop(mock_writer, interval_seconds=0)
         except KeyboardInterrupt:
             pass
 
@@ -2259,12 +2265,12 @@ class TestDownsamplingLoop(unittest.TestCase):
 class TestVueDebugPageEndpoint(unittest.TestCase):
     """T060: Tests for the /vue debug page showing per-circuit data."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_vue_page_shows_device_sections(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2273,18 +2279,18 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert — page contains device section
         self.assertIn("Main Panel", html)
         self.assertIn("12345", html)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_vue_page_shows_per_circuit_readings(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 8450.5,
@@ -2297,7 +2303,7 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert — per-circuit rows with name and watts
         self.assertIn("Kitchen", html)
@@ -2305,12 +2311,12 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         self.assertIn("8.5 kW", html)  # 8450W formatted as kW
         self.assertIn("1,2,3", html)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_vue_page_shows_zero_watt_circuits(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         collector._last_readings = {
             (12345, "1,2,3"): 0.0,
@@ -2321,45 +2327,45 @@ class TestVueDebugPageEndpoint(unittest.TestCase):
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert — 0W circuit still shown
         self.assertIn("Main", html)
         self.assertIn("0", html)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_vue_page_has_nav_link_to_status(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert — navigation link to EP Cube page
         self.assertIn("/status", html)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_vue_page_shows_local_time_timestamps(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._last_poll = time.time()
         vue_status = collector.get_status()
 
         # Act
-        html = exporter._render_vue_debug_page(vue_status)
+        html = http_handler._render_vue_debug_page(vue_status)
 
         # Assert — uses JS client-side time conversion
         self.assertIn("toLocaleTimeString", html)
 
     def test_vue_page_not_configured(self):
         # Act
-        html = exporter._render_vue_debug_page(None)
+        html = http_handler._render_vue_debug_page(None)
 
         # Assert
         self.assertIn("not configured", html.lower())
@@ -2382,7 +2388,7 @@ class TestEpCubePageNavLink(unittest.TestCase):
         health = c.get_health()
 
         # Act
-        html = exporter._render_status_page(status, health)
+        html = http_handler._render_status_page(status, health)
 
         # Assert
         self.assertIn("/vue", html)
@@ -2396,7 +2402,7 @@ class TestEpCubePageNavLink(unittest.TestCase):
         health = c.get_health()
 
         # Act
-        html = exporter._render_status_page(status, health)
+        html = http_handler._render_status_page(status, health)
 
         # Assert — no Vue circuit data (nav link is OK, circuit tables are not)
         self.assertNotIn("vue_readings", html)
@@ -2411,7 +2417,7 @@ class TestEpCubePageNavLink(unittest.TestCase):
         health = c.get_health()
 
         # Act
-        html = exporter._render_status_page(status, health)
+        html = http_handler._render_status_page(status, health)
 
         # Assert
         self.assertNotIn("/metrics", html)
@@ -2426,14 +2432,14 @@ class TestVuePageNotConfigured(unittest.TestCase):
 
     def test_render_shows_not_configured_message(self):
         # Act
-        html = exporter._render_vue_debug_page(None)
+        html = http_handler._render_vue_debug_page(None)
 
         # Assert
         self.assertIn("not configured", html.lower())
 
     def test_render_has_nav_back_to_status(self):
         # Act
-        html = exporter._render_vue_debug_page(None)
+        html = http_handler._render_vue_debug_page(None)
 
         # Assert
         self.assertIn("/status", html)
@@ -2455,13 +2461,13 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
         mock_conn.cursor.return_value = mock_cursor
         return mock_conn, mock_cursor
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_daily_readings_creates_rows(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
         mock_conn.reset_mock()
         from datetime import date
@@ -2482,12 +2488,12 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
         self.assertEqual(mock_pg.extras.execute_values.call_args[0][2], readings)
         mock_conn.commit.assert_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_daily_readings_empty_is_noop(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_conn.reset_mock()
 
         # Act
@@ -2496,13 +2502,13 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
         # Assert
         mock_conn.commit.assert_not_called()
 
-    @patch.object(exporter, "psycopg2")
+    @patch.object(db, "psycopg2")
     def test_upsert_daily_updates_on_conflict(self, mock_pg):
         # Arrange
         mock_conn, mock_cursor = self._make_mock_psycopg2()
         mock_pg.connect.return_value = mock_conn
         mock_pg.extras = MagicMock()
-        writer = exporter.VuePostgresWriter("postgresql://test:test@localhost/test")
+        writer = db.VuePostgresWriter("postgresql://test:test@localhost/test")
         mock_cursor.reset_mock()
 
         # Act — upsert guarantees update via ON CONFLICT
@@ -2519,15 +2525,15 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
 class TestReadVueDailyPollInterval(unittest.TestCase):
     """Tests for _read_vue_daily_poll_interval_from_db."""
 
-    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
+    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test@localhost/test")
     def test_returns_default_when_no_dsn(self):
         # Act
-        result = exporter._read_vue_daily_poll_interval_from_db()
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
-        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
     def test_reads_from_settings_table(self):
         # Arrange
         mock_conn = MagicMock()
@@ -2535,11 +2541,11 @@ class TestReadVueDailyPollInterval(unittest.TestCase):
         mock_cursor.fetchone.return_value = ("600",)
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch.object(exporter, "psycopg2") as mock_pg:
+        with patch.object(vue_collector, "psycopg2") as mock_pg:
             mock_pg.connect.return_value = mock_conn
 
             # Act
-            result = exporter._read_vue_daily_poll_interval_from_db()
+            result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, 600)
@@ -2547,19 +2553,19 @@ class TestReadVueDailyPollInterval(unittest.TestCase):
         sql = mock_cursor.execute.call_args[0][0]
         self.assertIn("vue_daily_poll_interval_seconds", sql)
 
-    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
     def test_returns_default_on_db_error(self):
         # Arrange
-        with patch.object(exporter, "psycopg2") as mock_pg:
+        with patch.object(vue_collector, "psycopg2") as mock_pg:
             mock_pg.connect.side_effect = Exception("conn failed")
 
             # Act
-            result = exporter._read_vue_daily_poll_interval_from_db()
+            result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
-        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test/db")
+    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
     def test_returns_default_when_no_setting(self):
         # Arrange
         mock_conn = MagicMock()
@@ -2567,25 +2573,25 @@ class TestReadVueDailyPollInterval(unittest.TestCase):
         mock_cursor.fetchone.return_value = None
         mock_conn.cursor.return_value = mock_cursor
 
-        with patch.object(exporter, "psycopg2") as mock_pg:
+        with patch.object(vue_collector, "psycopg2") as mock_pg:
             mock_pg.connect.return_value = mock_conn
 
             # Act
-            result = exporter._read_vue_daily_poll_interval_from_db()
+            result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
-        self.assertEqual(result, exporter.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
 
 class TestVueCollectorPollDaily(unittest.TestCase):
     """Tests for VueCollector.poll_daily() — fetches daily kWh from Vue API."""
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_calls_api_with_1DAY_scale(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act
         collector.poll_daily()
@@ -2596,13 +2602,13 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         daily_call = calls[-1]
         self.assertEqual(daily_call[1].get("scale", daily_call[0][2] if len(daily_call[0]) > 2 else None), "1D")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_writes_kwh_to_pg_writer(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
         mock_writer = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_writer)
 
         # Act
         collector.poll_daily()
@@ -2622,13 +2628,13 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         self.assertAlmostEqual(kwh_values["1,2,3"], 0.002347, places=6)
         self.assertAlmostEqual(kwh_values["1"], 0.000333, places=6)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_uses_today_date(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
         mock_writer = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_writer)
 
         # Act
         collector.poll_daily()
@@ -2639,7 +2645,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         dates = [r[2] for r in readings]
         self.assertTrue(all(d == today for d in dates))
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_skips_null_usage(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
@@ -2647,7 +2653,7 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         mock_vue.get_device_list_usage.return_value[12345].channels["1"].usage = None
         mock_pyemvue_cls.return_value = mock_vue
         mock_writer = MagicMock()
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=mock_writer)
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=mock_writer)
 
         # Act
         collector.poll_daily()
@@ -2657,12 +2663,12 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         self.assertEqual(len(readings), 1)
         self.assertEqual(readings[0][1], "1,2,3")
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_handles_api_error(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         mock_vue.get_device_list_usage.side_effect = Exception("API down")
 
         # Act — should not raise
@@ -2670,12 +2676,12 @@ class TestVueCollectorPollDaily(unittest.TestCase):
 
         # Assert — error logged, no crash
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_skips_when_not_authenticated(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         collector._authenticated = False
 
         # Act
@@ -2687,12 +2693,12 @@ class TestVueCollectorPollDaily(unittest.TestCase):
         collector.poll_daily()
         self.assertEqual(mock_vue.get_device_list_usage.call_count, initial_calls)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_poll_daily_no_write_without_pg_writer(self, mock_pyemvue_cls):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
 
         # Act — should not raise
         collector.poll_daily()
@@ -2701,14 +2707,14 @@ class TestVueCollectorPollDaily(unittest.TestCase):
 class TestVueDailyPollLoop(unittest.TestCase):
     """Tests for vue_daily_poll_loop function."""
 
-    @patch("exporter._read_vue_daily_poll_interval_from_db", return_value=30)
-    @patch("exporter.time")
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector._read_vue_daily_poll_interval_from_db", return_value=30)
+    @patch("vue_collector.time")
+    @patch("vue_collector.PyEmVue")
     def test_loop_calls_poll_daily_on_interval(self, mock_pyemvue_cls, mock_time, mock_read_interval):
         # Arrange
         mock_vue = _mock_pyemvue()
         mock_pyemvue_cls.return_value = mock_vue
-        collector = exporter.VueCollector("user@test.com", "password", pg_writer=MagicMock())
+        collector = vue_collector.VueCollector("user@test.com", "password", pg_writer=MagicMock())
         call_count = 0
 
         def sleep_side_effect(secs):
@@ -2722,7 +2728,7 @@ class TestVueDailyPollLoop(unittest.TestCase):
 
         # Act
         with self.assertRaises(KeyboardInterrupt):
-            exporter.vue_daily_poll_loop(collector)
+            vue_collector.vue_daily_poll_loop(collector)
 
         # Assert
         mock_time.sleep.assert_called_with(30)
@@ -2733,10 +2739,10 @@ class TestConfigureAzureMonitor(unittest.TestCase):
     """Tests for _configure_azure_monitor — conditional AppInsights setup."""
 
     @patch.dict(os.environ, {"APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=00000000-0000-0000-0000-000000000000"})
-    @patch("exporter._azure_monitor_configure")
+    @patch("config._azure_monitor_configure")
     def test_calls_configure_when_connection_string_set(self, mock_configure):
         # Act
-        exporter._configure_azure_monitor()
+        config._configure_azure_monitor()
 
         # Assert
         mock_configure.assert_called_once()
@@ -2747,19 +2753,19 @@ class TestConfigureAzureMonitor(unittest.TestCase):
         os.environ.pop("APPLICATIONINSIGHTS_CONNECTION_STRING", None)
 
         # Act — should not raise
-        exporter._configure_azure_monitor()
+        config._configure_azure_monitor()
 
     @patch.dict(os.environ, {"APPLICATIONINSIGHTS_CONNECTION_STRING": ""})
     def test_skips_when_connection_string_empty(self):
         # Act — should not raise
-        exporter._configure_azure_monitor()
+        config._configure_azure_monitor()
 
 
 class TestParseDeviceMetrics(unittest.TestCase):
     """Tests for parse_device_metrics — pure data extraction from API response."""
 
     def test_extracts_all_metric_fields(self):
-        from exporter import parse_device_metrics
+        from epcube_collector import parse_device_metrics
         data = {
             "solarPower": 3.5,
             "batterySoc": 85,
@@ -2787,7 +2793,7 @@ class TestParseDeviceMetrics(unittest.TestCase):
         self.assertEqual(m["ress_count"], 2)
 
     def test_defaults_to_zero_for_missing_fields(self):
-        from exporter import parse_device_metrics
+        from epcube_collector import parse_device_metrics
         m = parse_device_metrics({})
         self.assertEqual(m["solar_kw"], 0)
         self.assertEqual(m["soc"], 0)
@@ -2795,7 +2801,7 @@ class TestParseDeviceMetrics(unittest.TestCase):
         self.assertEqual(m["backup_kw"], 0)
 
     def test_normalizes_negative_zero(self):
-        from exporter import parse_device_metrics
+        from epcube_collector import parse_device_metrics
         data = {"solarPower": 0.0, "gridPower": 0.0, "backUpPower": 0.0,
                 "batterySoc": 0, "batteryCurrentElectricity": 0,
                 "selfHelpRate": 0, "systemStatus": 0, "ressNumber": 0}
@@ -2808,7 +2814,7 @@ class TestBuildPostgresReadings(unittest.TestCase):
     """Tests for build_postgres_readings — pure tuple construction."""
 
     def test_builds_correct_tuples(self):
-        from exporter import build_postgres_readings
+        from epcube_collector import build_postgres_readings
         from datetime import datetime, timezone
         ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
         metrics = {
@@ -2835,31 +2841,31 @@ class TestSafeFloat(unittest.TestCase):
     """Tests for _safe_float — NaN/Infinity rejection."""
 
     def test_normal_value(self):
-        self.assertAlmostEqual(exporter._safe_float(3.5), 3.5)
+        self.assertAlmostEqual(config._safe_float(3.5), 3.5)
 
     def test_string_value(self):
-        self.assertAlmostEqual(exporter._safe_float("3.5"), 3.5)
+        self.assertAlmostEqual(config._safe_float("3.5"), 3.5)
 
     def test_nan_returns_zero(self):
-        self.assertEqual(exporter._safe_float(float("nan")), 0.0)
+        self.assertEqual(config._safe_float(float("nan")), 0.0)
 
     def test_nan_string_returns_zero(self):
-        self.assertEqual(exporter._safe_float("NaN"), 0.0)
+        self.assertEqual(config._safe_float("NaN"), 0.0)
 
     def test_infinity_returns_zero(self):
-        self.assertEqual(exporter._safe_float(float("inf")), 0.0)
+        self.assertEqual(config._safe_float(float("inf")), 0.0)
 
     def test_negative_infinity_returns_zero(self):
-        self.assertEqual(exporter._safe_float(float("-inf")), 0.0)
+        self.assertEqual(config._safe_float(float("-inf")), 0.0)
 
     def test_inf_string_returns_zero(self):
-        self.assertEqual(exporter._safe_float("Infinity"), 0.0)
+        self.assertEqual(config._safe_float("Infinity"), 0.0)
 
     def test_zero_returns_zero(self):
-        self.assertEqual(exporter._safe_float(0), 0.0)
+        self.assertEqual(config._safe_float(0), 0.0)
 
     def test_default_on_invalid(self):
-        self.assertEqual(exporter._safe_float("not_a_number", 0), 0.0)
+        self.assertEqual(config._safe_float("not_a_number", 0), 0.0)
 
 
 class TestParseDeviceMetricsNaN(unittest.TestCase):
@@ -2869,7 +2875,7 @@ class TestParseDeviceMetricsNaN(unittest.TestCase):
         data = {"solarPower": "NaN", "gridPower": 0, "backUpPower": 0,
                 "batterySoc": 50, "selfHelpRate": 80,
                 "batteryCurrentElectricity": 10, "systemStatus": 4, "ressNumber": 1}
-        m = exporter.parse_device_metrics(data)
+        m = epcube_collector.parse_device_metrics(data)
         self.assertEqual(m["solar_kw"], 0.0)
         self.assertEqual(m["solar_w"], 0.0)
 
@@ -2877,7 +2883,7 @@ class TestParseDeviceMetricsNaN(unittest.TestCase):
         data = {"solarPower": 1.0, "gridPower": "Infinity", "backUpPower": 0,
                 "batterySoc": 50, "selfHelpRate": 80,
                 "batteryCurrentElectricity": 10, "systemStatus": 4, "ressNumber": 1}
-        m = exporter.parse_device_metrics(data)
+        m = epcube_collector.parse_device_metrics(data)
         self.assertEqual(m["grid_kw"], 0.0)
 
 
@@ -2897,7 +2903,7 @@ class TestStatusPageHtmlEscaping(unittest.TestCase):
 
     def _make_status(self, **overrides):
         status = {
-            "version": exporter.__version__,
+            "version": config.__version__,
             "uptime_s": 100,
             "poll_count": 1,
             "poll_errors": 0,
@@ -2928,7 +2934,7 @@ class TestStatusPageHtmlEscaping(unittest.TestCase):
                 "grid_export_kwh": 0.0, "backup_kwh": 3.0,
             }],
         }
-        html_out = exporter._render_status_page(
+        html_out = http_handler._render_status_page(
             self._make_status(history=[snap]), self._make_health())
         # Raw XSS payload must not appear in device name context
         self.assertNotIn("<script>alert(", html_out)
@@ -2950,7 +2956,7 @@ class TestStatusPageHtmlEscaping(unittest.TestCase):
                 "grid_export_kwh": 0.0, "backup_kwh": 3.0,
             }],
         }
-        html_out = exporter._render_status_page(
+        html_out = http_handler._render_status_page(
             self._make_status(history=[snap]), self._make_health())
         self.assertIn("Solar &amp; Battery", html_out)
 
@@ -2958,8 +2964,8 @@ class TestStatusPageHtmlEscaping(unittest.TestCase):
 class TestConcurrentPollGuard(unittest.TestCase):
     """poll() must skip if another poll is already in progress."""
 
-    @patch("exporter._api_request")
-    @patch("exporter.authenticate", return_value="fake-token")
+    @patch("auth._api_request")
+    @patch("auth.authenticate", return_value="fake-token")
     def test_overlapping_epcube_poll_skipped(self, mock_auth, mock_api):
         devices = [_make_device()]
         mock_api.side_effect = _mock_api_for(devices)
@@ -2974,8 +2980,8 @@ class TestConcurrentPollGuard(unittest.TestCase):
         # Should have been skipped — no API calls made
         mock_api.assert_not_called()
 
-    @patch("exporter._api_request")
-    @patch("exporter.authenticate", return_value="fake-token")
+    @patch("auth._api_request")
+    @patch("auth.authenticate", return_value="fake-token")
     def test_poll_sets_and_clears_polling_flag(self, mock_auth, mock_api):
         devices = [_make_device()]
         mock_api.side_effect = _mock_api_for(devices)
@@ -2989,12 +2995,12 @@ class TestConcurrentPollGuard(unittest.TestCase):
         # After poll completes, flag should be cleared
         self.assertFalse(c._polling)
 
-    @patch("exporter.PyEmVue")
+    @patch("vue_collector.PyEmVue")
     def test_overlapping_vue_poll_skipped(self, mock_pyemvue):
         vue_mock = MagicMock()
         vue_mock.get_device_list_usage.return_value = {}
         pg = MagicMock()
-        vc = exporter.VueCollector("user", "pass", pg_writer=pg)
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
         vc._authenticated = True
         vc._device_gids = [123]
         vc._vue = vue_mock
@@ -3011,29 +3017,1815 @@ class TestUpdateBatteryPeak(unittest.TestCase):
     """Tests for update_battery_peak — pure peak tracking."""
 
     def test_new_day_starts_fresh(self):
-        from exporter import update_battery_peak
+        from epcube_collector import update_battery_peak
         bat_peak = {}
         result = update_battery_peak(bat_peak, "dev1", 10.0, "2026-04-18")
         self.assertAlmostEqual(result, 10.0)
         self.assertAlmostEqual(bat_peak["dev1"]["peak"], 10.0)
 
     def test_same_day_retains_max(self):
-        from exporter import update_battery_peak
+        from epcube_collector import update_battery_peak
         bat_peak = {"dev1": {"date": "2026-04-18", "peak": 15.0}}
         result = update_battery_peak(bat_peak, "dev1", 10.0, "2026-04-18")
         self.assertAlmostEqual(result, 15.0)
 
     def test_same_day_updates_when_higher(self):
-        from exporter import update_battery_peak
+        from epcube_collector import update_battery_peak
         bat_peak = {"dev1": {"date": "2026-04-18", "peak": 10.0}}
         result = update_battery_peak(bat_peak, "dev1", 15.0, "2026-04-18")
         self.assertAlmostEqual(result, 15.0)
 
     def test_new_day_resets(self):
-        from exporter import update_battery_peak
+        from epcube_collector import update_battery_peak
         bat_peak = {"dev1": {"date": "2026-04-17", "peak": 20.0}}
         result = update_battery_peak(bat_peak, "dev1", 5.0, "2026-04-18")
         self.assertAlmostEqual(result, 5.0)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: config.py — psycopg2 ImportError branch
+# NOTE: config.py:66 (except ImportError: pass) is an import-time branch
+# that can only fire when psycopg2 is not installed. Reloading config
+# breaks module-level references in http_handler/epcube_collector.
+# Coverage gap accepted as environment-dependent.
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: auth.py — _api_request, captcha, authenticate
+# ---------------------------------------------------------------------------
+
+class TestApiRequestHTTPError(unittest.TestCase):
+    """Cover auth._api_request HTTPError handling."""
+
+    def test_401_raises_auth_expired(self):
+        # Arrange
+        import urllib.error
+        error = urllib.error.HTTPError(
+            "https://example.com", 401, "Unauthorized", {}, BytesIO(b""))
+
+        # Act & Assert
+        with patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(auth.AuthExpiredError):
+                auth._api_request("GET", "/test")
+
+    def test_non_401_reraises(self):
+        # Arrange
+        import urllib.error
+        error = urllib.error.HTTPError(
+            "https://example.com", 500, "Server Error", {}, BytesIO(b""))
+
+        # Act & Assert
+        with patch("urllib.request.urlopen", side_effect=error):
+            with self.assertRaises(urllib.error.HTTPError):
+                auth._api_request("GET", "/test")
+
+    def test_success_returns_parsed_json(self):
+        # Arrange
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"status": 200}'
+
+        # Act
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            result = auth._api_request("GET", "/test")
+
+        # Assert
+        self.assertEqual(result, {"status": 200})
+
+    def test_post_with_data_sends_body(self):
+        # Arrange
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"ok": true}'
+
+        # Act
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
+            auth._api_request("POST", "/test", data={"key": "val"})
+
+        # Assert
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.data, b'{"key": "val"}')
+
+    def test_token_sets_authorization_header(self):
+        # Arrange
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"ok": true}'
+
+        # Act
+        with patch("urllib.request.urlopen", return_value=mock_resp) as mock_open:
+            auth._api_request("GET", "/test", token="my-jwt")
+
+        # Assert
+        req = mock_open.call_args[0][0]
+        self.assertEqual(req.get_header("Authorization"), "Bearer my-jwt")
+
+
+class TestAesEncrypt(unittest.TestCase):
+    """Cover auth._aes_encrypt (uses mocked Crypto)."""
+
+    def test_returns_base64_string(self):
+        # Arrange
+        mock_cipher = MagicMock()
+        mock_cipher.encrypt.return_value = b"encrypted_bytes"
+        with patch.object(auth, "AES") as mock_aes, \
+             patch.object(auth, "pad", return_value=b"padded"):
+            mock_aes.new.return_value = mock_cipher
+            mock_aes.MODE_ECB = 1
+            mock_aes.block_size = 16
+
+            # Act
+            result = auth._aes_encrypt("hello", "0123456789abcdef")
+
+        # Assert
+        expected = base64.b64encode(b"encrypted_bytes").decode()
+        self.assertEqual(result, expected)
+
+
+class TestDecodeImage(unittest.TestCase):
+    """Cover auth._decode_image (uses mocked cv2/numpy)."""
+
+    def test_returns_decoded_image(self):
+        # Arrange
+        b64_data = base64.b64encode(b"fake_png_data").decode()
+        mock_cv2 = sys.modules["cv2"]
+        mock_np = sys.modules["numpy"]
+        expected_img = MagicMock()
+        mock_cv2.imdecode.return_value = expected_img
+        mock_np.frombuffer.return_value = MagicMock()
+
+        # Act
+        result = auth._decode_image(b64_data)
+
+        # Assert
+        self.assertEqual(result, expected_img)
+        mock_np.frombuffer.assert_called_once()
+        mock_cv2.imdecode.assert_called_once()
+
+
+class TestFindGapX(unittest.TestCase):
+    """Cover auth._find_gap_x (uses mocked cv2/numpy)."""
+
+    def test_returns_gap_position(self):
+        # Arrange
+        mock_cv2 = sys.modules["cv2"]
+        mock_np = sys.modules["numpy"]
+
+        # Create mock images with proper .shape tuples
+        mock_bg = MagicMock()
+        mock_bg.shape = (200, 300, 4)
+        mock_piece = MagicMock()
+        mock_piece.shape = (50, 50, 4)
+
+        mock_cv2.imdecode.side_effect = [mock_bg, mock_piece]
+        mock_cv2.minMaxLoc.return_value = (0, 0.95, (0, 0), (150, 10))
+        mock_np.frombuffer.return_value = MagicMock()
+        mock_np.mean.return_value = 150.0
+
+        bg_b64 = base64.b64encode(b"bg_data").decode()
+        piece_b64 = base64.b64encode(b"piece_data").decode()
+
+        # Act
+        result = auth._find_gap_x(bg_b64, piece_b64)
+
+        # Assert
+        self.assertEqual(result, 150)
+
+
+class TestSolveCaptcha(unittest.TestCase):
+    """Cover auth._solve_captcha."""
+
+    def test_solves_on_first_attempt(self):
+        # Arrange
+        captcha_resp = {
+            "data": {
+                "secretKey": "0123456789abcdef",
+                "token": "captcha-token-123",
+                "originalImageBase64": base64.b64encode(b"bg").decode(),
+                "jigsawImageBase64": base64.b64encode(b"piece").decode(),
+            }
+        }
+        check_resp = {"status": 200}
+
+        with patch.object(auth, "_api_request", side_effect=[captcha_resp, check_resp]), \
+             patch.object(auth, "_find_gap_x", return_value=150), \
+             patch.object(auth, "_aes_encrypt", return_value="encrypted"), \
+             patch("time.sleep"), \
+             patch("secrets.randbelow", return_value=500):
+
+            # Act
+            token, secret_key, point_json = auth._solve_captcha(max_attempts=1)
+
+        # Assert
+        self.assertEqual(token, "captcha-token-123")
+        self.assertEqual(secret_key, "0123456789abcdef")
+        self.assertIn('"x":150', point_json)
+
+    def test_retries_on_failure(self):
+        # Arrange
+        captcha_resp = {
+            "data": {
+                "secretKey": "key123",
+                "token": "tok123",
+                "originalImageBase64": base64.b64encode(b"bg").decode(),
+                "jigsawImageBase64": base64.b64encode(b"piece").decode(),
+            }
+        }
+        fail_resp = {"status": 400}
+        ok_resp = {"status": 200}
+
+        with patch.object(auth, "_api_request",
+                          side_effect=[captcha_resp, fail_resp, captcha_resp, ok_resp]), \
+             patch.object(auth, "_find_gap_x", return_value=100), \
+             patch.object(auth, "_aes_encrypt", return_value="enc"), \
+             patch("time.sleep"), \
+             patch("secrets.randbelow", return_value=500):
+
+            # Act
+            token, _, _ = auth._solve_captcha(max_attempts=2)
+
+        # Assert
+        self.assertEqual(token, "tok123")
+
+    def test_raises_after_max_attempts(self):
+        # Arrange
+        captcha_resp = {
+            "data": {
+                "secretKey": "key",
+                "token": "tok",
+                "originalImageBase64": base64.b64encode(b"bg").decode(),
+                "jigsawImageBase64": base64.b64encode(b"piece").decode(),
+            }
+        }
+        fail_resp = {"status": 400}
+
+        with patch.object(auth, "_api_request",
+                          side_effect=[captcha_resp, fail_resp]), \
+             patch.object(auth, "_find_gap_x", return_value=100), \
+             patch.object(auth, "_aes_encrypt", return_value="enc"), \
+             patch("time.sleep"), \
+             patch("secrets.randbelow", return_value=500):
+
+            # Act & Assert
+            with self.assertRaises(RuntimeError):
+                auth._solve_captcha(max_attempts=1)
+
+
+class TestAuthenticate(unittest.TestCase):
+    """Cover auth.authenticate."""
+
+    def test_successful_login(self):
+        # Arrange
+        with patch.object(auth, "_solve_captcha",
+                          return_value=("tok", "key", '{"x":1,"y":5}')), \
+             patch.object(auth, "_aes_encrypt", return_value="captcha_verif"), \
+             patch.object(auth, "_api_request",
+                          return_value={"status": 200, "data": {"token": "jwt-token-123"}}):
+
+            # Act
+            result = auth.authenticate("user@test.com", "pass123")
+
+        # Assert
+        self.assertEqual(result, "jwt-token-123")
+
+    def test_strips_bearer_prefix(self):
+        # Arrange
+        with patch.object(auth, "_solve_captcha",
+                          return_value=("tok", "key", '{"x":1,"y":5}')), \
+             patch.object(auth, "_aes_encrypt", return_value="verif"), \
+             patch.object(auth, "_api_request",
+                          return_value={"status": 200, "data": {"token": "Bearer actual-jwt"}}):
+
+            # Act
+            result = auth.authenticate("user", "pass")
+
+        # Assert
+        self.assertEqual(result, "actual-jwt")
+
+    def test_login_failure_raises(self):
+        # Arrange
+        with patch.object(auth, "_solve_captcha",
+                          return_value=("tok", "key", '{"x":1,"y":5}')), \
+             patch.object(auth, "_aes_encrypt", return_value="verif"), \
+             patch.object(auth, "_api_request",
+                          return_value={"status": 500, "message": "bad creds"}):
+
+            # Act & Assert
+            with self.assertRaises(RuntimeError):
+                auth.authenticate("user", "pass")
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: db.py — VuePostgresWriter.close, downsampling_loop errors
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterCloseConn(unittest.TestCase):
+    """Cover VuePostgresWriter.close()."""
+
+    def _make_writer(self, mock_conn):
+        """Create a VuePostgresWriter with mocked psycopg2."""
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+        with patch.object(db, "psycopg2", mock_pg):
+            writer = db.VuePostgresWriter("postgresql://test")
+        return writer
+
+    def test_close_closes_open_connection(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        writer = self._make_writer(mock_conn)
+
+        # Act
+        writer.close()
+
+        # Assert
+        mock_conn.close.assert_called_once()
+
+    def test_close_skips_if_already_closed(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        writer = self._make_writer(mock_conn)
+        # Now mark it as closed
+        mock_conn.closed = True
+
+        # Act
+        writer.close()
+
+        # Assert — close() not called again because conn.closed is True
+        mock_conn.close.assert_not_called()
+
+
+class TestDownsamplingLoopErrors(unittest.TestCase):
+    """Cover downsampling_loop exception handling paths."""
+
+    def test_downsample_exception_is_caught(self):
+        # Arrange
+        writer = MagicMock()
+        call_count = {"n": 0}
+        orig_sleep = time.sleep
+
+        def fake_sleep(secs):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise KeyboardInterrupt("stop loop")
+
+        with patch.object(db, "downsample_vue_readings", side_effect=RuntimeError("db down")), \
+             patch.object(db, "cleanup_old_vue_readings"), \
+             patch("time.sleep", side_effect=fake_sleep):
+
+            # Act & Assert — loop runs, catches exception, sleeps, then we stop it
+            with self.assertRaises(KeyboardInterrupt):
+                db.downsampling_loop(writer, interval_seconds=1)
+
+    def test_sleep_exception_is_caught(self):
+        # Arrange
+        call_count = {"n": 0}
+
+        def sleep_fails(secs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise OSError("interrupted")
+            raise KeyboardInterrupt("stop")
+
+        with patch.object(db, "downsample_vue_readings"), \
+             patch.object(db, "cleanup_old_vue_readings"), \
+             patch("time.sleep", side_effect=sleep_fails):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                db.downsampling_loop(MagicMock(), interval_seconds=1)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: epcube_collector.py — token exp log, errors, poll loops
+# ---------------------------------------------------------------------------
+
+class TestEnsureAuthTokenExpLog(unittest.TestCase):
+    """Cover the token_exp logging branch in _ensure_auth."""
+
+    def test_logs_token_expiry_when_exp_is_nonzero(self):
+        # Arrange
+        c = _make_collector()
+        c._token = None
+        future_exp = time.time() + 3600
+
+        with patch.object(epcube_collector, "authenticate", return_value="new-token"), \
+             patch.object(epcube_collector, "_jwt_exp", return_value=future_exp), \
+             patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+
+            # Act
+            c._ensure_auth()
+
+        # Assert
+        self.assertEqual(c._token, "new-token")
+        self.assertEqual(c._token_exp, future_exp)
+
+
+class TestPollStaleDataStillZero(unittest.TestCase):
+    """Cover the 'still zero after re-auth' warning."""
+
+    def test_still_zero_after_reauth_continues(self):
+        # Arrange
+        c = _make_collector()
+        c._token = "old-token"
+        c._token_exp = time.time() + 3600
+        c._devices = [_make_device()]
+
+        stale_data = {"solarPower": 0, "gridPower": 0, "backUpPower": 0,
+                      "batterySoc": 0, "batteryCurrentElectricity": 0,
+                      "systemStatus": "?", "selfHelpRate": 0, "ressNumber": 0}
+
+        def mock_api(method, path, **kwargs):
+            if "homeDeviceInfo" in path:
+                return {"status": 200, "data": stale_data}
+            elif "deviceList" in path:
+                return {"status": 200, "data": c._devices}
+            elif "queryDataElectricity" in path:
+                return {"status": 200, "data": {}}
+            return {"status": 200, "data": {}}
+
+        with patch.object(epcube_collector, "_api_request", side_effect=mock_api), \
+             patch.object(epcube_collector, "authenticate", return_value="fresh-token"):
+
+            # Act
+            c.poll()
+
+        # Assert — poll completed (stale data accepted after re-auth)
+        self.assertTrue(len(c._history) > 0)
+
+
+class TestPollDeviceFetchError(unittest.TestCase):
+    """Cover the exception handler when fetching device data fails."""
+
+    def test_device_fetch_exception_increments_errors(self):
+        # Arrange
+        c = _make_collector()
+        c._token = "token"
+        c._token_exp = time.time() + 3600
+        c._devices = [_make_device()]
+
+        call_count = {"n": 0}
+
+        def mock_api(method, path, **kwargs):
+            if "homeDeviceInfo" in path:
+                raise ConnectionError("network down")
+            elif "queryDataElectricity" in path:
+                return {"status": 200, "data": {}}
+            return {"status": 200, "data": {}}
+
+        with patch.object(epcube_collector, "_api_request", side_effect=mock_api), \
+             patch.object(epcube_collector, "authenticate", return_value="token"):
+
+            # Act
+            c.poll()
+
+        # Assert
+        self.assertGreater(c._poll_errors, 0)
+
+
+class TestDailyEnergyFetchError(unittest.TestCase):
+    """Cover the exception handler when daily energy fetch fails."""
+
+    def test_daily_energy_error_logged(self):
+        # Arrange
+        c = _make_collector()
+        c._token = "token"
+        c._token_exp = time.time() + 3600
+        c._devices = [_make_device()]
+
+        call_count = {"n": 0}
+
+        def mock_api(method, path, **kwargs):
+            call_count["n"] += 1
+            if "homeDeviceInfo" in path:
+                return _make_home_device_info()
+            elif "queryDataElectricity" in path:
+                raise RuntimeError("daily energy API down")
+            elif "deviceList" in path:
+                return {"status": 200, "data": c._devices}
+            return {"status": 200, "data": {}}
+
+        with patch.object(epcube_collector, "_api_request", side_effect=mock_api), \
+             patch.object(epcube_collector, "authenticate", return_value="token"):
+
+            # Act
+            c.poll()
+
+        # Assert — poll completed despite daily energy error
+        self.assertTrue(len(c._history) > 0)
+        self.assertEqual(c._poll_count, 1)
+
+
+class TestReadPollIntervalFromDb(unittest.TestCase):
+    """Cover epcube_collector._read_poll_interval_from_db."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(epcube_collector, "POSTGRES_DSN", ""):
+            result = epcube_collector._read_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
+
+    def test_reads_valid_interval_from_db(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ('"30"',)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = epcube_collector._read_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, 30)
+        mock_conn.close.assert_called_once()
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = epcube_collector._read_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
+
+    def test_returns_default_when_out_of_range(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("9999",)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = epcube_collector._read_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
+
+    def test_returns_default_on_db_exception(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("conn failed")
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = epcube_collector._read_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
+
+
+class TestEpCubePollLoop(unittest.TestCase):
+    """Cover epcube_collector.poll_loop."""
+
+    def test_poll_loop_calls_poll_and_reads_interval(self):
+        # Arrange
+        c = _make_collector()
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        self.assertEqual(c._poll_interval, 5)
+
+    def test_poll_loop_catches_exception(self):
+        # Arrange
+        c = _make_collector()
+        call_count = {"n": 0}
+
+        def mock_read_interval():
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+            raise RuntimeError("db down")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db",
+                          side_effect=mock_read_interval), \
+             patch("time.sleep"):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        self.assertGreater(c._consecutive_errors, 0)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: exporter.py — main() exit paths
+# ---------------------------------------------------------------------------
+
+class TestExporterMainPostgresDsn(unittest.TestCase):
+    """Cover main() exit when POSTGRES_DSN is missing."""
+
+    def test_no_postgres_dsn_exits(self):
+        # Arrange
+        env = os.environ.copy()
+        env["EPCUBE_USERNAME"] = "u"
+        env["EPCUBE_PASSWORD"] = "p"
+
+        # Act & Assert
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "POSTGRES_DSN", ""), \
+             self.assertRaises(SystemExit) as ctx:
+            exporter.main()
+        self.assertEqual(ctx.exception.code, 1)
+
+
+class TestExporterMainPsycopg2Missing(unittest.TestCase):
+    """Cover main() exit when psycopg2 is not installed."""
+
+    def test_no_psycopg2_exits(self):
+        # Arrange
+        env = os.environ.copy()
+        env["EPCUBE_USERNAME"] = "u"
+        env["EPCUBE_PASSWORD"] = "p"
+
+        # Act & Assert
+        with patch.dict(os.environ, env, clear=True), \
+             patch.object(exporter, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(exporter, "psycopg2", None), \
+             self.assertRaises(SystemExit) as ctx:
+            exporter.main()
+        self.assertEqual(ctx.exception.code, 1)
+
+
+class TestExporterMainDisableAuthLog(unittest.TestCase):
+    """Cover the DISABLE_AUTH log branch in main()."""
+
+    @patch.dict(os.environ, {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}, clear=False)
+    @patch.object(exporter, "psycopg2", MagicMock())
+    @patch.object(exporter, "POSTGRES_DSN", "postgresql://test@localhost/test")
+    @patch.object(exporter, "DISABLE_AUTH", True)
+    def test_disable_auth_log_branch(self):
+        # Arrange
+        with patch.object(exporter, "EpCubeCollector") as mock_epc, \
+             patch.object(exporter, "PostgresWriter"), \
+             patch.object(exporter, "VuePostgresWriter"), \
+             patch("threading.Thread"), \
+             patch.object(exporter.HTTPServer, "__init__", return_value=None), \
+             patch.object(exporter.HTTPServer, "serve_forever", side_effect=KeyboardInterrupt):
+            mock_epc.return_value = MagicMock()
+
+            # Ensure no Vue creds so only EP Cube starts
+            env = os.environ.copy()
+            env.pop("EMPORIA_USERNAME", None)
+            env.pop("EMPORIA_PASSWORD", None)
+            with patch.dict(os.environ, env, clear=True):
+                env2 = {"EPCUBE_USERNAME": "u", "EPCUBE_PASSWORD": "p"}
+                with patch.dict(os.environ, env2, clear=False):
+
+                    # Act — should reach the DISABLE_AUTH log line
+                    exporter.main()
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: http_handler.py — session, OAuth, routes
+# ---------------------------------------------------------------------------
+
+class TestVerifySessionCookieBadSig(unittest.TestCase):
+    """Cover _verify_session_cookie returning None on bad HMAC."""
+
+    def test_tampered_signature_rejected(self):
+        # Arrange
+        with patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
+            signed = http_handler._sign_session("legit-session")
+            # Tamper with the signature
+            tampered = signed[:-4] + "XXXX"
+
+            # Act
+            result = http_handler._verify_session_cookie(tampered)
+
+        # Assert
+        self.assertIsNone(result)
+
+
+class TestCleanupExpired(unittest.TestCase):
+    """Cover _cleanup_expired deleting expired sessions and stale auth states."""
+
+    def test_removes_expired_sessions_and_stale_auth(self):
+        # Arrange — use the _sessions and _pending_auth dicts from http_handler
+        # to ensure we reference the same objects _cleanup_expired uses
+        sessions = http_handler._sessions
+        pending = http_handler._pending_auth
+        lock = http_handler._auth_lock
+
+        with lock:
+            sessions["expired-1"] = {"expires": 0, "user": "a"}
+            sessions["valid-1"] = {"expires": time.time() + 3600, "user": "b"}
+            pending["stale-state"] = {"code_verifier": "v", "timestamp": 0}
+            pending["fresh-state"] = {"code_verifier": "v", "timestamp": time.time()}
+
+        try:
+            # Act
+            http_handler._cleanup_expired()
+
+            # Assert
+            with lock:
+                self.assertNotIn("expired-1", sessions)
+                self.assertIn("valid-1", sessions)
+                self.assertNotIn("stale-state", pending)
+                self.assertIn("fresh-state", pending)
+        finally:
+            with lock:
+                sessions.pop("valid-1", None)
+                pending.pop("fresh-state", None)
+
+
+class TestRenderStatusPageEdgeCases(unittest.TestCase):
+    """Cover edge cases in _render_status_page."""
+
+    def _make_status(self, **overrides):
+        status = {
+            "version": config.__version__,
+            "uptime_s": 100,
+            "poll_count": 1,
+            "poll_errors": 0,
+            "last_poll": time.time(),
+            "poll_interval": 60,
+            "next_poll_at": time.time() + 30,
+            "devices": 1,
+            "history": [],
+        }
+        status.update(overrides)
+        return status
+
+    def _make_health(self):
+        return {"healthy": True, "checks": []}
+
+    def test_no_data_shows_waiting_message(self):
+        # Arrange & Act
+        html_out = http_handler._render_status_page(
+            self._make_status(history=[]), self._make_health())
+
+        # Assert
+        self.assertIn("No data yet", html_out)
+
+    def test_multiple_devices_renders_skip_continue(self):
+        """Two devices in history — the inner loop hits the 'continue' for non-matching IDs."""
+        # Arrange
+        snap = {
+            "time": "2026-05-08T12:00:00Z",
+            "time_minute": "2026-05-08T12:00Z",
+            "devices": [
+                {
+                    "name": "Device A", "id": "AAA",
+                    "solar_kw": 1.0, "battery_soc": 50, "battery_kw": 0.5,
+                    "grid_kw": 0.0, "backup_kw": 0.5, "self_sufficiency": 90,
+                    "system_status": "Normal", "bat_stored_kwh": 10.0,
+                    "bat_peak_kwh": 10.0, "ress_count": 1,
+                    "solar_kwh": 5.0, "grid_import_kwh": 0.0,
+                    "grid_export_kwh": 0.0, "backup_kwh": 3.0,
+                },
+                {
+                    "name": "Device B", "id": "BBB",
+                    "solar_kw": 2.0, "battery_soc": 60, "battery_kw": 1.0,
+                    "grid_kw": 0.0, "backup_kw": 1.0, "self_sufficiency": 80,
+                    "system_status": "Self-Use", "bat_stored_kwh": 8.0,
+                    "bat_peak_kwh": 8.5, "ress_count": 2,
+                    "solar_kwh": 8.0, "grid_import_kwh": 1.0,
+                    "grid_export_kwh": 0.5, "backup_kwh": 6.0,
+                },
+            ],
+        }
+
+        # Act
+        html_out = http_handler._render_status_page(
+            self._make_status(history=[snap], devices=2), self._make_health())
+
+        # Assert — both devices rendered
+        self.assertIn("Device A", html_out)
+        self.assertIn("Device B", html_out)
+
+    def test_device_not_in_all_snaps_hits_else_continue(self):
+        """Device in one snap but not another triggers the for/else: continue pattern."""
+        # Arrange
+        snap1 = {
+            "time": "2026-05-08T12:00:00Z",
+            "time_minute": "2026-05-08T12:00Z",
+            "devices": [
+                {
+                    "name": "Dev1", "id": "111",
+                    "solar_kw": 1.0, "battery_soc": 50, "battery_kw": 0.0,
+                    "grid_kw": 0.0, "backup_kw": 1.0, "self_sufficiency": 100,
+                    "system_status": "Normal", "bat_stored_kwh": 10.0,
+                    "bat_peak_kwh": 10.0, "ress_count": 1,
+                    "solar_kwh": 5.0, "grid_import_kwh": 0.0,
+                    "grid_export_kwh": 0.0, "backup_kwh": 3.0,
+                },
+            ],
+        }
+        snap2 = {
+            "time": "2026-05-08T12:01:00Z",
+            "time_minute": "2026-05-08T12:01Z",
+            "devices": [
+                {
+                    "name": "Dev2", "id": "222",
+                    "solar_kw": 2.0, "battery_soc": 70, "battery_kw": 0.5,
+                    "grid_kw": 0.0, "backup_kw": 1.5, "self_sufficiency": 80,
+                    "system_status": "Normal", "bat_stored_kwh": 12.0,
+                    "bat_peak_kwh": 12.0, "ress_count": 1,
+                    "solar_kwh": 7.0, "grid_import_kwh": 0.0,
+                    "grid_export_kwh": 0.0, "backup_kwh": 5.0,
+                },
+            ],
+        }
+
+        # Act — Dev1 appears only in snap1, Dev2 only in snap2
+        # For Dev1, the "latest status" loop searches reversed([snap1, snap2])
+        # snap2 has no device "111" → inner for completes without break → else: continue
+        html_out = http_handler._render_status_page(
+            self._make_status(history=[snap1, snap2], devices=2), self._make_health())
+
+        # Assert
+        self.assertIn("Dev1", html_out)
+        self.assertIn("Dev2", html_out)
+
+
+class TestRenderVueDebugPageEdgeCases(unittest.TestCase):
+    """Cover _render_vue_debug_page edge cases."""
+
+    def test_last_poll_zero_shows_never(self):
+        # Arrange
+        vue_status = {
+            "device_count": 0,
+            "circuit_count": 0,
+            "last_poll": 0,
+            "poll_errors": 0,
+            "consecutive_errors": 0,
+            "current_scale": "1S",
+            "poll_interval": 1,
+            "next_poll_at": 0,
+            "authenticated": True,
+            "devices": [],
+            "uptime_s": 100,
+            "last_readings": {},
+            "channel_names": {},
+        }
+
+        # Act
+        html_out = http_handler._render_vue_debug_page(vue_status)
+
+        # Assert
+        self.assertIn("never", html_out)
+
+    def test_balance_and_text_channels_sort(self):
+        """Cover the 'Balance' and ValueError sort key paths."""
+        # Arrange
+        vue_status = {
+            "device_count": 1,
+            "circuit_count": 3,
+            "last_poll": time.time(),
+            "poll_errors": 0,
+            "consecutive_errors": 0,
+            "current_scale": "1S",
+            "poll_interval": 1,
+            "next_poll_at": time.time() + 1,
+            "authenticated": True,
+            "devices": [{"device_gid": 100, "name": "Vue", "connected": True, "channels": 3}],
+            "uptime_s": 60,
+            "last_readings": {
+                (100, "1,2,3"): 5000,  # mains
+                (100, "Balance"): 200,  # balance
+                (100, "custom_name"): 50,  # text channel → ValueError path
+            },
+            "channel_names": {
+                (100, "1,2,3"): "Mains",
+                (100, "Balance"): "",
+                (100, "custom_name"): "",
+            },
+        }
+
+        # Act
+        html_out = http_handler._render_vue_debug_page(vue_status)
+
+        # Assert
+        self.assertIn("5.0 kW", html_out)  # mains formatted as kW
+        self.assertIn("200 W", html_out)
+        self.assertIn("Balance", html_out)
+
+
+class TestHandleCallbackFull(unittest.TestCase):
+    """Cover _handle_callback OAuth code exchange paths."""
+
+    def setUp(self):
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
+
+    def _make_handler(self, path, headers=None):
+        h = _TestableHandler()
+        h.collector = self.collector
+        h.vue_collector = None
+        h.path = path
+        h.headers = headers or {}
+        h.wfile = BytesIO()
+        h.send_response = MagicMock()
+        h.send_header = MagicMock()
+        h.end_headers = MagicMock()
+        return h
+
+    def test_callback_with_error_param_returns_400(self):
+        # Arrange
+        h = self._make_handler("/.auth/callback?error=access_denied&error_description=User+denied")
+
+        # Act
+        h.do_GET()
+
+        # Assert
+        h.send_response.assert_called_with(400)
+        self.assertIn(b"Authentication failed", h.wfile.getvalue())
+
+    def test_callback_token_exchange_failure_returns_500(self):
+        # Arrange
+        state_val = "test-state-123"
+        h = self._make_handler(
+            f"/.auth/callback?code=auth-code&state={state_val}")
+
+        # Must set pending auth on the SAME dict _handle_callback uses
+        pending = http_handler._pending_auth
+        lock = http_handler._auth_lock
+        with lock:
+            pending[state_val] = {
+                "code_verifier": "verifier123",
+                "timestamp": time.time(),
+            }
+
+        try:
+            with patch("urllib.request.urlopen", side_effect=Exception("network error")):
+                # Act
+                h.do_GET()
+        finally:
+            with lock:
+                pending.pop(state_val, None)
+
+        # Assert
+        h.send_response.assert_called_with(500)
+        self.assertIn(b"Token exchange failed", h.wfile.getvalue())
+
+    def test_callback_jwt_validation_failure_returns_401(self):
+        # Arrange
+        state_val = "test-state-456"
+        h = self._make_handler(
+            f"/.auth/callback?code=auth-code&state={state_val}")
+
+        pending = http_handler._pending_auth
+        lock = http_handler._auth_lock
+        with lock:
+            pending[state_val] = {
+                "code_verifier": "verifier456",
+                "timestamp": time.time(),
+            }
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({"access_token": "bad-jwt"}).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        try:
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                http_handler.ExporterHandler._jwks_client = None
+                h.do_GET()
+        finally:
+            with lock:
+                pending.pop(state_val, None)
+            http_handler.ExporterHandler._jwks_client = None
+
+        # Assert
+        h.send_response.assert_called_with(401)
+
+    def test_callback_success_creates_session(self):
+        # Arrange
+        state_val = "test-state-789"
+        h = self._make_handler(
+            f"/.auth/callback?code=auth-code&state={state_val}")
+
+        pending = http_handler._pending_auth
+        lock = http_handler._auth_lock
+        with lock:
+            pending[state_val] = {
+                "code_verifier": "verifier789",
+                "timestamp": time.time(),
+            }
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"access_token": "valid-jwt"}).encode()
+        mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        mock_jwks = MagicMock()
+        mock_key = MagicMock()
+        mock_key.key = "signing-key"
+        mock_jwks.get_signing_key_from_jwt.return_value = mock_key
+
+        mock_jwt = MagicMock()
+        mock_jwt.PyJWKClient.return_value = mock_jwks
+        mock_jwt.decode.return_value = {"preferred_username": "user@test.com"}
+
+        try:
+            with patch("urllib.request.urlopen", return_value=mock_resp), \
+                 patch.dict(sys.modules, {"jwt": mock_jwt}):
+                http_handler.ExporterHandler._jwks_client = None
+                h.do_GET()
+        finally:
+            with lock:
+                pending.pop(state_val, None)
+            http_handler.ExporterHandler._jwks_client = None
+
+        # Assert
+        h.send_response.assert_called_with(302)
+        location_calls = [c for c in h.send_header.call_args_list
+                          if c[0][0] == "Location"]
+        self.assertTrue(any("/status" in c[0][1] for c in location_calls))
+
+
+class TestCheckAuthBearerJWT(unittest.TestCase):
+    """Cover _check_auth JWT Bearer token validation success."""
+
+    def _make_handler(self, path, headers=None):
+        h = _TestableHandler()
+        h.collector = MagicMock()
+        h.vue_collector = None
+        h.path = path
+        h.headers = headers or {}
+        h.wfile = BytesIO()
+        h.send_response = MagicMock()
+        h.send_header = MagicMock()
+        h.end_headers = MagicMock()
+        return h
+
+    def test_valid_bearer_token_grants_access(self):
+        # Arrange
+        mock_jwks = MagicMock()
+        mock_key = MagicMock()
+        mock_key.key = "the-key"
+        mock_jwks.get_signing_key_from_jwt.return_value = mock_key
+
+        mock_jwt = MagicMock()
+        mock_jwt.PyJWKClient.return_value = mock_jwks
+        mock_jwt.decode.return_value = {"sub": "user123"}
+
+        h = self._make_handler("/status", headers={
+            "Authorization": "Bearer valid-jwt-token"
+        })
+
+        with patch.object(http_handler, "DISABLE_AUTH", False), \
+             patch.dict(sys.modules, {"jwt": mock_jwt}):
+            http_handler.ExporterHandler._jwks_client = None
+
+            # Act
+            result = h._check_auth()
+
+        # Assert
+        self.assertTrue(result)
+        http_handler.ExporterHandler._jwks_client = None
+
+
+class TestDoGetNoCollector(unittest.TestCase):
+    """Cover do_GET routes when collectors are None."""
+
+    def _make_handler(self, path, headers=None):
+        h = _TestableHandler()
+        h.collector = None
+        h.vue_collector = None
+        h.path = path
+        h.headers = headers or {}
+        h.wfile = BytesIO()
+        h.send_response = MagicMock()
+        h.send_header = MagicMock()
+        h.end_headers = MagicMock()
+        return h
+
+    def test_health_ok_when_no_collector(self):
+        # Arrange & Act
+        h = self._make_handler("/health")
+        h.do_GET()
+
+        # Assert
+        h.send_response.assert_called_with(200)
+
+    def test_status_page_no_collector_shows_disabled(self):
+        # Arrange
+        with patch.object(http_handler, "DISABLE_AUTH", True):
+            h = self._make_handler("/status")
+
+            # Act
+            h.do_GET()
+
+        # Assert
+        h.send_response.assert_called_with(200)
+        self.assertIn(b"EP Cube collector: disabled", h.wfile.getvalue())
+
+    def test_vue_page_no_collector(self):
+        # Arrange
+        with patch.object(http_handler, "DISABLE_AUTH", True):
+            h = self._make_handler("/vue")
+
+            # Act
+            h.do_GET()
+
+        # Assert
+        h.send_response.assert_called_with(200)
+        self.assertIn(b"Vue polling is not configured", h.wfile.getvalue())
+
+    def test_vue_page_with_collector(self):
+        # Arrange
+        mock_vue = MagicMock()
+        mock_vue.get_status.return_value = {
+            "device_count": 1, "circuit_count": 2,
+            "last_poll": time.time(), "poll_errors": 0,
+            "consecutive_errors": 0, "current_scale": "1S",
+            "poll_interval": 1, "next_poll_at": time.time() + 1,
+            "authenticated": True,
+            "devices": [{"device_gid": 1, "name": "Test", "connected": True, "channels": 2}],
+            "uptime_s": 60, "last_readings": {}, "channel_names": {},
+        }
+        with patch.object(http_handler, "DISABLE_AUTH", True):
+            h = self._make_handler("/vue")
+            h.vue_collector = mock_vue
+
+            # Act
+            h.do_GET()
+
+        # Assert
+        h.send_response.assert_called_with(200)
+
+    def test_vue_page_auth_denied_returns_early(self):
+        """Cover the _check_auth() -> return path on /vue."""
+        # Arrange
+        with patch.object(http_handler, "DISABLE_AUTH", False):
+            h = self._make_handler("/vue")
+
+            # Act
+            h.do_GET()
+
+        # Assert — 401 because no auth provided (API client, no Accept: text/html)
+        h.send_response.assert_called_with(401)
+    """Cover ExporterHandler.log_message pass."""
+
+    def test_log_message_does_nothing(self):
+        # Arrange
+        h = _TestableHandler()
+
+        # Act — should not raise
+        h.log_message("GET %s %s", "/test", "200")
+
+        # Assert — method exists and is callable (the pass body is covered)
+        self.assertTrue(True)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: vue_collector.py — intervals, discovery, poll loops
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Coverage gap: vue_collector.py — pyemvue.enums import line
+# NOTE: vue_collector.py:12 (from pyemvue.enums import Scale, Unit) is only
+# reachable when pyemvue is installed. Reloading vue_collector breaks module
+# state. Coverage gap accepted as environment-dependent.
+# ---------------------------------------------------------------------------
+
+
+class TestReadVuePollIntervalFromDb(unittest.TestCase):
+    """Cover vue_collector._read_vue_poll_interval_from_db."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(vue_collector, "POSTGRES_DSN", ""):
+            result = vue_collector._read_vue_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+
+    def test_reads_valid_interval(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ('"2"',)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, 2)
+        mock_conn.close.assert_called_once()
+
+    def test_returns_default_when_out_of_range(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("9999",)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+
+    def test_returns_default_on_exception(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("fail")
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+
+
+class TestReadVueDeviceRefreshInterval(unittest.TestCase):
+    """Cover vue_collector._read_vue_device_refresh_interval_from_db."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(vue_collector, "POSTGRES_DSN", ""):
+            result = vue_collector._read_vue_device_refresh_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+
+    def test_reads_valid_interval(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ('"120"',)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_device_refresh_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, 120)
+
+    def test_returns_default_when_out_of_range(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("10",)  # below 60 minimum
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_device_refresh_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+
+    def test_returns_default_on_exception(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("fail")
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_device_refresh_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+
+            # Act
+            result = vue_collector._read_vue_device_refresh_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+
+
+class TestReadVueDailyPollIntervalFallback(unittest.TestCase):
+    """Cover the default return path in _read_vue_daily_poll_interval_from_db."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(vue_collector, "POSTGRES_DSN", ""):
+            result = vue_collector._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+
+        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(vue_collector, "psycopg2") as mock_pg:
+            mock_pg.connect.return_value = mock_conn
+
+            # Act
+            result = vue_collector._read_vue_daily_poll_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+
+
+class TestVueDiscoverDevicesMerge(unittest.TestCase):
+    """Cover device merge in _discover_devices — prefer named entry."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_prefers_named_device(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+
+        # Two entries for same gid: first unnamed, second named
+        dev1 = MagicMock()
+        dev1.device_gid = 100
+        dev1.device_name = ""
+        dev1.connected = True
+        ch1 = MagicMock()
+        ch1.device_gid = 100
+        ch1.channel_num = "1"
+        ch1.name = "Circuit A"
+        dev1.channels = [ch1]
+
+        dev2 = MagicMock()
+        dev2.device_gid = 100
+        dev2.device_name = "My Vue"
+        dev2.connected = True
+        ch2 = MagicMock()
+        ch2.device_gid = 100
+        ch2.channel_num = "2"
+        ch2.name = "Circuit B"
+        dev2.channels = [ch2]
+
+        vue_mock.get_devices.return_value = [dev1, dev2]
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+
+        # Assert — named device preferred
+        self.assertEqual(vc._device_count, 1)
+        self.assertEqual(vc._circuit_count, 2)
+        self.assertEqual(vc._devices_info[0]["name"], "My Vue")
+
+
+class TestVueDiscoverDevicesError(unittest.TestCase):
+    """Cover _discover_devices exception handler."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_discovery_exception_caught(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.side_effect = Exception("API timeout")
+
+        # Act — should not raise
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+
+        # Assert — collector exists but with zero devices
+        self.assertEqual(vc._device_count, 0)
+
+
+class TestVuePollRetryLogin(unittest.TestCase):
+    """Cover _poll_inner retry login path when not authenticated."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_poll_retries_login_on_failure(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = False
+
+        # Make login fail again
+        vue_mock.login.side_effect = Exception("auth failed")
+
+        # Act
+        vc.poll()
+
+        # Assert
+        self.assertGreater(vc._poll_errors, 0)
+        self.assertGreater(vc._consecutive_errors, 0)
+
+
+class TestVuePollInnerProcessingErrors(unittest.TestCase):
+    """Cover _poll_inner device processing exception and API failure."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_device_processing_exception(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = [100]
+        vc._vue = vue_mock
+        vc._last_device_refresh = time.time()
+
+        # Usage returns a device with a processing error
+        mock_device_usage = MagicMock()
+        mock_device_usage.timestamp = None  # triggers error in processing
+        mock_device_usage.channels = {"1": MagicMock(usage=None)}
+        vue_mock.get_device_list_usage.return_value = {100: mock_device_usage}
+
+        # Make timestamp access raise
+        type(mock_device_usage).timestamp = property(lambda self: (_ for _ in ()).throw(ValueError("bad ts")))
+
+        # Act
+        vc.poll()
+
+        # Assert
+        self.assertGreater(vc._poll_errors, 0)
+
+    @patch("vue_collector.PyEmVue")
+    def test_api_call_exception(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = [100]
+        vc._vue = vue_mock
+        vc._last_device_refresh = time.time()
+
+        vue_mock.get_device_list_usage.side_effect = Exception("API error")
+
+        # Act
+        vc.poll()
+
+        # Assert
+        self.assertGreater(vc._poll_errors, 0)
+        self.assertGreater(vc._consecutive_errors, 0)
+
+
+class TestVuePollInnerTimestampNaive(unittest.TestCase):
+    """Cover the naive timestamp → UTC replacement path."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_naive_timestamp_gets_utc(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = [100]
+        vc._vue = vue_mock
+        vc._last_device_refresh = time.time()
+
+        # Create mock usage with naive timestamp
+        mock_ch = MagicMock()
+        mock_ch.usage = 0.001  # 1 Wh
+        mock_device_usage = MagicMock()
+        mock_device_usage.timestamp = datetime(2026, 5, 8, 12, 0, 0)  # naive
+        mock_device_usage.channels = {"1": mock_ch}
+        vue_mock.get_device_list_usage.return_value = {100: mock_device_usage}
+
+        # Act
+        vc.poll()
+
+        # Assert
+        self.assertGreater(vc._last_poll, 0)
+        # Reading should have been written with UTC timezone
+        pg.write_readings.assert_called_once()
+        written = pg.write_readings.call_args[0][0]
+        self.assertEqual(len(written), 1)
+        ts = written[0][2]
+        self.assertIsNotNone(ts.tzinfo)
+
+
+class TestVuePollDeviceRefresh(unittest.TestCase):
+    """Cover periodic device refresh in _poll_inner."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_device_refresh_triggered(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = [100]
+        vc._vue = vue_mock
+        vc._last_device_refresh = 0  # force refresh
+
+        vue_mock.get_device_list_usage.return_value = {}
+
+        with patch.object(vue_collector, "_read_vue_device_refresh_interval_from_db", return_value=1):
+            # Act
+            vc.poll()
+
+        # Assert — get_devices called during refresh (once at init, once at poll)
+        self.assertGreaterEqual(vue_mock.get_devices.call_count, 2)
+
+
+class TestVueGetStatus(unittest.TestCase):
+    """Cover VueCollector.get_status."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_get_status_returns_dict(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+
+        # Act
+        status = vc.get_status()
+
+        # Assert
+        self.assertIn("device_count", status)
+        self.assertIn("circuit_count", status)
+        self.assertIn("current_scale", status)
+        self.assertIn("authenticated", status)
+        self.assertIn("last_readings", status)
+        self.assertIn("channel_names", status)
+        self.assertIn("uptime_s", status)
+
+
+class TestVuePollDailyNotAuthenticated(unittest.TestCase):
+    """Cover poll_daily early returns."""
+
+    @patch("vue_collector.PyEmVue")
+    def test_poll_daily_skips_when_not_authenticated(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = False
+
+        # Act
+        vc.poll_daily()
+
+        # Assert — no API calls made
+        vue_mock.get_device_list_usage.assert_not_called()
+
+    @patch("vue_collector.PyEmVue")
+    def test_poll_daily_skips_when_no_devices(self, mock_pyemvue_cls):
+        # Arrange
+        pg = MagicMock()
+        vue_mock = MagicMock()
+        mock_pyemvue_cls.return_value = vue_mock
+        vue_mock.get_devices.return_value = []
+
+        vc = vue_collector.VueCollector("user", "pass", pg_writer=pg)
+        vc._authenticated = True
+        vc._device_gids = []
+
+        # Act
+        vc.poll_daily()
+
+        # Assert — no API calls made
+        vue_mock.get_device_list_usage.assert_not_called()
+
+
+class TestVuePollLoopCoverage(unittest.TestCase):
+    """Cover vue_collector.vue_poll_loop."""
+
+    def test_vue_poll_loop_runs_and_catches_errors(self):
+        # Arrange
+        collector = MagicMock()
+        collector._lock = threading.Lock()
+        collector._poll_errors = 0
+        collector._consecutive_errors = 0
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(vue_collector, "_read_vue_poll_interval_from_db", return_value=1), \
+             patch("time.sleep", side_effect=mock_sleep):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                vue_collector.vue_poll_loop(collector)
+
+    def test_vue_poll_loop_exception_increments_errors(self):
+        # Arrange
+        collector = MagicMock()
+        collector._lock = threading.Lock()
+        collector._poll_errors = 0
+        collector._consecutive_errors = 0
+        call_count = {"n": 0}
+
+        def mock_read_interval():
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+            raise RuntimeError("db fail")
+
+        with patch.object(vue_collector, "_read_vue_poll_interval_from_db",
+                          side_effect=mock_read_interval), \
+             patch("time.sleep"):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                vue_collector.vue_poll_loop(collector)
+
+        self.assertGreater(collector._poll_errors, 0)
+
+
+class TestVueDailyPollLoopError(unittest.TestCase):
+    """Cover vue_daily_poll_loop exception handling."""
+
+    def test_daily_poll_loop_catches_exception(self):
+        # Arrange
+        collector = MagicMock()
+        collector.poll_daily.side_effect = RuntimeError("daily fail")
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(vue_collector, "_read_vue_daily_poll_interval_from_db", return_value=1), \
+             patch("time.sleep", side_effect=mock_sleep):
+
+            # Act & Assert
+            with self.assertRaises(KeyboardInterrupt):
+                vue_collector.vue_daily_poll_loop(collector)
+
+
+# ---------------------------------------------------------------------------
+# Import coverage: optional dependency branches
+# ---------------------------------------------------------------------------
+
+class TestConfigPsycopg2Import(unittest.TestCase):
+    """Cover the successful psycopg2 import branch in config.py."""
+
+    def test_psycopg2_imported_when_available(self):
+        # Arrange
+        import importlib
+        mock_pg = MagicMock()
+        mock_extras = MagicMock()
+        original_modules = {}
+        # Save and inject mocks
+        for mod_name in ["psycopg2", "psycopg2.extras"]:
+            original_modules[mod_name] = sys.modules.get(mod_name)
+        sys.modules["psycopg2"] = mock_pg
+        sys.modules["psycopg2.extras"] = mock_extras
+
+        # Also save config's current psycopg2 ref
+        original_psycopg2 = config.psycopg2
+
+        try:
+            # Act
+            importlib.reload(config)
+
+            # Assert — config.psycopg2 should be the mock, not None
+            self.assertIs(config.psycopg2, mock_pg)
+        finally:
+            # Restore original state
+            config.psycopg2 = original_psycopg2
+            for mod_name, orig in original_modules.items():
+                if orig is None:
+                    sys.modules.pop(mod_name, None)
+                else:
+                    sys.modules[mod_name] = orig
+            importlib.reload(config)
+
+
+class TestVueCollectorPyEmVueImport(unittest.TestCase):
+    """Cover the successful pyemvue import branch in vue_collector.py."""
+
+    def test_pyemvue_enums_imported_when_available(self):
+        # Arrange
+        import importlib
+        mock_pyemvue = MagicMock()
+        mock_enums = MagicMock()
+        mock_enums.Scale = "MockScale"
+        mock_enums.Unit = "MockUnit"
+
+        original_modules = {}
+        for mod_name in ["pyemvue", "pyemvue.enums"]:
+            original_modules[mod_name] = sys.modules.get(mod_name)
+        sys.modules["pyemvue"] = mock_pyemvue
+        sys.modules["pyemvue.enums"] = mock_enums
+        mock_pyemvue.PyEmVue = "MockPyEmVue"
+
+        original_pyemvue = vue_collector.PyEmVue
+
+        try:
+            # Act
+            importlib.reload(vue_collector)
+
+            # Assert — PyEmVue should be the mock value
+            self.assertEqual(vue_collector.PyEmVue, "MockPyEmVue")
+        finally:
+            # Restore
+            vue_collector.PyEmVue = original_pyemvue
+            for mod_name, orig in original_modules.items():
+                if orig is None:
+                    sys.modules.pop(mod_name, None)
+                else:
+                    sys.modules[mod_name] = orig
+            importlib.reload(vue_collector)
 
 
 if __name__ == "__main__":

@@ -125,11 +125,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install opencv-python-headless pycryptodome numpy PyJWT pytest
+        run: pip install opencv-python-headless pycryptodome numpy PyJWT pytest pytest-cov
 
-      - name: Run exporter tests
+      - name: Run exporter tests with coverage
         working-directory: local/epcube-exporter
-        run: pytest test_exporter.py -v
+        run: >-
+          pytest test_exporter.py -v
+          --cov=config --cov=auth --cov=db
+          --cov=epcube_collector --cov=exporter
+          --cov=http_handler --cov=vue_collector
+          --cov-fail-under=100
 
   docker-local:
     needs: changes
