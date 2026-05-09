@@ -1,70 +1,90 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-03
+**Last Updated**: 2026-05-08
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `main`
-**Last merged**: PR #132 — Defense-in-depth: NaN/HTML/concurrency + _tablesCreated race + SWA config fix
-**Unpushed commits**: none
+**Branch**: `124-device-discovery`
+**Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
+**Unpushed commits**: 2 on `124-device-discovery` (spec + Phase 1+2)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-03)
+## ⚡ Current State (2026-05-08)
+
+### Feature 124: Device Discovery (IN PROGRESS 🔧)
+- **Issue #134** — Automatic device discovery with hourly re-scan and device merge
+- **Branch**: `124-device-discovery` (2 commits ahead of main)
+- **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
+- **Plan**: Complete (research, data model, contracts, quickstart, 60 tasks)
+- **Phase 1+2**: Complete (schema, models, settings, compare_device_lists, retry_with_backoff, status filter)
+- **Next**: Phase 3: T015–T022 (US1 MVP — automatic new device detection)
+
+### PR #136 — Exporter Refactor (MERGED ✅)
+- **Issue #135 closed** — Refactor exporter monolith + enforce 100% coverage
+- Split 2083-line `exporter.py` into 7 focused modules (config, auth, db, epcube_collector, vue_collector, http_handler, exporter)
+- 262 tests, 100% coverage (was 185 tests, 79%)
+- Added `pytest-cov --cov-fail-under=100` to CI
+- Fixed XSS in Vue debug page (device names + circuit names)
+- Fixed thread safety: `_lock` for shared state in `_discover_devices()` and `_poll_inner()`
+- Dockerfile: explicit file list (excludes test_exporter.py from prod image)
+- `.coveragerc`: project-wide exclusions for `if __name__` and `except ImportError`
 
 ### PR #132 — Defense-in-Depth (MERGED ✅)
-- **Issue #123 closed** — NaN/HTML/concurrency hardening across exporter and API
-- Exporter: `_safe_float()` rejects NaN/Infinity → 0; used in metric parsing + stale detection
-- Exporter: HTML-escapes device names in status page (XSS prevention)
-- Exporter: lock-guarded `_polling` flag prevents overlapping polls (both EpCube and Vue collectors)
-- API: `SemaphoreSlim` + double-check locking on `EnsureTablesAsync` prevents concurrent DDL
-- API: `PostgresSettingsStore` implements `IDisposable` to dispose the `SemaphoreSlim`
-- API: integration tests split into self-contained per-concern files (no shared state between test classes)
-- Dashboard: moved `staticwebapp.config.json` to `public/` so Vite includes it in `dist/` — fixes 404 on SPA route refresh
-- TDD: 17 new exporter tests (185 total), 1 new API integration test (392 total)
-- Net: 19 files changed, 1462 insertions, 967 deletions
+- **Issue #123 closed** — NaN/HTML/concurrency hardening
 
 ### Production Outage — PostgreSQL Auto-Stop (UNRESOLVED)
-- **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL while exporter was actively writing
-- See Copilot repo memory `postgres-auto-stop-runbook.md` for debugging steps
-- **Open**: recurrence unknown, no exemption mechanism identified yet
+- **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL
+- See Copilot repo memory `postgres-auto-stop-runbook.md`
+
+### Staging Environments
+- `b123-def`: Destroy workflow triggered (run #25572637307) — verify completion
+- `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
 
 ### Tests
-- Dashboard: 544 tests, 100% all metrics (stmts/branches/funcs/lines)
-- API: 392 tests, 100% line + 100% branch
-- Exporter: 185 tests
-- **Total: 1121 tests**
+- Dashboard: 544 tests, 100% all metrics
+- API: 401+ tests, 100% line + 100% branch (mock-based; Testcontainers need Docker)
+- Exporter: 282 tests, 100% coverage
+- **Total: 1227+ tests**
 
 ### Open Issues
-| # | Title | Label |
-|---|-------|-------|
-| 115 | Separate Application Insights per environment | enhancement |
-| 74 | Custom domains on devsbx.xyz | — |
-| 66 | Calendar-aware time range selector | enhancement |
-| 52 | Port exporter Python→C# | enhancement |
-| 6 | iPad App | feature (spec only) |
-| 5 | iPhone App | feature (spec only) |
+| # | Title | Label | Status |
+|---|-------|-------|--------|
+| 134 | Automatic device discovery | feature | In progress (Phase 3 next) |
+| 135 | Refactor exporter + coverage | enhancement | Closed (PR #136 merged) |
+| 115 | Separate Application Insights per environment | enhancement | Open |
+| 66 | Calendar-aware time range selector | enhancement | Open |
+| 52 | Port exporter Python→C# | enhancement | Open |
+| 6 | iPad App | feature | Spec only |
+| 5 | iPhone App | feature | Spec only |
 
 ### Closed This Session
 | # | Title | Reason |
 |---|-------|--------|
-| 123 | Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated race | completed (PR #132 merged) |
+| 135 | Refactor exporter + coverage | completed (PR #136 merged) |
+| 74 | Custom domains on devsbx.xyz | closed (resolved before this session) |
 
 ### What's Next
-1. Check CD deploy to main succeeded — verify production is healthy
-2. Destroy staging using the GitHub Actions workflow (resources from PR #132)
-3. Delete `123-defense-in-depth` branch (remote + local)
-4. #115 Separate Application Insights per environment
-5. #113 Panel Hierarchy UI editor
+1. Verify staging destroy workflows completed for b123-def and b093-exp
+2. Continue feature 124 Phase 3: T015–T022 (US1 MVP — new device detection)
+3. Phase 4: T023–T026 (US2 — removed device detection)
+4. Phase 5–7: replacement prompts, merge, polish
+5. #115 Separate Application Insights per environment
 6. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
-7. Monitor Terraform 1.15.x — verify empty-string partial backend config continues to work
 
 ### Pending
-- CD deploy to main running — check status next session
+- Staging destroy for b123-def (run #25572637307) — check completion
+- Staging destroy for b093-exp (run #25588799137) — check completion
+- Feature branch `124-device-discovery` not yet pushed
 
 ### Decisions Made This Session
-- `staticwebapp.config.json` must live in `dashboard/public/` (not `dashboard/`) so Vite copies it to `dist/` during build — without this, SWA navigation fallback is not deployed and SPA route refreshes return 404
-- Integration test classes must be fully self-contained — no shared state between test classes
+- Exporter refactored from monolith (2083 lines) to 7 modules — simplicity over facade patterns
+- `if __name__ == "__main__"` excluded from coverage via `.coveragerc` (standard Python practice per coverage.py author)
+- `except ImportError` excluded from coverage via `.coveragerc` (environment-dependent import paths)
+- Tests import from actual modules, patch at point of use — no facade, no star imports
+- XSS: all user-controlled text in debug pages must use `html.escape()` — Vue device/circuit names added
+- Thread safety: all shared state mutations must hold `_lock` — _discover_devices and _poll_inner fixed
+- Dockerfile: explicit file list prevents test code in production images
 
 ### Production Services
 | Service | URL |
