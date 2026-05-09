@@ -157,6 +157,13 @@ public sealed class ConfigurableMockStore : IMetricsStore
         return Task.FromResult(DevicesResult);
     }
 
+    public Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(string? status, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(DevicesResult);
+    }
+
     public Task<IReadOnlyList<string>> GetDeviceMetricsAsync(string deviceId, CancellationToken ct = default)
     {
         if (ShouldThrow) throw new Exception(ThrowMessage);

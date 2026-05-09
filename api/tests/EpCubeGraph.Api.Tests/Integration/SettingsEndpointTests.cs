@@ -120,6 +120,90 @@ public class SettingsEndpointTests : IClassFixture<MockableTestFactory>, IDispos
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    // ── PUT /api/v1/settings/discovery_interval_seconds ──
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_ValidValue_Returns200()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("1800");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<SettingEntry>();
+        Assert.NotNull(body);
+        Assert.Equal("discovery_interval_seconds", body.Key);
+        Assert.Equal("1800", body.Value);
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_BelowMinimum_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("30");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_AboveMaximum_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("100000");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_NonInteger_Returns400()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("not_a_number");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_MinBoundary_Returns200()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("60");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task UpdateDiscoveryInterval_MaxBoundary_Returns200()
+    {
+        // Arrange
+        var request = new SettingUpdateRequest("86400");
+
+        // Act
+        var response = await _client.PutAsJsonAsync("/api/v1/settings/discovery_interval_seconds", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     // ── GET /api/v1/settings/hierarchy ──
 
     [Fact]

@@ -4,6 +4,7 @@ import time
 from datetime import datetime, timezone
 
 from config import POSTGRES_DSN, log, psycopg2
+from epcube_collector import _read_setting_int_from_db
 
 # Import PyEmVue (optional — only needed when Vue credentials are set)
 PyEmVue = None
@@ -26,67 +27,17 @@ _SCALE_WATTS_MULTIPLIER = {
 
 def _read_vue_poll_interval_from_db():
     """Read vue_poll_interval_seconds from settings table. Returns default on any error."""
-    if not POSTGRES_DSN:
-        return DEFAULT_VUE_POLL_INTERVAL
-    try:
-        import psycopg2 as _pg
-        conn = _pg.connect(POSTGRES_DSN)
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT value FROM settings WHERE key = 'vue_poll_interval_seconds'")
-            row = cur.fetchone()
-            if row:
-                val = int(str(row[0]).strip('"'))
-                if 1 <= val <= 3600:
-                    return val
-        finally:
-            conn.close()
-    except Exception:
-        log.debug("Could not read Vue poll interval from DB, using default %ds", DEFAULT_VUE_POLL_INTERVAL)
-    return DEFAULT_VUE_POLL_INTERVAL
+    return _read_setting_int_from_db("vue_poll_interval_seconds", DEFAULT_VUE_POLL_INTERVAL, 1, 3600)
 
 
 def _read_vue_device_refresh_interval_from_db():
     """Read vue_device_refresh_interval_seconds from settings table. Returns default on any error."""
-    if not POSTGRES_DSN:
-        return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
-    try:
-        import psycopg2 as _pg
-        conn = _pg.connect(POSTGRES_DSN)
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT value FROM settings WHERE key = 'vue_device_refresh_interval_seconds'")
-            row = cur.fetchone()
-            if row:
-                val = int(str(row[0]).strip('"'))
-                if 60 <= val <= 86400:
-                    return val
-        finally:
-            conn.close()
-    except Exception:
-        log.debug("Could not read Vue device refresh interval from DB, using default %ds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
-    return DEFAULT_VUE_DEVICE_REFRESH_INTERVAL
+    return _read_setting_int_from_db("vue_device_refresh_interval_seconds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL, 60, 86400)
 
 
 def _read_vue_daily_poll_interval_from_db():
     """Read vue_daily_poll_interval_seconds from settings table. Returns default on any error."""
-    if not POSTGRES_DSN:
-        return DEFAULT_VUE_DAILY_POLL_INTERVAL
-    try:
-        conn = psycopg2.connect(POSTGRES_DSN)
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT value FROM settings WHERE key = 'vue_daily_poll_interval_seconds'")
-            row = cur.fetchone()
-            if row:
-                val = int(str(row[0]).strip('"'))
-                if 1 <= val <= 3600:
-                    return val
-        finally:
-            conn.close()
-    except Exception:
-        log.debug("Could not read Vue daily poll interval from DB, using default %ds", DEFAULT_VUE_DAILY_POLL_INTERVAL)
-    return DEFAULT_VUE_DAILY_POLL_INTERVAL
+    return _read_setting_int_from_db("vue_daily_poll_interval_seconds", DEFAULT_VUE_DAILY_POLL_INTERVAL, 1, 3600)
 
 
 class VueCollector:

@@ -6,6 +6,8 @@ public interface IMetricsStore
 {
     Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(CancellationToken ct = default);
 
+    Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(string? status, CancellationToken ct = default);
+
     Task<IReadOnlyList<string>> GetDeviceMetricsAsync(string deviceId, CancellationToken ct = default);
 
     Task<IReadOnlyList<Reading>> GetCurrentReadingsAsync(string metricName, CancellationToken ct = default);

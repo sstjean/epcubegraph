@@ -2523,61 +2523,36 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
 
 
 class TestReadVueDailyPollInterval(unittest.TestCase):
-    """Tests for _read_vue_daily_poll_interval_from_db."""
+    """Tests for _read_vue_daily_poll_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test@localhost/test")
-    def test_returns_default_when_no_dsn(self):
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
         # Act
         result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_reads_from_settings_table(self):
-        # Arrange
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("600",)
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=600)
+    def test_reads_from_settings_table(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, 600)
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        self.assertIn("vue_daily_poll_interval_seconds", sql)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_returns_default_on_db_error(self):
-        # Arrange
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.side_effect = Exception("conn failed")
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_on_db_error(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_returns_default_when_no_setting(self):
-        # Arrange
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_setting(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
@@ -4223,161 +4198,90 @@ class TestDoGetNoCollector(unittest.TestCase):
 
 
 class TestReadVuePollIntervalFromDb(unittest.TestCase):
-    """Cover vue_collector._read_vue_poll_interval_from_db."""
+    """Cover vue_collector._read_vue_poll_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+        mock_read.assert_called_once_with("vue_poll_interval_seconds", vue_collector.DEFAULT_VUE_POLL_INTERVAL, 1, 3600)
 
-    def test_reads_valid_interval(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ('"2"',)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=2)
+    def test_reads_valid_interval(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, 2)
-        mock_conn.close.assert_called_once()
 
-    def test_returns_default_when_out_of_range(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("9999",)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_out_of_range(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
-    def test_returns_default_on_exception(self):
-        # Arrange
-        mock_pg = MagicMock()
-        mock_pg.connect.side_effect = Exception("fail")
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_on_exception(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
 
 class TestReadVueDeviceRefreshInterval(unittest.TestCase):
-    """Cover vue_collector._read_vue_device_refresh_interval_from_db."""
+    """Cover vue_collector._read_vue_device_refresh_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+        mock_read.assert_called_once_with("vue_device_refresh_interval_seconds", vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL, 60, 86400)
 
-    def test_reads_valid_interval(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ('"120"',)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=120)
+    def test_reads_valid_interval(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, 120)
 
-    def test_returns_default_when_out_of_range(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("10",)  # below 60 minimum
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_out_of_range(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
 
-    def test_returns_default_on_exception(self):
-        # Arrange
-        mock_pg = MagicMock()
-        mock_pg.connect.side_effect = Exception("fail")
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_on_exception(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
@@ -4386,27 +4290,19 @@ class TestReadVueDeviceRefreshInterval(unittest.TestCase):
 class TestReadVueDailyPollIntervalFallback(unittest.TestCase):
     """Cover the default return path in _read_vue_daily_poll_interval_from_db."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+        mock_read.assert_called_once_with("vue_daily_poll_interval_seconds", vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL, 1, 3600)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "_read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
@@ -4826,6 +4722,311 @@ class TestVueCollectorPyEmVueImport(unittest.TestCase):
                 else:
                     sys.modules[mod_name] = orig
             importlib.reload(vue_collector)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1+2: Discovery interval setting reader tests
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryInterval(unittest.TestCase):
+    """Tests for _read_discovery_interval_from_db (via _read_setting_int_from_db)."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(epcube_collector, "POSTGRES_DSN", ""):
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_reads_valid_interval_from_db(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ('"1800"',)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, 1800)
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("settings", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params, ("discovery_interval_seconds",))
+        mock_conn.close.assert_called_once()
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_below_min(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("30",)  # below 60 minimum
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_above_max(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("100000",)  # above 86400 maximum
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_on_db_exception(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("connection refused")
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_value_not_numeric(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("not_a_number",)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_discovery_interval_from_db()
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: compare_device_lists tests
+# ---------------------------------------------------------------------------
+
+class TestCompareDeviceLists(unittest.TestCase):
+    """Tests for compare_device_lists — pure set comparison."""
+
+    def test_no_changes(self):
+        # Arrange
+        known = {"A", "B", "C"}
+        cloud = {"A", "B", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, {"A", "B", "C"})
+
+    def test_new_device_added(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = {"A", "B", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, {"A", "B"})
+
+    def test_device_removed(self):
+        # Arrange
+        known = {"A", "B", "C"}
+        cloud = {"A", "B"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, {"C"})
+        self.assertEqual(unchanged, {"A", "B"})
+
+    def test_device_added_and_removed(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = {"A", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, {"B"})
+        self.assertEqual(unchanged, {"A"})
+
+    def test_empty_known_all_added(self):
+        # Arrange
+        known = set()
+        cloud = {"A", "B"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"A", "B"})
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, set())
+
+    def test_empty_cloud_all_removed(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = set()
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, {"A", "B"})
+        self.assertEqual(unchanged, set())
+
+    def test_both_empty(self):
+        # Arrange
+        known = set()
+        cloud = set()
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, set())
+
+    def test_accepts_lists(self):
+        # Arrange — function should accept any iterable, not just sets
+        known = ["A", "B"]
+        cloud = ["B", "C"]
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, {"A"})
+        self.assertEqual(unchanged, {"B"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: retry_with_backoff tests
+# ---------------------------------------------------------------------------
+
+class TestRetryWithBackoff(unittest.TestCase):
+    """Tests for retry_with_backoff — exponential retry logic."""
+
+    @patch.object(epcube_collector, "time")
+    def test_success_on_first_try(self, mock_time):
+        # Arrange
+        fn = MagicMock(return_value="ok")
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=10)
+
+        # Assert
+        self.assertEqual(result, "ok")
+        fn.assert_called_once()
+        mock_time.sleep.assert_not_called()
+
+    @patch.object(epcube_collector, "time")
+    def test_success_on_retry(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[RuntimeError("fail"), RuntimeError("fail"), "ok"])
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=10)
+
+        # Assert
+        self.assertEqual(result, "ok")
+        self.assertEqual(fn.call_count, 3)
+        self.assertEqual(mock_time.sleep.call_count, 2)
+
+    @patch.object(epcube_collector, "time")
+    def test_all_retries_fail_raises(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=RuntimeError("persistent failure"))
+
+        # Act & Assert
+        with self.assertRaises(RuntimeError) as ctx:
+            epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=5)
+
+        self.assertIn("persistent failure", str(ctx.exception))
+        self.assertEqual(fn.call_count, 3)
+        # Only 2 sleeps (between retries, not after last)
+        self.assertEqual(mock_time.sleep.call_count, 2)
+
+    @patch.object(epcube_collector, "time")
+    def test_exponential_delay(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[RuntimeError("1"), RuntimeError("2"), RuntimeError("3"), "ok"])
+
+        # Act
+        epcube_collector.retry_with_backoff(fn, max_retries=4, base_delay=10)
+
+        # Assert — delays should be 10, 20, 40 (base * 2^attempt)
+        delays = [call[0][0] for call in mock_time.sleep.call_args_list]
+        self.assertEqual(delays, [10, 20, 40])
+
+    @patch.object(epcube_collector, "time")
+    def test_custom_params(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[ValueError("err"), 42])
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=5, base_delay=30)
+
+        # Assert
+        self.assertEqual(result, 42)
+        self.assertEqual(fn.call_count, 2)
+        mock_time.sleep.assert_called_once_with(30)
 
 
 if __name__ == "__main__":

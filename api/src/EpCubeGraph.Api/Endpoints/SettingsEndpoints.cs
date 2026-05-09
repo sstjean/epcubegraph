@@ -15,6 +15,7 @@ public static class SettingsEndpoints
     };
 
     private const string VueDeviceMappingKey = "vue_device_mapping";
+    private const string DiscoveryIntervalKey = "discovery_interval_seconds";
 
     public static RouteGroupBuilder MapSettingsEndpoints(this RouteGroupBuilder group)
     {
@@ -66,10 +67,22 @@ public static class SettingsEndpoints
             return await HandleUpdateVueDeviceMapping(request, store, ct);
         }
 
+        if (key == DiscoveryIntervalKey)
+        {
+            if (!int.TryParse(request.Value, out var discoveryInterval) || discoveryInterval < 60 || discoveryInterval > 86400)
+            {
+                return Results.BadRequest(new ErrorResponse(
+                    "error", "validation", "Discovery interval must be an integer between 60 and 86400 seconds"));
+            }
+
+            var discoveryEntry = await store.UpdateSettingAsync(key, request.Value, ct);
+            return Results.Ok(discoveryEntry);
+        }
+
         if (!PollIntervalKeys.Contains(key))
         {
             return Results.BadRequest(new ErrorResponse(
-                "error", "validation", $"Unknown setting key '{key}'. Allowed keys: {string.Join(", ", PollIntervalKeys)}, {VueDeviceMappingKey}"));
+                "error", "validation", $"Unknown setting key '{key}'. Allowed keys: {string.Join(", ", PollIntervalKeys)}, {VueDeviceMappingKey}, {DiscoveryIntervalKey}"));
         }
 
         if (!int.TryParse(request.Value, out var interval) || interval < 1 || interval > 3600)

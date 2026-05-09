@@ -14,18 +14,46 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 
     public async Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
     {
-        const string sql = """
+        return await GetDevicesAsync(null, ct);
+    }
+
+    public async Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(string? status, CancellationToken ct = default)
+    {
+        var filterStatus = string.IsNullOrEmpty(status) ? "active" : status;
+
+        string sql;
+        if (filterStatus == "all")
+        {
+            sql = """
+                SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
+                       CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online
+                FROM devices d
+                LEFT JOIN readings r ON d.device_id = r.device_id
+                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid
+                ORDER BY d.device_id
+                """;
+            await using var cmdAll = _dataSource.CreateCommand(sql);
+            await using var readerAll = await cmdAll.ExecuteReaderAsync(ct);
+            return await ReadDeviceInfoList(readerAll, ct);
+        }
+
+        sql = """
             SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
                    CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online
             FROM devices d
             LEFT JOIN readings r ON d.device_id = r.device_id
+            WHERE d.status = $1
             GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid
             ORDER BY d.device_id
             """;
-
         await using var cmd = _dataSource.CreateCommand(sql);
+        cmd.Parameters.AddWithValue(filterStatus);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
+        return await ReadDeviceInfoList(reader, ct);
+    }
 
+    private static async Task<IReadOnlyList<DeviceInfo>> ReadDeviceInfoList(NpgsqlDataReader reader, CancellationToken ct)
+    {
         var devices = new List<DeviceInfo>();
         while (await reader.ReadAsync(ct))
         {
@@ -38,7 +66,6 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
                 Online: reader.GetBoolean(6),
                 Alias: reader.IsDBNull(2) ? null : reader.GetString(2)));
         }
-
         return devices;
     }
 

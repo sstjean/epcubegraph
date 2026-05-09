@@ -33,6 +33,7 @@ CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 HTTP_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DEFAULT_POLL_INTERVAL = POLL_INTERVAL  # Fallback when DB has no setting
+DEFAULT_DISCOVERY_INTERVAL = 3600  # Seconds between device list re-queries
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 

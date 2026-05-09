@@ -1,5 +1,6 @@
 using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace EpCubeGraph.Api.Endpoints;
 
@@ -15,11 +16,12 @@ public static class DevicesEndpoints
 
     private static async Task<IResult> HandleDevices(
         IMetricsStore store,
+        [FromQuery] string? status,
         CancellationToken ct)
     {
         try
         {
-            var devices = await store.GetDevicesAsync(ct);
+            var devices = await store.GetDevicesAsync(status, ct);
             return Results.Ok(new DeviceListResponse(devices));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

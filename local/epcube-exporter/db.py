@@ -17,9 +17,12 @@ CREATE TABLE IF NOT EXISTS devices (
     manufacturer TEXT,
     product_code TEXT,
     uid TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
 
 CREATE TABLE IF NOT EXISTS readings (
     id BIGSERIAL PRIMARY KEY,
@@ -32,6 +35,14 @@ CREATE TABLE IF NOT EXISTS readings (
 
 CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
     ON readings (device_id, metric_name, timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS pending_replacements (
+    id SERIAL PRIMARY KEY,
+    old_device_id TEXT NOT NULL,
+    new_device_id TEXT NOT NULL,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (old_device_id, new_device_id)
+);
 """
 
 

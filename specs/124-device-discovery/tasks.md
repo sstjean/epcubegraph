@@ -17,16 +17,16 @@
 
 ### Tests (Red)
 
-- [ ] T001 Test `_read_discovery_interval_from_db()` in `local/epcube-exporter/test_exporter.py` — reads setting from DB, returns default 3600 when missing, validates range
-- [ ] T002 [P] Test `PUT /settings/discovery_interval_seconds` in `api/tests/EpCubeGraph.Api.Tests/Integration/` — valid value accepted, out-of-range (< 60, > 86400) rejected, non-integer rejected
+- [X] T001 Test `_read_discovery_interval_from_db()` in `local/epcube-exporter/test_exporter.py` — reads setting from DB, returns default 3600 when missing, validates range
+- [X] T002 [P] Test `PUT /settings/discovery_interval_seconds` in `api/tests/EpCubeGraph.Api.Tests/Integration/` — valid value accepted, out-of-range (< 60, > 86400) rejected, non-integer rejected
 
 ### Implementation (Green)
 
-- [ ] T003 Add `status` column to `devices` table and `pending_replacements` table in exporter schema at `local/epcube-exporter/exporter.py` (`_SCHEMA_SQL`)
-- [ ] T004 Add `pending_replacements` table schema to API `EnsureTablesAsync` in `api/src/EpCubeGraph.Api/Services/PostgresSettingsStore.cs`
-- [ ] T005 [P] Add `discovery_interval_seconds` to the API settings allowed keys in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` (valid range 60–86400)
-- [ ] T006 [P] Add merge request/response and pending replacement model records in `api/src/EpCubeGraph.Api/Models/Models.cs`
-- [ ] T007 [P] Add `_read_discovery_interval_from_db()` function in `local/epcube-exporter/exporter.py` following existing `_read_poll_interval_from_db()` pattern (reads `discovery_interval_seconds`, default 3600)
+- [X] T003 Add `status` column to `devices` table and `pending_replacements` table in exporter schema at `local/epcube-exporter/exporter.py` (`_SCHEMA_SQL`)
+- [X] T004 Add `pending_replacements` table schema to API `EnsureTablesAsync` in `api/src/EpCubeGraph.Api/Services/PostgresSettingsStore.cs`
+- [X] T005 [P] Add `discovery_interval_seconds` to the API settings allowed keys in `api/src/EpCubeGraph.Api/Endpoints/SettingsEndpoints.cs` (valid range 60–86400)
+- [X] T006 [P] Add merge request/response and pending replacement model records in `api/src/EpCubeGraph.Api/Models/Models.cs`
+- [X] T007 [P] Add `_read_discovery_interval_from_db()` function in `local/epcube-exporter/exporter.py` following existing `_read_poll_interval_from_db()` pattern (reads `discovery_interval_seconds`, default 3600)
 
 ---
 
@@ -38,16 +38,16 @@
 
 ### Tests (Red)
 
-- [ ] T008 Test `compare_device_lists()` in `local/epcube-exporter/test_exporter.py` — cases: no changes, new device, removed device, simultaneous add+remove, empty cloud list, metadata change
-- [ ] T009 Test `retry_with_backoff()` in `local/epcube-exporter/test_exporter.py` — cases: success on first try, success on retry, all retries exhausted, correct delay calculation
-- [ ] T010 [P] Test `GET /devices?status=` filtering in `api/tests/EpCubeGraph.Api.Tests/Integration/` — cases: default returns active only, `?status=removed` returns removed only, `?status=all` returns all with status field
+- [X] T008 Test `compare_device_lists()` in `local/epcube-exporter/test_exporter.py` — cases: no changes, new device, removed device, simultaneous add+remove, empty cloud list, metadata change
+- [X] T009 Test `retry_with_backoff()` in `local/epcube-exporter/test_exporter.py` — cases: success on first try, success on retry, all retries exhausted, correct delay calculation
+- [X] T010 [P] Test `GET /devices?status=` filtering in `api/tests/EpCubeGraph.Api.Tests/Integration/` — cases: default returns active only, `?status=removed` returns removed only, `?status=all` returns all with status field
 
 ### Implementation (Green)
 
-- [ ] T011 Implement `compare_device_lists(known_ids, cloud_devices)` pure function in `local/epcube-exporter/exporter.py` — returns `(added, removed, unchanged)` tuples
-- [ ] T012 Implement `retry_with_backoff(fn, max_retries=5, base_delay=30)` pure function in `local/epcube-exporter/exporter.py` — exponential delays 30/60/120/240/480s
-- [ ] T013 [P] Add `GetDevicesByStatusAsync(status)` method to `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — SQL filters `devices` by status column, defaults to `active`
-- [ ] T014 [P] Modify `GET /devices` endpoint in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs` to accept optional `?status=` query parameter (active/removed/merged/all), pass to `GetDevicesByStatusAsync()`
+- [X] T011 Implement `compare_device_lists(known_ids, cloud_devices)` pure function in `local/epcube-exporter/exporter.py` — returns `(added, removed, unchanged)` tuples
+- [X] T012 Implement `retry_with_backoff(fn, max_retries=5, base_delay=30)` pure function in `local/epcube-exporter/exporter.py` — exponential delays 30/60/120/240/480s
+- [X] T013 [P] Add `GetDevicesByStatusAsync(status)` method to `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — SQL filters `devices` by status column, defaults to `active`
+- [X] T014 [P] Modify `GET /devices` endpoint in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs` to accept optional `?status=` query parameter (active/removed/merged/all), pass to `GetDevicesByStatusAsync()`
 
 **Checkpoint**: Foundation ready — all tests green, pure functions tested, device filtering working
 

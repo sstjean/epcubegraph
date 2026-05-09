@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from config import _safe_float, _nz, _TZ, DEFAULT_POLL_INTERVAL, POSTGRES_DSN, __version__, log
+from config import _safe_float, _nz, _TZ, DEFAULT_POLL_INTERVAL, DEFAULT_DISCOVERY_INTERVAL, POSTGRES_DSN, __version__, log
 from auth import _api_request, authenticate, AuthExpiredError, _jwt_exp
 
 
@@ -346,26 +346,65 @@ class EpCubeCollector:
 # Polling loop
 # ---------------------------------------------------------------------------
 
-def _read_poll_interval_from_db():
-    """Read epcube_poll_interval_seconds from settings table. Returns default on any error."""
+def _read_setting_int_from_db(key, default, min_val, max_val):
+    """Read an integer setting from the settings table. Returns default on any error."""
     if not POSTGRES_DSN:
-        return DEFAULT_POLL_INTERVAL
+        return default
     try:
         import psycopg2
         conn = psycopg2.connect(POSTGRES_DSN)
         try:
             cur = conn.cursor()
-            cur.execute("SELECT value FROM settings WHERE key = 'epcube_poll_interval_seconds'")
+            cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
             row = cur.fetchone()
             if row:
                 val = int(str(row[0]).strip('"'))
-                if 1 <= val <= 3600:
+                if min_val <= val <= max_val:
                     return val
         finally:
             conn.close()
     except Exception:
-        log.debug("Could not read poll interval from DB, using default %ds", DEFAULT_POLL_INTERVAL)
-    return DEFAULT_POLL_INTERVAL
+        log.debug("Could not read %s from DB, using default %d", key, default)
+    return default
+
+
+def _read_poll_interval_from_db():
+    """Read epcube_poll_interval_seconds from settings table. Returns default on any error."""
+    return _read_setting_int_from_db("epcube_poll_interval_seconds", DEFAULT_POLL_INTERVAL, 1, 3600)
+
+
+def _read_discovery_interval_from_db():
+    """Read discovery_interval_seconds from settings table. Returns default on any error."""
+    return _read_setting_int_from_db("discovery_interval_seconds", DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+
+def compare_device_lists(known_ids, cloud_devices):
+    """Compare known device IDs with cloud device list.
+
+    Returns (added, removed, unchanged) where each is a set of device IDs.
+    """
+    cloud_ids = set(cloud_devices)
+    known_set = set(known_ids)
+    added = cloud_ids - known_set
+    removed = known_set - cloud_ids
+    unchanged = known_set & cloud_ids
+    return added, removed, unchanged
+
+
+def retry_with_backoff(fn, max_retries=5, base_delay=30):
+    """Retry a function with exponential backoff. Raises the last exception on failure."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                log.warning("Attempt %d/%d failed: %s — retrying in %ds",
+                            attempt + 1, max_retries, e, delay)
+                time.sleep(delay)
+    raise last_exc
 
 
 def poll_loop(collector):

@@ -47,3 +47,32 @@ public record TimeSeries(
 public record RangeReadingsResponse(
     [property: JsonPropertyName("metric")] string Metric,
     [property: JsonPropertyName("series")] IReadOnlyList<TimeSeries> Series);
+
+// Device discovery & merge models
+
+public record PendingReplacement(
+    [property: JsonPropertyName("id")] int Id,
+    [property: JsonPropertyName("old_device_id")] string OldDeviceId,
+    [property: JsonPropertyName("new_device_id")] string NewDeviceId,
+    [property: JsonPropertyName("detected_at")] DateTimeOffset DetectedAt);
+
+public record MergeRequest(
+    [property: JsonPropertyName("old_device_id")] string OldDeviceId,
+    [property: JsonPropertyName("new_device_id")] string NewDeviceId);
+
+public record MergePreviewResponse(
+    [property: JsonPropertyName("old_device_id")] string OldDeviceId,
+    [property: JsonPropertyName("new_device_id")] string NewDeviceId,
+    [property: JsonPropertyName("readings_to_transfer")] long ReadingsToTransfer,
+    [property: JsonPropertyName("conflicts_to_skip")] long ConflictsToSkip);
+
+public record MergeResponse(
+    [property: JsonPropertyName("old_device_id")] string OldDeviceId,
+    [property: JsonPropertyName("new_device_id")] string NewDeviceId,
+    [property: JsonPropertyName("readings_transferred")] long ReadingsTransferred,
+    [property: JsonPropertyName("conflicts_skipped")] long ConflictsSkipped);
+
+public record DismissResponse(
+    [property: JsonPropertyName("dismissed")] bool Dismissed,
+    [property: JsonPropertyName("old_device_id")] string OldDeviceId,
+    [property: JsonPropertyName("new_device_id")] string NewDeviceId);
