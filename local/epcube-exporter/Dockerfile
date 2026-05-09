@@ -7,7 +7,7 @@ RUN apt-get update && \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --root-user-action=ignore -r requirements.txt
-COPY exporter.py .
+COPY *.py .
 
 EXPOSE 9250
 CMD ["python", "-u", "exporter.py"]
