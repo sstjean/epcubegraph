@@ -662,4 +662,106 @@ describe('Settings API', () => {
     // Assert — returns null (caller must handle)
     expect(result).toBeNull();
   });
+
+  it('fetchDevicesByStatus passes status query param', async () => {
+    // Arrange
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve({ devices: [] }),
+    });
+    const { fetchDevicesByStatus } = await import('../../src/api');
+
+    // Act
+    await fetchDevicesByStatus('removed');
+
+    // Assert
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('status=removed');
+  });
+
+  it('fetchPendingReplacements returns array from API', async () => {
+    // Arrange
+    await setupAuth();
+    const items = [{ id: 1, old_device_id: '100', new_device_id: '200', detected_at: '2026-05-08T00:00:00Z' }];
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve(items),
+    });
+    const { fetchPendingReplacements } = await import('../../src/api');
+
+    // Act
+    const result = await fetchPendingReplacements();
+
+    // Assert
+    expect(result).toEqual(items);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/devices/pending-replacements'),
+      expect.any(Object),
+    );
+  });
+
+  it('dismissPendingReplacement POSTs to dismiss endpoint with id', async () => {
+    // Arrange
+    await setupAuth();
+    const dismissed = { dismissed: true, old_device_id: '100', new_device_id: '200' };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve(dismissed),
+    });
+    const { dismissPendingReplacement } = await import('../../src/api');
+
+    // Act
+    const result = await dismissPendingReplacement(42);
+
+    // Assert
+    expect(result).toEqual(dismissed);
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/devices/pending-replacements/42/dismiss');
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe('POST');
+  });
+
+  it('fetchMergePreview sends old/new device IDs as query params', async () => {
+    // Arrange
+    await setupAuth();
+    const preview = {
+      old_device_id: '100', new_device_id: '200',
+      readings_to_transfer: 100, conflicts_to_skip: 5,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve(preview),
+    });
+    const { fetchMergePreview } = await import('../../src/api');
+
+    // Act
+    const result = await fetchMergePreview('100', '200');
+
+    // Assert
+    expect(result).toEqual(preview);
+    const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(calledUrl).toContain('old_device_id=100');
+    expect(calledUrl).toContain('new_device_id=200');
+  });
+
+  it('mergeDevices POSTs to /devices/merge with both device IDs', async () => {
+    // Arrange
+    await setupAuth();
+    const mergeResult = {
+      old_device_id: '100', new_device_id: '200',
+      readings_transferred: 4321, conflicts_skipped: 7,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve(mergeResult),
+    });
+    const { mergeDevices } = await import('../../src/api');
+
+    // Act
+    const result = await mergeDevices('100', '200');
+
+    // Assert
+    expect(result).toEqual(mergeResult);
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/devices/merge');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({ old_device_id: '100', new_device_id: '200' });
+  });
 });

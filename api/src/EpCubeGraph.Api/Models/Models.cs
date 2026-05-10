@@ -9,7 +9,8 @@ public record DeviceInfo(
     [property: JsonPropertyName("product_code")] string? ProductCode = null,
     [property: JsonPropertyName("uid")] string? Uid = null,
     [property: JsonPropertyName("online")] bool Online = false,
-    [property: JsonPropertyName("alias")] string? Alias = null);
+    [property: JsonPropertyName("alias")] string? Alias = null,
+    [property: JsonPropertyName("created_at")] DateTimeOffset? CreatedAt = null);
 
 public record DeviceListResponse(
     [property: JsonPropertyName("devices")] IReadOnlyList<DeviceInfo> Devices);

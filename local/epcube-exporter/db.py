@@ -88,6 +88,76 @@ class PostgresWriter:
             )
         conn.commit()
 
+    def update_device_status(self, raw_cloud_id, status):
+        """Update status for both _battery and _solar sub-devices of an EP Cube device."""
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            bat_id = f"epcube{raw_cloud_id}_battery"
+            sol_id = f"epcube{raw_cloud_id}_solar"
+            cur.execute(
+                "UPDATE devices SET status = %s, updated_at = NOW() WHERE device_id IN (%s, %s)",
+                (status, bat_id, sol_id),
+            )
+        conn.commit()
+
+    def insert_pending_replacement(self, old_device_id, new_device_id):
+        """Record a pending replacement prompt for a same-cycle add+remove pair.
+
+        Both IDs are the raw cloud API device IDs (not the ``epcube{id}_battery`` form).
+        Idempotent: re-inserting the same pair is a no-op.
+        """
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO pending_replacements (old_device_id, new_device_id)
+                   VALUES (%s, %s)
+                   ON CONFLICT (old_device_id, new_device_id) DO NOTHING""",
+                (old_device_id, new_device_id),
+            )
+        conn.commit()
+
+    def find_replacement_candidate(self, old_raw_cloud_id):
+        """Find the raw cloud id of an active device that appears to be a replacement
+        for ``old_raw_cloud_id`` (which has just been marked ``removed``).
+
+        A candidate is an *active* device whose ``alias`` matches the removed
+        device's alias and whose ``created_at`` is strictly later than the
+        removed device's ``created_at``. If multiple candidates exist, the most
+        recently created one is returned. Returns ``None`` if no match is found
+        or if the removed device has no alias.
+        """
+        conn = self._get_conn()
+        old_battery_id = f"epcube{old_raw_cloud_id}_battery"
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT alias, created_at FROM devices WHERE device_id = %s""",
+                (old_battery_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            alias, old_created = row
+            if not alias:
+                return None
+            cur.execute(
+                """SELECT device_id FROM devices
+                   WHERE alias = %s
+                     AND status = 'active'
+                     AND device_id LIKE 'epcube%%_battery'
+                     AND created_at > %s
+                   ORDER BY created_at DESC
+                   LIMIT 1""",
+                (alias, old_created),
+            )
+            cand = cur.fetchone()
+        if not cand:
+            return None
+        # Strip "epcube" prefix and "_battery" suffix to recover the raw cloud id.
+        cand_dev_id = cand[0]
+        if not cand_dev_id.startswith("epcube") or not cand_dev_id.endswith("_battery"):
+            return None
+        return cand_dev_id[len("epcube"):-len("_battery")]
+
     def write_readings(self, readings):
         """Batch-insert readings. Each reading is (device_id, metric_name, timestamp, value).
 

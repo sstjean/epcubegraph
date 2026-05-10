@@ -5,6 +5,7 @@ import hmac
 import html
 import json
 import secrets
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -13,9 +14,16 @@ from http.server import BaseHTTPRequestHandler
 from config import (
     DISABLE_AUTH, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_AUDIENCE,
     AZURE_CLIENT_SECRET, AZURE_REDIRECT_URI,
-    _SESSION_MAX_AGE, _pending_auth, _sessions, _auth_lock,
     DEFAULT_POLL_INTERVAL, log, __version__, _nz,
 )
+
+# OAuth session management — owned by this module since sessions are an HTTP
+# concern. Keeping them here (not in config.py) prevents test reloads of config
+# from severing references and breaking session lookups.
+_SESSION_MAX_AGE = 3600  # 1 hour
+_pending_auth = {}  # state -> {code_verifier, timestamp}
+_sessions = {}  # session_id -> {expires, user}
+_auth_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------

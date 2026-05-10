@@ -700,38 +700,34 @@ class TestHTTPHandler(unittest.TestCase):
     def test_session_cookie_grants_access(self):
         """Valid session cookie grants access to debug page."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
-             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
             session_id = "test-session-123"
-            with config._auth_lock:
-                config._sessions[session_id] = {
+            with http_handler._auth_lock:
+                http_handler._sessions[session_id] = {
                     "expires": time.time() + 3600,
                     "user": "test@example.com",
                 }
-            try:
-                signed = http_handler._sign_session(session_id)
-                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-                h.send_response.assert_called_with(200)
-            finally:
-                with config._auth_lock:
-                    config._sessions.pop(session_id, None)
+            signed = http_handler._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(200)
 
     def test_expired_session_denied(self):
         """Expired session cookie is rejected."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
-             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
             session_id = "expired-session"
-            with config._auth_lock:
-                config._sessions[session_id] = {
+            with http_handler._auth_lock:
+                http_handler._sessions[session_id] = {
                     "expires": time.time() - 1,  # already expired
                     "user": "test@example.com",
                 }
-            try:
-                signed = http_handler._sign_session(session_id)
-                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-                h.send_response.assert_called_with(401)
-            finally:
-                with config._auth_lock:
-                    config._sessions.pop(session_id, None)
+            signed = http_handler._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(401)
 
     def test_status_alias_works(self):
         with patch.object(http_handler, "DISABLE_AUTH", True):
@@ -3715,19 +3711,20 @@ class TestCleanupExpired(unittest.TestCase):
     """Cover _cleanup_expired deleting expired sessions and stale auth states."""
 
     def test_removes_expired_sessions_and_stale_auth(self):
-        # Arrange — use the _sessions and _pending_auth dicts from http_handler
-        # to ensure we reference the same objects _cleanup_expired uses
-        sessions = http_handler._sessions
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
+        # Arrange — patch isolated session/pending dicts and lock for this test
+        with patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            sessions = http_handler._sessions
+            pending = http_handler._pending_auth
+            lock = http_handler._auth_lock
 
-        with lock:
-            sessions["expired-1"] = {"expires": 0, "user": "a"}
-            sessions["valid-1"] = {"expires": time.time() + 3600, "user": "b"}
-            pending["stale-state"] = {"code_verifier": "v", "timestamp": 0}
-            pending["fresh-state"] = {"code_verifier": "v", "timestamp": time.time()}
+            with lock:
+                sessions["expired-1"] = {"expires": 0, "user": "a"}
+                sessions["valid-1"] = {"expires": time.time() + 3600, "user": "b"}
+                pending["stale-state"] = {"code_verifier": "v", "timestamp": 0}
+                pending["fresh-state"] = {"code_verifier": "v", "timestamp": time.time()}
 
-        try:
             # Act
             http_handler._cleanup_expired()
 
@@ -3737,10 +3734,6 @@ class TestCleanupExpired(unittest.TestCase):
                 self.assertIn("valid-1", sessions)
                 self.assertNotIn("stale-state", pending)
                 self.assertIn("fresh-state", pending)
-        finally:
-            with lock:
-                sessions.pop("valid-1", None)
-                pending.pop("fresh-state", None)
 
 
 class TestRenderStatusPageEdgeCases(unittest.TestCase):
@@ -3952,22 +3945,17 @@ class TestHandleCallbackFull(unittest.TestCase):
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
 
-        # Must set pending auth on the SAME dict _handle_callback uses
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier123",
-                "timestamp": time.time(),
-            }
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier123",
+                    "timestamp": time.time(),
+                }
 
-        try:
             with patch("urllib.request.urlopen", side_effect=Exception("network error")):
                 # Act
                 h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
 
         # Assert
         h.send_response.assert_called_with(500)
@@ -3979,27 +3967,25 @@ class TestHandleCallbackFull(unittest.TestCase):
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
 
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier456",
-                "timestamp": time.time(),
-            }
-
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps({"access_token": "bad-jwt"}).encode()
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        try:
-            with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier456",
+                    "timestamp": time.time(),
+                }
+
+            try:
+                with patch("urllib.request.urlopen", return_value=mock_resp):
+                    http_handler.ExporterHandler._jwks_client = None
+                    h.do_GET()
+            finally:
                 http_handler.ExporterHandler._jwks_client = None
-                h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
-            http_handler.ExporterHandler._jwks_client = None
 
         # Assert
         h.send_response.assert_called_with(401)
@@ -4009,14 +3995,6 @@ class TestHandleCallbackFull(unittest.TestCase):
         state_val = "test-state-789"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
-
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier789",
-                "timestamp": time.time(),
-            }
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(
@@ -4033,15 +4011,22 @@ class TestHandleCallbackFull(unittest.TestCase):
         mock_jwt.PyJWKClient.return_value = mock_jwks
         mock_jwt.decode.return_value = {"preferred_username": "user@test.com"}
 
-        try:
-            with patch("urllib.request.urlopen", return_value=mock_resp), \
-                 patch.dict(sys.modules, {"jwt": mock_jwt}):
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier789",
+                    "timestamp": time.time(),
+                }
+
+            try:
+                with patch("urllib.request.urlopen", return_value=mock_resp), \
+                     patch.dict(sys.modules, {"jwt": mock_jwt}):
+                    http_handler.ExporterHandler._jwks_client = None
+                    h.do_GET()
+            finally:
                 http_handler.ExporterHandler._jwks_client = None
-                h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
-            http_handler.ExporterHandler._jwks_client = None
 
         # Assert
         h.send_response.assert_called_with(302)
@@ -4661,14 +4646,19 @@ class TestConfigPsycopg2Import(unittest.TestCase):
         mock_pg = MagicMock()
         mock_extras = MagicMock()
         original_modules = {}
-        # Save and inject mocks
         for mod_name in ["psycopg2", "psycopg2.extras"]:
             original_modules[mod_name] = sys.modules.get(mod_name)
         sys.modules["psycopg2"] = mock_pg
         sys.modules["psycopg2.extras"] = mock_extras
 
-        # Also save config's current psycopg2 ref
-        original_psycopg2 = config.psycopg2
+        # Snapshot every config attribute that other modules may have already
+        # imported by name. Reloading config rebinds these on the config module
+        # itself, but bound references in http_handler / exporter / etc. still
+        # point at the originals, so we must restore the original objects on the
+        # config module after the reload (not reload a second time, which would
+        # produce yet another distinct object).
+        original_attrs = {name: getattr(config, name) for name in dir(config)
+                          if not name.startswith("__")}
 
         try:
             # Act
@@ -4677,14 +4667,13 @@ class TestConfigPsycopg2Import(unittest.TestCase):
             # Assert — config.psycopg2 should be the mock, not None
             self.assertIs(config.psycopg2, mock_pg)
         finally:
-            # Restore original state
-            config.psycopg2 = original_psycopg2
+            for name, value in original_attrs.items():
+                setattr(config, name, value)
             for mod_name, orig in original_modules.items():
                 if orig is None:
                     sys.modules.pop(mod_name, None)
                 else:
                     sys.modules[mod_name] = orig
-            importlib.reload(config)
 
 
 class TestVueCollectorPyEmVueImport(unittest.TestCase):
@@ -5027,6 +5016,912 @@ class TestRetryWithBackoff(unittest.TestCase):
         self.assertEqual(result, 42)
         self.assertEqual(fn.call_count, 2)
         mock_time.sleep.assert_called_once_with(30)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: _read_known_device_ids_from_db tests
+# ---------------------------------------------------------------------------
+
+class TestReadKnownDeviceIdsFromDb(unittest.TestCase):
+    """Tests for _read_known_device_ids_from_db — reads active EP Cube device IDs from DB."""
+
+    def test_returns_empty_set_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(epcube_collector, "POSTGRES_DSN", ""):
+            result = epcube_collector._read_known_device_ids_from_db()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    def test_returns_raw_cloud_ids(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("epcube123_battery",), ("epcube123_solar",),
+            ("epcube456_battery",), ("epcube456_solar",),
+        ]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_known_device_ids_from_db()
+
+        # Assert — should return raw cloud IDs, deduplicating battery/solar
+        self.assertEqual(result, {"123", "456"})
+        mock_conn.close.assert_called_once()
+
+    def test_returns_empty_set_on_db_error(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("connection refused")
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_known_device_ids_from_db()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    def test_returns_empty_set_when_no_devices(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            result = epcube_collector._read_known_device_ids_from_db()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    def test_queries_only_active_epcube_devices(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [("epcube100_battery",)]
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
+             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+            # Act
+            epcube_collector._read_known_device_ids_from_db()
+
+        # Assert — SQL should filter by status='active' and device_id pattern
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("active", sql.lower())
+        self.assertIn("epcube", sql.lower())
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T015 — New device detection tests
+# ---------------------------------------------------------------------------
+
+class TestNewDeviceDetection(unittest.TestCase):
+    """T015: _discover_devices detects new devices, registers in DB, logs discovery."""
+
+    def test_new_device_registered_in_db(self):
+        """When cloud returns a device not in DB, upsert_device is called for both sub-devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing_dev = _make_device(dev_id="100", name="Existing")
+        new_dev = _make_device(dev_id="200", name="New Device")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing_dev, new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value={"100"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — new device sub-devices registered in DB
+        call_ids = [call[0][0] for call in c._pg.upsert_device.call_args_list]
+        self.assertIn("epcube200_battery", call_ids)
+        self.assertIn("epcube200_solar", call_ids)
+
+    def test_existing_device_not_re_registered(self):
+        """Devices already known in DB are not registered again by _discover_devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing_dev = _make_device(dev_id="100", name="Existing")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value={"100"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — no upsert_device calls for already-known device
+        c._pg.upsert_device.assert_not_called()
+
+    def test_devices_list_updated_from_cloud(self):
+        """After discovery, self._devices reflects the cloud device list."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = []
+        dev = _make_device(dev_id="100", name="Device")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value=set()):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        self.assertEqual(len(c._devices), 1)
+        self.assertEqual(c._devices[0]["id"], "100")
+
+    def test_new_device_discovery_logged(self):
+        """Discovery of a new device logs a message about the new device."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="300", name="Brand New")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value=set()):
+            # Act
+            with self.assertLogs("epcube-exporter", level="INFO") as cm:
+                c._discover_devices()
+
+        # Assert — log should mention new device discovery
+        found = any("new device" in msg.lower() or "discovered" in msg.lower()
+                     for msg in cm.output)
+        self.assertTrue(found, f"Expected 'new device' or 'discovered' in logs: {cm.output}")
+
+    def test_uses_compare_device_lists(self):
+        """_discover_devices uses compare_device_lists for set comparison."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        dev = _make_device(dev_id="1", name="A")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value=set()), \
+             patch.object(epcube_collector, "compare_device_lists",
+                          wraps=epcube_collector.compare_device_lists) as mock_compare:
+            # Act
+            c._discover_devices()
+
+        # Assert
+        mock_compare.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T016 — Discovery interval timing tests
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryIntervalTiming(unittest.TestCase):
+    """T016: poll_loop runs discovery on interval, reads interval from DB."""
+
+    def test_poll_loop_calls_discovery_via_retry(self):
+        """poll_loop calls discovery via retry_with_backoff on first iteration."""
+        # Arrange
+        c = _make_collector()
+        retry_calls = []
+
+        def mock_retry(fn, **kw):
+            retry_calls.append(True)
+            fn()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 1:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
+             patch.object(epcube_collector, "_read_discovery_interval_from_db", return_value=60), \
+             patch.object(epcube_collector, "retry_with_backoff", side_effect=mock_retry), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        # Assert — retry_with_backoff was called to wrap discovery
+        self.assertEqual(len(retry_calls), 1)
+
+    def test_poll_loop_reads_discovery_interval_from_db(self):
+        """poll_loop calls _read_discovery_interval_from_db each cycle."""
+        # Arrange
+        c = _make_collector()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 1:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
+             patch.object(epcube_collector, "_read_discovery_interval_from_db",
+                          return_value=60) as mock_disc, \
+             patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=lambda fn, **kw: fn()), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        # Assert
+        self.assertTrue(mock_disc.called)
+
+    def test_poll_loop_skips_discovery_when_interval_not_elapsed(self):
+        """Discovery runs once (first iteration), then skips until interval elapses."""
+        # Arrange
+        c = _make_collector()
+        discover_count = {"n": 0}
+
+        def mock_retry(fn, **kw):
+            discover_count["n"] += 1
+            fn()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 3:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
+             patch.object(epcube_collector, "_read_discovery_interval_from_db", return_value=3600), \
+             patch.object(epcube_collector, "retry_with_backoff", side_effect=mock_retry), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        # Assert — discovery should run once (first iteration only, 5s << 3600s)
+        self.assertEqual(discover_count["n"], 1)
+
+    def test_poll_loop_continues_after_discovery_failure(self):
+        """poll_loop logs and continues when discovery exhausts all retries."""
+        # Arrange
+        c = _make_collector()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+
+        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
+             patch.object(epcube_collector, "_read_discovery_interval_from_db", return_value=60), \
+             patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=RuntimeError("all retries failed")), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll") as mock_poll:
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                epcube_collector.poll_loop(c)
+
+        # Assert — poll still runs despite discovery failure
+        self.assertTrue(mock_poll.called)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T017 — Startup discovery tests
+# ---------------------------------------------------------------------------
+
+class TestStartupDiscovery(unittest.TestCase):
+    """T017: First _ensure_auth triggers discovery comparing cloud vs DB."""
+
+    def test_startup_registers_new_devices_from_cloud(self):
+        """On first auth, devices in cloud but not in DB are registered."""
+        # Arrange
+        c = _make_collector()
+        new_dev = _make_device(dev_id="500", name="Startup Device")
+
+        with patch.object(epcube_collector, "authenticate", return_value="fake_token"), \
+             patch.object(epcube_collector, "_jwt_exp", return_value=time.time() + 3600), \
+             patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value=set()):
+            # Act
+            c._ensure_auth()
+
+        # Assert — device registered in DB via upsert_device
+        call_ids = [call[0][0] for call in c._pg.upsert_device.call_args_list]
+        self.assertIn("epcube500_battery", call_ids)
+        self.assertIn("epcube500_solar", call_ids)
+
+    def test_startup_discovery_logs_new_devices(self):
+        """On first auth, new devices are logged as discovered."""
+        # Arrange
+        c = _make_collector()
+        new_dev = _make_device(dev_id="600", name="New At Startup")
+
+        with patch.object(epcube_collector, "authenticate", return_value="fake_token"), \
+             patch.object(epcube_collector, "_jwt_exp", return_value=time.time() + 3600), \
+             patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          create=True, return_value=set()):
+            # Act
+            with self.assertLogs("epcube-exporter", level="INFO") as cm:
+                c._ensure_auth()
+
+        # Assert — log mentions new device discovery
+        found = any("new device" in msg.lower() or "discovered" in msg.lower()
+                     for msg in cm.output)
+        self.assertTrue(found, f"Expected discovery log in: {cm.output}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T018 — Empty cloud device list guard (FR-007)
+# ---------------------------------------------------------------------------
+
+class TestEmptyCloudListGuard(unittest.TestCase):
+    """T018: FR-007 — empty cloud list treated as error, current devices retained."""
+
+    def test_empty_list_retains_current_devices(self):
+        """When cloud returns empty device list, self._devices is NOT cleared."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        original_device = _make_device(dev_id="100", name="Existing")
+        c._devices = [original_device]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            c._discover_devices()
+
+        # Assert — devices should be retained
+        self.assertEqual(len(c._devices), 1)
+        self.assertEqual(c._devices[0]["id"], "100")
+
+    def test_empty_list_logs_warning(self):
+        """When cloud returns empty device list, a warning is logged."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = [_make_device(dev_id="100")]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="WARNING") as cm:
+                c._discover_devices()
+
+        # Assert — warning about empty device list
+        found = any("empty" in msg.lower() for msg in cm.output)
+        self.assertTrue(found, f"Expected 'empty' in warning logs: {cm.output}")
+
+    def test_empty_list_no_db_registration(self):
+        """When cloud returns empty list, no devices are registered in DB."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = [_make_device(dev_id="100")]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        c._pg.upsert_device.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T023 — Removed device detection tests
+# ---------------------------------------------------------------------------
+
+class TestRemovedDeviceDetection(unittest.TestCase):
+    """T023: _discover_devices detects removed devices, updates DB status, logs removal."""
+
+    def test_removed_device_excluded_from_poll_list(self):
+        """When a known device disappears from cloud, self._devices no longer contains it."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "200"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — only the remaining device is in the poll list
+        poll_ids = [str(d["id"]) for d in c._devices]
+        self.assertIn("100", poll_ids)
+        self.assertNotIn("200", poll_ids)
+
+    def test_removed_device_status_updated_in_db(self):
+        """When a device is removed, update_device_status is called with 'removed'."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value=set()):
+            # Pre-seed: simulate a known device that cloud no longer returns
+            with patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                              return_value={"300"}), \
+                 patch.object(epcube_collector, "_api_request",
+                              return_value={"status": 200, "data": []}):
+                # Empty list guard would trigger — test with at least one device
+                pass
+
+        # Re-arrange: cloud returns one device, DB has two
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "300"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status called for the removed device
+        c._pg.update_device_status.assert_called_once_with("300", "removed")
+
+    def test_removed_device_logged(self):
+        """When a device is removed, a log message identifies it."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "400"}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="WARNING") as cm:
+                c._discover_devices()
+
+        # Assert — log mentions device removal
+        found = any("removed" in msg.lower() and "400" in msg for msg in cm.output)
+        self.assertTrue(found, f"Expected removal log for device 400 in: {cm.output}")
+
+    def test_multiple_devices_removed(self):
+        """When multiple devices are removed, all are handled."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "500", "600"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status called for each removed device
+        called_ids = {call[0][0] for call in c._pg.update_device_status.call_args_list}
+        self.assertEqual(called_ids, {"500", "600"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T024 — Historical data preservation tests (FR-004)
+# ---------------------------------------------------------------------------
+
+class TestHistoricalDataPreservation(unittest.TestCase):
+    """T024: FR-004 — device removal does NOT delete readings or device records."""
+
+    def test_no_delete_calls_on_removal(self):
+        """When a device is removed, no delete operations are performed on the writer."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "700"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — no delete methods called
+        # Check that the mock pg_writer has no delete-related calls
+        for call in c._pg.method_calls:
+            method_name = call[0]
+            self.assertNotIn("delete", method_name.lower(),
+                             f"Unexpected delete call: {method_name}")
+
+    def test_device_record_preserved_after_removal(self):
+        """The device record remains in DB (status updated, not deleted)."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "800"}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status is called (not delete), proving record is kept
+        c._pg.update_device_status.assert_called_once_with("800", "removed")
+        # Verify no method call contains 'delete_device' or 'remove_device'
+        method_names = [call[0] for call in c._pg.method_calls]
+        self.assertFalse(any("delete_device" in m or "remove_device" in m for m in method_names))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T025 — update_device_status tests
+# ---------------------------------------------------------------------------
+
+class TestUpdateDeviceStatus(unittest.TestCase):
+    """T025: PostgresWriter.update_device_status updates status for both sub-devices."""
+
+    @patch.object(db, "psycopg2")
+    def test_updates_both_sub_devices(self, mock_pg):
+        """update_device_status updates _battery and _solar device records."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.update_device_status("123", "removed")
+
+        # Assert — SQL UPDATE for both sub-devices
+        update_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'UPDATE' in str(call) and 'devices' in str(call)]
+        self.assertGreaterEqual(len(update_calls), 1)
+        # Check that both device IDs are included
+        all_params = [str(call) for call in mock_cursor.execute.call_args_list]
+        all_sql = " ".join(all_params)
+        self.assertIn("epcube123_battery", all_sql)
+        self.assertIn("epcube123_solar", all_sql)
+        mock_conn.commit.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_updates_status_to_given_value(self, mock_pg):
+        """update_device_status sets status column to the provided value."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.update_device_status("456", "merged")
+
+        # Assert — the status value is passed to the SQL
+        all_params = [str(call) for call in mock_cursor.execute.call_args_list]
+        all_sql = " ".join(all_params)
+        self.assertIn("merged", all_sql)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: T027 — Pending replacement creation tests
+# ---------------------------------------------------------------------------
+
+class TestPendingReplacementCreation(unittest.TestCase):
+    """T027: _discover_devices creates pending_replacement on same-cycle add+remove."""
+
+    def test_same_cycle_add_and_remove_creates_pending(self):
+        """When discovery sees both an add and a remove in one cycle, insert pending_replacement."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="200", name="Replacement")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100"}):
+            # Act — DB knows {100}, cloud returns {200} → 100 removed, 200 added
+            c._discover_devices()
+
+        # Assert
+        c._pg.insert_pending_replacement.assert_called_once_with("100", "200")
+
+    def test_add_only_no_pending_replacement(self):
+        """When discovery sees only additions, no pending_replacement is created."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing = _make_device(dev_id="100", name="Existing")
+        new_dev = _make_device(dev_id="200", name="Brand New")
+        c._pg.insert_pending_replacement = MagicMock()
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing, new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100"}):
+            # Act — DB knows {100}, cloud returns {100, 200} → only addition
+            c._discover_devices()
+
+        # Assert
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_remove_only_no_pending_replacement(self):
+        """When discovery sees only removals, no pending_replacement is created."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "200"}):
+            # Act — DB knows {100, 200}, cloud returns {100} → only removal
+            c._discover_devices()
+
+        # Assert
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_multiple_removals_and_additions_create_one_record_per_removed(self):
+        """N removed + N added → N pending_replacement records (one per removed)."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new1 = _make_device(dev_id="500", name="New 1")
+        new2 = _make_device(dev_id="600", name="New 2")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new1, new2]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "200"}):
+            # Act — 2 removed (100, 200), 2 added (500, 600)
+            c._discover_devices()
+
+        # Assert — one record per removed device
+        self.assertEqual(c._pg.insert_pending_replacement.call_count, 2)
+        # Verify both removed device IDs are covered
+        called_old_ids = {call[0][0] for call in c._pg.insert_pending_replacement.call_args_list}
+        self.assertEqual(called_old_ids, {"100", "200"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: T028 — insert_pending_replacement tests
+# ---------------------------------------------------------------------------
+
+class TestInsertPendingReplacement(unittest.TestCase):
+    """T028: PostgresWriter.insert_pending_replacement inserts into pending_replacements."""
+
+    @patch.object(db, "psycopg2")
+    def test_inserts_record(self, mock_pg):
+        """insert_pending_replacement issues an INSERT into pending_replacements."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.insert_pending_replacement("123", "456")
+
+        # Assert — INSERT into pending_replacements with both IDs
+        insert_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'pending_replacements' in str(call) and 'INSERT' in str(call)]
+        self.assertEqual(len(insert_calls), 1)
+        params = insert_calls[0][0][1]
+        self.assertEqual(params, ("123", "456"))
+        mock_conn.commit.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_uses_on_conflict_do_nothing(self, mock_pg):
+        """insert_pending_replacement uses ON CONFLICT DO NOTHING for idempotency."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.insert_pending_replacement("789", "012")
+
+        # Assert
+        all_sql = " ".join(str(call) for call in mock_cursor.execute.call_args_list).upper()
+        self.assertIn("ON CONFLICT", all_sql)
+        self.assertIn("DO NOTHING", all_sql)
+
+
+# ---------------------------------------------------------------------------
+# Cross-cycle replacement detection (Option 1)
+# ---------------------------------------------------------------------------
+
+class TestCrossCycleReplacementDetection(unittest.TestCase):
+    """When a device is removed in a cycle without a same-cycle add, look up an
+    existing active device with the same alias registered after the removed one
+    and insert a pending_replacement row."""
+
+    def test_remove_only_inserts_pending_when_alias_match_found(self):
+        """Lone removal triggers find_replacement_candidate; insert pending if it returns an id."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value="200")
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "999"}):
+            # Act — DB knows {100, 999}, cloud returns {100} → 999 removed (no same-cycle add)
+            c._discover_devices()
+
+        # Assert — find_replacement_candidate consulted with the removed id, pending inserted
+        c._pg.find_replacement_candidate.assert_called_once_with("999")
+        c._pg.insert_pending_replacement.assert_called_once_with("999", "200")
+
+    def test_remove_only_no_pending_when_no_alias_match(self):
+        """Lone removal with no alias match → no pending row inserted."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100", "999"}):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        c._pg.find_replacement_candidate.assert_called_once_with("999")
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_same_cycle_pair_skips_cross_cycle_lookup(self):
+        """A removed device already paired same-cycle should not also trigger cross-cycle lookup."""
+        # Arrange — DB knows {100}, cloud returns {200} → 100 removed, 200 added (same-cycle pair)
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="200", name="Replacement")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value="999")  # would be used if called
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}), \
+             patch.object(epcube_collector, "_read_known_device_ids_from_db",
+                          return_value={"100"}):
+            c._discover_devices()
+
+        # Assert — only the same-cycle pair recorded; cross-cycle lookup skipped
+        c._pg.find_replacement_candidate.assert_not_called()
+        c._pg.insert_pending_replacement.assert_called_once_with("100", "200")
+
+
+class TestFindReplacementCandidate(unittest.TestCase):
+    """PostgresWriter.find_replacement_candidate finds active alias-match devices."""
+
+    def _make_writer(self, mock_pg, fetch_results):
+        """Helper to set up a writer whose cursor.fetchone returns the queued results in order."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone.side_effect = list(fetch_results)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test:test@localhost/test"), mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_returns_candidate_id_when_active_alias_match_found(self, mock_pg):
+        """Returns the raw cloud id of the active alias-matching device."""
+        # Arrange — first fetchone (lookup old): (alias, old_created); second (lookup candidate): (device_id,)
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-04-09T12:59:49+00:00"),
+            ("epcube5840_battery",),
+        ])
+
+        # Act
+        result = writer.find_replacement_candidate("5488")
+
+        # Assert
+        self.assertEqual(result, "5840")
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_old_device_missing(self, mock_pg):
+        """Returns None when the removed device has no row in devices."""
+        writer, _ = self._make_writer(mock_pg, [None])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_old_device_has_no_alias(self, mock_pg):
+        """Returns None when the removed device row has a NULL alias."""
+        writer, _ = self._make_writer(mock_pg, [(None, "2026-04-09T12:59:49+00:00")])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_no_active_match(self, mock_pg):
+        """Returns None when the candidate lookup finds no row."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-04-09T12:59:49+00:00"),
+            None,
+        ])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_candidate_id_unparseable(self, mock_pg):
+        """Returns None when the candidate device_id doesn't match the epcubeN_battery shape."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Same Alias", "2026-04-09T12:59:49+00:00"),
+            ("vue_panel_42",),  # not an epcube*_battery id
+        ])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
 
 
 if __name__ == "__main__":

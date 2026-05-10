@@ -2,7 +2,6 @@
 import logging
 import math
 import os
-import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -43,12 +42,6 @@ AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
 AZURE_AUDIENCE = os.environ.get("AZURE_AUDIENCE", "")
 AZURE_CLIENT_SECRET = os.environ.get("AZURE_CLIENT_SECRET", "")
 AZURE_REDIRECT_URI = os.environ.get("AZURE_REDIRECT_URI", "")
-
-# OAuth session management
-_SESSION_MAX_AGE = 3600  # 1 hour
-_pending_auth = {}  # state -> {code_verifier, timestamp}
-_sessions = {}  # session_id -> {expires, user}
-_auth_lock = threading.Lock()
 
 log = logging.getLogger("epcube-exporter")
 logging.basicConfig(

@@ -19,6 +19,12 @@ vi.mock('../../src/api', () => ({
   fetchCurrentReadings: vi.fn(),
   fetchRangeReadings: vi.fn(),
   fetchGridPower: vi.fn(),
+  fetchDevicesByStatus: vi.fn().mockResolvedValue({ devices: [] }),
+  fetchMergePreview: vi.fn().mockResolvedValue({
+    old_device_id: '', new_device_id: '', readings_to_transfer: 0, conflicts_to_skip: 0,
+  }),
+  fetchPendingReplacements: vi.fn().mockResolvedValue([]),
+  mergeDevices: vi.fn(),
 }));
 
 import { SettingsPage, resolveDeviceAlias } from '../../src/components/SettingsPage';

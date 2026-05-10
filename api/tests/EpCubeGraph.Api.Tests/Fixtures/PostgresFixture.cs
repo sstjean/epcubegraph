@@ -42,8 +42,23 @@ public class PostgresFixture : IAsyncLifetime
                 manufacturer TEXT,
                 product_code TEXT,
                 uid TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
                 created_at TIMESTAMPTZ DEFAULT NOW(),
                 updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS pending_replacements (
+                id SERIAL PRIMARY KEY,
+                old_device_id TEXT NOT NULL,
+                new_device_id TEXT NOT NULL,
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (old_device_id, new_device_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value JSONB NOT NULL,
+                last_modified TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
             CREATE TABLE IF NOT EXISTS readings (
@@ -179,6 +194,10 @@ public class PostgresFixture : IAsyncLifetime
             """
             DO $$ BEGIN
                 DELETE FROM settings;
+            EXCEPTION WHEN undefined_table THEN NULL;
+            END $$;
+            DO $$ BEGIN
+                DELETE FROM pending_replacements;
             EXCEPTION WHEN undefined_table THEN NULL;
             END $$;
             DELETE FROM readings; DELETE FROM devices;

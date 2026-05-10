@@ -143,11 +143,67 @@ class EpCubeCollector:
 
     def _discover_devices(self):
         result = _api_request("GET", "/home/deviceList", token=self._token)
-        if result.get("status") == 200:
-            self._devices = result["data"]
-            for d in self._devices:
-                log.info("  Device: %s (id=%s, sn=%s, online=%s)",
-                         d.get("name", "?"), d["id"], d.get("sgSn", "?"), d.get("isOnline", "?"))
+        if result.get("status") != 200:
+            return
+
+        cloud_devices = result["data"]
+
+        # FR-007: Empty list guard
+        if not cloud_devices:
+            log.warning("Cloud returned empty device list — retaining current devices")
+            return
+
+        # Compare cloud list against known DB devices
+        known_ids = _read_known_device_ids_from_db()
+        cloud_ids = {str(d["id"]) for d in cloud_devices}
+        added, removed, unchanged = compare_device_lists(known_ids, cloud_ids)
+
+        # Register new devices in DB
+        for dev_id in added:
+            dev = next(d for d in cloud_devices if str(d["id"]) == dev_id)
+            dev_name = dev.get("name", "unknown")
+            sg_sn = dev.get("sgSn", "")
+            dev_type = dev.get("devType", 0)
+            base_id = f"epcube{dev_id}"
+            self._pg.upsert_device(f"{base_id}_battery", "storage_battery", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn)
+            self._pg.upsert_device(f"{base_id}_solar", "home_solar", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn)
+            log.info("New device discovered: %s (id=%s, sn=%s)", dev_name, dev_id, sg_sn)
+
+        # Mark removed devices in DB and log (FR-003, FR-004, FR-005)
+        for dev_id in removed:
+            self._pg.update_device_status(dev_id, "removed")
+            log.warning("Device removed from cloud account: id=%s", dev_id)
+
+        # FR-010: Same-cycle add+remove → record pending replacement prompts.
+        # One record per removed device; pair with a new device deterministically
+        # by sorting both sets. Surplus on either side gets no pending record.
+        same_cycle_pairs = set()
+        if added and removed:
+            sorted_removed = sorted(removed)
+            sorted_added = sorted(added)
+            for old_id, new_id in zip(sorted_removed, sorted_added):
+                self._pg.insert_pending_replacement(old_id, new_id)
+                same_cycle_pairs.add(old_id)
+                log.info("Pending replacement recorded: old=%s new=%s", old_id, new_id)
+
+        # Cross-cycle replacement detection (Option 1): for each device removed in
+        # this cycle that wasn't already paired above, look for an existing active
+        # device with the same alias registered after the removed one. Inserting
+        # the pending row is idempotent on (old, new), so safe to call repeatedly.
+        for old_id in removed:
+            if old_id in same_cycle_pairs:
+                continue
+            new_id = self._pg.find_replacement_candidate(old_id)
+            if new_id:
+                self._pg.insert_pending_replacement(old_id, new_id)
+                log.info("Cross-cycle pending replacement recorded: old=%s new=%s", old_id, new_id)
+
+        # Update device list for polling
+        self._devices = cloud_devices
+        log.info("Device discovery complete: %d device(s) (%d new, %d removed, %d unchanged)",
+                 len(cloud_devices), len(added), len(removed), len(unchanged))
 
     def poll(self):
         """Fetch data from all devices and write to PostgreSQL."""
@@ -368,6 +424,35 @@ def _read_setting_int_from_db(key, default, min_val, max_val):
     return default
 
 
+def _read_known_device_ids_from_db():
+    """Read active EP Cube device IDs from the database.
+
+    Returns set of raw cloud device IDs (extracted from epcube{id}_* pattern).
+    """
+    if not POSTGRES_DSN:
+        return set()
+    try:
+        import psycopg2
+        conn = psycopg2.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT device_id FROM devices WHERE status = 'active' AND device_id LIKE 'epcube%'"
+            )
+            rows = cur.fetchall()
+            ids = set()
+            for (device_id,) in rows:
+                # epcube123_battery → 123, epcube123_solar → 123
+                raw = device_id.replace("epcube", "").rsplit("_", 1)[0]
+                ids.add(raw)
+            return ids
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read device IDs from DB")
+        return set()
+
+
 def _read_poll_interval_from_db():
     """Read epcube_poll_interval_seconds from settings table. Returns default on any error."""
     return _read_setting_int_from_db("epcube_poll_interval_seconds", DEFAULT_POLL_INTERVAL, 1, 3600)
@@ -410,12 +495,24 @@ def retry_with_backoff(fn, max_retries=5, base_delay=30):
 def poll_loop(collector):
     """Background thread: polls API on schedule. Reads interval from DB each cycle."""
     log.info("EP Cube poll thread started")
+    last_discovery_time = 0.0
     while True:
         try:
             current_interval = _read_poll_interval_from_db()
+            discovery_interval = _read_discovery_interval_from_db()
             with collector._lock:
                 collector._poll_interval = current_interval
                 collector._next_poll_at = time.time() + current_interval
+
+            # Check if discovery is due (FR-008: fixed schedule, checked each poll cycle)
+            now = time.time()
+            if now - last_discovery_time >= discovery_interval:
+                try:
+                    retry_with_backoff(collector._discover_devices)
+                    last_discovery_time = time.time()
+                except Exception:
+                    log.exception("Device discovery failed after retries")
+
             time.sleep(current_interval)
             collector.poll()
         except Exception:

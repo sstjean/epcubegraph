@@ -26,10 +26,11 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         {
             sql = """
                 SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
-                       CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online
+                       CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
+                       d.created_at
                 FROM devices d
                 LEFT JOIN readings r ON d.device_id = r.device_id
-                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid
+                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at
                 ORDER BY d.device_id
                 """;
             await using var cmdAll = _dataSource.CreateCommand(sql);
@@ -39,11 +40,12 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 
         sql = """
             SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
-                   CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online
+                   CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
+                   d.created_at
             FROM devices d
             LEFT JOIN readings r ON d.device_id = r.device_id
             WHERE d.status = $1
-            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid
+            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at
             ORDER BY d.device_id
             """;
         await using var cmd = _dataSource.CreateCommand(sql);
@@ -64,7 +66,8 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
                 ProductCode: reader.IsDBNull(4) ? null : reader.GetString(4),
                 Uid: reader.IsDBNull(5) ? null : reader.GetString(5),
                 Online: reader.GetBoolean(6),
-                Alias: reader.IsDBNull(2) ? null : reader.GetString(2)));
+                Alias: reader.IsDBNull(2) ? null : reader.GetString(2),
+                CreatedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
         }
         return devices;
     }
@@ -175,6 +178,265 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         {
             return false;
         }
+    }
+
+    public async Task<IReadOnlyList<PendingReplacement>> GetPendingReplacementsAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT id, old_device_id, new_device_id, detected_at
+            FROM pending_replacements
+            ORDER BY detected_at, id
+            """;
+
+        await using var cmd = _dataSource.CreateCommand(sql);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        var results = new List<PendingReplacement>();
+        while (await reader.ReadAsync(ct))
+        {
+            results.Add(new PendingReplacement(
+                Id: reader.GetInt32(0),
+                OldDeviceId: reader.GetString(1),
+                NewDeviceId: reader.GetString(2),
+                DetectedAt: reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+        return results;
+    }
+
+    public async Task<DismissResponse?> DismissPendingReplacementAsync(int id, CancellationToken ct = default)
+    {
+        // Single transaction: look up the pending row, delete it, mark old device removed.
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        await using var lookup = new NpgsqlCommand(
+            "SELECT old_device_id, new_device_id FROM pending_replacements WHERE id = $1 FOR UPDATE",
+            conn, tx);
+        lookup.Parameters.AddWithValue(id);
+
+        string oldDeviceId;
+        string newDeviceId;
+        await using (var reader = await lookup.ExecuteReaderAsync(ct))
+        {
+            if (!await reader.ReadAsync(ct))
+            {
+                await tx.RollbackAsync(ct);
+                return null;
+            }
+            oldDeviceId = reader.GetString(0);
+            newDeviceId = reader.GetString(1);
+        }
+
+        await using var del = new NpgsqlCommand(
+            "DELETE FROM pending_replacements WHERE id = $1", conn, tx);
+        del.Parameters.AddWithValue(id);
+        await del.ExecuteNonQueryAsync(ct);
+
+        await using var upd = new NpgsqlCommand(
+            "UPDATE devices SET status = 'removed', updated_at = NOW() WHERE device_id IN ($1, $2)",
+            conn, tx);
+        upd.Parameters.AddWithValue($"epcube{oldDeviceId}_battery");
+        upd.Parameters.AddWithValue($"epcube{oldDeviceId}_solar");
+        await upd.ExecuteNonQueryAsync(ct);
+
+        await tx.CommitAsync(ct);
+
+        return new DismissResponse(true, oldDeviceId, newDeviceId);
+    }
+
+    public async Task<MergePreviewResponse?> GetMergePreviewAsync(
+        string oldDeviceId, string newDeviceId, CancellationToken ct = default)
+    {
+        var oldBattery = $"epcube{oldDeviceId}_battery";
+        var oldSolar = $"epcube{oldDeviceId}_solar";
+        var newBattery = $"epcube{newDeviceId}_battery";
+        var newSolar = $"epcube{newDeviceId}_solar";
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+
+        // Validate both devices exist; load statuses
+        await using var statusCmd = new NpgsqlCommand(
+            "SELECT device_id, status FROM devices WHERE device_id IN ($1, $2, $3, $4)", conn);
+        statusCmd.Parameters.AddWithValue(oldBattery);
+        statusCmd.Parameters.AddWithValue(oldSolar);
+        statusCmd.Parameters.AddWithValue(newBattery);
+        statusCmd.Parameters.AddWithValue(newSolar);
+
+        var statuses = new Dictionary<string, string>();
+        await using (var reader = await statusCmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                statuses[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        if (!statuses.ContainsKey(oldBattery) || !statuses.ContainsKey(newBattery))
+        {
+            return null;
+        }
+
+        if (statuses[oldBattery] == "merged")
+        {
+            throw new MergeValidationException($"Old device '{oldDeviceId}' is already merged");
+        }
+        if (statuses[newBattery] != "active")
+        {
+            throw new MergeValidationException($"New device '{newDeviceId}' must be active to receive a merge");
+        }
+
+        // Cutoff semantics: rows on the old device with timestamp >= the new device's
+        // earliest reading are dropped (overlap window discarded in favour of new device);
+        // everything strictly before the cutoff is transferred. If the new device has no
+        // readings yet, the cutoff is NULL and every old row transfers.
+        const string countSql = """
+            WITH cutoff AS (
+                SELECT MIN(timestamp) AS ts
+                FROM readings
+                WHERE device_id IN ($3, $4)
+            )
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE (SELECT ts FROM cutoff) IS NULL
+                       OR r.timestamp < (SELECT ts FROM cutoff)
+                ) AS to_transfer,
+                COUNT(*) FILTER (
+                    WHERE (SELECT ts FROM cutoff) IS NOT NULL
+                      AND r.timestamp >= (SELECT ts FROM cutoff)
+                ) AS to_skip
+            FROM readings r
+            WHERE r.device_id IN ($1, $2)
+            """;
+
+        await using var cmd = new NpgsqlCommand(countSql, conn);
+        cmd.Parameters.AddWithValue(oldBattery);
+        cmd.Parameters.AddWithValue(oldSolar);
+        cmd.Parameters.AddWithValue(newBattery);
+        cmd.Parameters.AddWithValue(newSolar);
+
+        await using var countReader = await cmd.ExecuteReaderAsync(ct);
+        if (!await countReader.ReadAsync(ct))
+        {
+            return new MergePreviewResponse(oldDeviceId, newDeviceId, 0, 0);
+        }
+        var transfer = countReader.GetInt64(0);
+        var skip = countReader.GetInt64(1);
+        return new MergePreviewResponse(oldDeviceId, newDeviceId, transfer, skip);
+    }
+
+    public async Task<MergeResponse?> ExecuteMergeAsync(
+        string oldDeviceId, string newDeviceId, CancellationToken ct = default)
+    {
+        var oldBattery = $"epcube{oldDeviceId}_battery";
+        var oldSolar = $"epcube{oldDeviceId}_solar";
+        var newBattery = $"epcube{newDeviceId}_battery";
+        var newSolar = $"epcube{newDeviceId}_solar";
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock and validate device statuses
+        await using var statusCmd = new NpgsqlCommand(
+            "SELECT device_id, status FROM devices WHERE device_id IN ($1, $2, $3, $4) FOR UPDATE",
+            conn, tx);
+        statusCmd.Parameters.AddWithValue(oldBattery);
+        statusCmd.Parameters.AddWithValue(oldSolar);
+        statusCmd.Parameters.AddWithValue(newBattery);
+        statusCmd.Parameters.AddWithValue(newSolar);
+
+        var statuses = new Dictionary<string, string>();
+        await using (var reader = await statusCmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                statuses[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        if (!statuses.ContainsKey(oldBattery) || !statuses.ContainsKey(newBattery))
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+        if (statuses[oldBattery] == "merged")
+        {
+            await tx.RollbackAsync(ct);
+            throw new MergeValidationException($"Old device '{oldDeviceId}' is already merged");
+        }
+        if (statuses[newBattery] != "active")
+        {
+            await tx.RollbackAsync(ct);
+            throw new MergeValidationException($"New device '{newDeviceId}' must be active to receive a merge");
+        }
+
+        // Cutoff semantics: drop any old-device rows at or after the new device's
+        // earliest reading. Skip the delete entirely when the new device has no readings.
+        await using var conflictCmd = new NpgsqlCommand("""
+            WITH cutoff AS (
+                SELECT MIN(timestamp) AS ts
+                FROM readings
+                WHERE device_id IN ($3, $4)
+            )
+            DELETE FROM readings
+            WHERE device_id IN ($1, $2)
+              AND (SELECT ts FROM cutoff) IS NOT NULL
+              AND timestamp >= (SELECT ts FROM cutoff)
+            """, conn, tx);
+        conflictCmd.Parameters.AddWithValue(oldBattery);
+        conflictCmd.Parameters.AddWithValue(oldSolar);
+        conflictCmd.Parameters.AddWithValue(newBattery);
+        conflictCmd.Parameters.AddWithValue(newSolar);
+        var conflictsDeleted = await conflictCmd.ExecuteNonQueryAsync(ct);
+
+        // Re-attribute remaining old readings to new device IDs
+        await using var transferCmd = new NpgsqlCommand("""
+            UPDATE readings
+            SET device_id = REPLACE(device_id, $3, $4)
+            WHERE device_id IN ($1, $2)
+            """, conn, tx);
+        transferCmd.Parameters.AddWithValue(oldBattery);
+        transferCmd.Parameters.AddWithValue(oldSolar);
+        transferCmd.Parameters.AddWithValue($"epcube{oldDeviceId}_");
+        transferCmd.Parameters.AddWithValue($"epcube{newDeviceId}_");
+        var transferred = await transferCmd.ExecuteNonQueryAsync(ct);
+
+        // Mark old device sub-rows as merged
+        await using var markMerged = new NpgsqlCommand(
+            "UPDATE devices SET status = 'merged', updated_at = NOW() WHERE device_id IN ($1, $2)",
+            conn, tx);
+        markMerged.Parameters.AddWithValue(oldBattery);
+        markMerged.Parameters.AddWithValue(oldSolar);
+        await markMerged.ExecuteNonQueryAsync(ct);
+
+        // Update vue_device_mapping JSON key (rename oldDeviceId → newDeviceId)
+        await using var mappingCmd = new NpgsqlCommand("""
+            UPDATE settings
+            SET value = (
+                SELECT jsonb_object_agg(
+                    CASE WHEN key = $1 THEN $2 ELSE key END,
+                    value
+                )
+                FROM jsonb_each(value)
+            ),
+            last_modified = NOW()
+            WHERE key = 'vue_device_mapping'
+              AND value ? $1
+            """, conn, tx);
+        mappingCmd.Parameters.AddWithValue(oldDeviceId);
+        mappingCmd.Parameters.AddWithValue(newDeviceId);
+        await mappingCmd.ExecuteNonQueryAsync(ct);
+
+        // Delete any pending replacement record matching this pair
+        await using var pendingCmd = new NpgsqlCommand(
+            "DELETE FROM pending_replacements WHERE old_device_id = $1 AND new_device_id = $2",
+            conn, tx);
+        pendingCmd.Parameters.AddWithValue(oldDeviceId);
+        pendingCmd.Parameters.AddWithValue(newDeviceId);
+        await pendingCmd.ExecuteNonQueryAsync(ct);
+
+        await tx.CommitAsync(ct);
+
+        return new MergeResponse(oldDeviceId, newDeviceId, transferred, conflictsDeleted);
     }
 
     public void Dispose()

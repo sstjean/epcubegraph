@@ -4,6 +4,7 @@ import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
 import { errorMessage, toTrackedError } from '../utils/errors';
 import { isValidVueDeviceMapping } from '../hooks/useVueData';
+import { DeviceMerge } from './DeviceMerge';
 
 const POLL_SETTINGS = [
   { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', group: 'EP Cube' },
@@ -405,6 +406,8 @@ export function SettingsPage() {
           </>
         )}
       </div>
+
+      <DeviceMerge />
     </section>
   );
 }

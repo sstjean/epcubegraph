@@ -1,40 +1,61 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-08
+**Last Updated**: 2026-05-10
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `124-device-discovery`
 **Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
-**Unpushed commits**: 2 on `124-device-discovery` (spec + Phase 1+2)
+**Unpushed commits**: 3 on `124-device-discovery` (spec + Phase 1+2 + docs); plus large uncommitted working tree
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-08)
+## ⚡ Current State (2026-05-10)
 
-### Feature 124: Device Discovery (IN PROGRESS 🔧)
+### Feature 124: Device Discovery (IN PROGRESS — Phase 6 functional + bugfixes)
 - **Issue #134** — Automatic device discovery with hourly re-scan and device merge
-- **Branch**: `124-device-discovery` (2 commits ahead of main)
+- **Branch**: `124-device-discovery`
 - **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
-- **Plan**: Complete (research, data model, contracts, quickstart, 60 tasks)
-- **Phase 1+2**: Complete (schema, models, settings, compare_device_lists, retry_with_backoff, status filter)
-- **Next**: Phase 3: T015–T022 (US1 MVP — automatic new device detection)
+- **Plan**: Complete
+- **Phase 1–6**: Complete (schema, models, settings, US1 add detection, US2 remove detection, pending replacements, merge UI, banner, cross-cycle alias detection)
+- **Next**: Manual end-to-end test against real account, then commit + push
+
+### Session 2026-05-10 — Multi-bug fixes + isolation refactor
+**Bugs fixed**
+1. Merge SQL: `vue_device_mapping` update used invalid `::text` cast on jsonb column AND wrong column name `updated_at` (actual: `last_modified`). Fixed in `PostgresMetricsStore.ExecuteMergeAsync`.
+2. Merge semantics: cutoff approach (`>= MIN(new_device_timestamp)`) — drop old rows after the new device starts reporting; transfer everything if no overlap. CTE-based implementation with 3 new integration tests in `MergeStoreCutoffTests.cs`.
+3. Merge target dropdown showed every active device. Fixed by filtering to `pendingMatches` from `pending_replacements` (falls back to all activeGroups when no pending exist).
+4. Auto-select fired for fallback path. Fixed: only when `pendingMatches.length === 1 && suggestedTargets.length === 1`.
+5. Banner not appearing on Current page first load: same-cycle add+remove never fired because real-world replacement spanned multiple discovery cycles.
+   - **Fix (Option 1)**: Cross-cycle alias-based detection. New `PostgresWriter.find_replacement_candidate(old_raw_cloud_id)` queries removed device's alias + `created_at`, finds most recent active `epcubeN_battery` device sharing alias registered later. `_discover_devices` tracks `same_cycle_pairs`; for any removed device not paired in-cycle, calls `find_replacement_candidate` and inserts pending row when found.
+6. **Test isolation violation** (caught + fixed): `TestConfigPsycopg2Import.test_psycopg2_imported_when_available` reloaded `config`, which rebound `_sessions`/`_pending_auth`/`_auth_lock`. `http_handler` retained references to the *original* objects, so subsequent session tests wrote to a different dict than the handler read. Caused `test_session_cookie_grants_access` to fail (401) only when run after that reload test.
+   - **Fix**: Moved session state (`_SESSION_MAX_AGE`, `_pending_auth`, `_sessions`, `_auth_lock`) from `config.py` to `http_handler.py` where it's used; removed `threading` import from `config.py`.
+   - **Isolation refactor**: All session/pending tests now `patch.object(http_handler, "_sessions", {})` etc. so each test owns its own dict + lock — every test fully self-contained, copy-paste portable.
+
+**New end-to-end UX additions**
+- `created_at` field exposed via API (`DeviceInfo`) and dashboard (`Device.created_at`)
+- DeviceMerge UI shows "(id={cloudId}, added {date})" in both source and target dropdowns
+- Pending replacements fetched alongside devices; auto-selects target when there's exactly one pending match
+
+**Test results (post-isolation refactor)**
+- Exporter: **323 tests, 100% coverage** (all 7 modules)
+- API: 422/422 (prior to today's session — needs re-run of integration tests with current schema)
+- Dashboard: 593/593 (prior to today's session)
+
+**Files touched (uncommitted)**
+- `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs` (ILogger injection earlier)
+- `api/src/EpCubeGraph.Api/Models/Models.cs` (added `CreatedAt`)
+- `api/src/EpCubeGraph.Api/Services/IMetricsStore.cs`, `PostgresMetricsStore.cs` (cutoff merge, SQL bug fixes, created_at)
+- `api/tests/EpCubeGraph.Api.Tests/Fixtures/MockableTestFactory.cs`, `PostgresFixture.cs` (status column, pending_replacements table, ClearDataAsync)
+- `api/tests/EpCubeGraph.Api.Tests/Integration/MergeEndpointTests.cs`, `MergeStoreCutoffTests.cs`, `PendingReplacementEndpointTests.cs` (new)
+- `dashboard/src/{App.tsx,api.ts,types.ts,components/{SettingsPage.tsx,DeviceMerge.tsx,ReplacementBanner.tsx},hooks/useDeviceDiscovery.ts}` (UI integration)
+- `dashboard/tests/{component/{App,SettingsPage,DeviceMerge,ReplacementBanner}.test.tsx,unit/{api,useDeviceDiscovery}.test.ts}` (coverage)
+- `local/epcube-exporter/{config.py,db.py,epcube_collector.py,http_handler.py,test_exporter.py}` (cross-cycle detection + session state move)
 
 ### PR #136 — Exporter Refactor (MERGED ✅)
-- **Issue #135 closed** — Refactor exporter monolith + enforce 100% coverage
-- Split 2083-line `exporter.py` into 7 focused modules (config, auth, db, epcube_collector, vue_collector, http_handler, exporter)
-- 262 tests, 100% coverage (was 185 tests, 79%)
-- Added `pytest-cov --cov-fail-under=100` to CI
-- Fixed XSS in Vue debug page (device names + circuit names)
-- Fixed thread safety: `_lock` for shared state in `_discover_devices()` and `_poll_inner()`
-- Dockerfile: explicit file list (excludes test_exporter.py from prod image)
-- `.coveragerc`: project-wide exclusions for `if __name__` and `except ImportError`
-
-### PR #132 — Defense-in-Depth (MERGED ✅)
-- **Issue #123 closed** — NaN/HTML/concurrency hardening
+- Issue #135 closed — see prior session entry below.
 
 ### Production Outage — PostgreSQL Auto-Stop (UNRESOLVED)
-- **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL
 - See Copilot repo memory `postgres-auto-stop-runbook.md`
 
 ### Staging Environments
@@ -65,12 +86,15 @@
 | 74 | Custom domains on devsbx.xyz | closed (resolved before this session) |
 
 ### What's Next
-1. Verify staging destroy workflows completed for b123-def and b093-exp
-2. Continue feature 124 Phase 3: T015–T022 (US1 MVP — new device detection)
-3. Phase 4: T023–T026 (US2 — removed device detection)
-4. Phase 5–7: replacement prompts, merge, polish
-5. #115 Separate Application Insights per environment
-6. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
+1. **Manual end-to-end test against real account**:
+   - Restart exporter container: `docker compose -f local/docker-compose.prod-local.yml restart epcube-exporter`
+   - On next discovery cycle, cross-cycle alias detection should insert pending row for old EP Cube → new EP Cube (alias "Steve St Jean 3")
+   - Or short-circuit: `INSERT INTO pending_replacements (old_device_id, new_device_id) VALUES ('5488', '5840');`
+   - Verify banner appears on Current page first load; verify merge dropdown shows only the pending target with `(added <date>)`
+2. Re-run API integration tests (`dotnet test`) and dashboard tests (`npm run test:coverage`) to confirm no regressions from today's changes
+3. Commit + push `124-device-discovery` (3 unpushed commits + large working tree)
+4. Open PR for review
+5. Then resume remaining Phase 7 polish tasks per `specs/124-device-discovery/tasks.md`
 
 ### Pending
 - Staging destroy for b123-def (run #25572637307) — check completion

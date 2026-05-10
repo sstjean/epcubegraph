@@ -9,6 +9,7 @@ export interface Device {
   uid?: string;
   online: boolean;
   alias?: string;
+  created_at?: string;
 }
 
 export interface DeviceListResponse {
@@ -142,4 +143,33 @@ export interface PanelHierarchyInputEntry {
 
 export interface PanelHierarchyResponse {
   entries: PanelHierarchyEntry[];
+}
+
+// Device discovery types (Feature 124)
+
+export interface PendingReplacement {
+  id: number;
+  old_device_id: string;
+  new_device_id: string;
+  detected_at: string;
+}
+
+export interface DismissResponse {
+  dismissed: boolean;
+  old_device_id: string;
+  new_device_id: string;
+}
+
+export interface MergePreviewResponse {
+  old_device_id: string;
+  new_device_id: string;
+  readings_to_transfer: number;
+  conflicts_to_skip: number;
+}
+
+export interface MergeResponse {
+  old_device_id: string;
+  new_device_id: string;
+  readings_transferred: number;
+  conflicts_skipped: number;
 }

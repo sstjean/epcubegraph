@@ -15,6 +15,10 @@ vi.mock('../../src/components/CircuitsPage', () => ({
   CircuitsPage: () => <div data-testid="circuits-page">MockedCircuitsPage</div>,
 }));
 
+vi.mock('../../src/components/ReplacementBanner', () => ({
+  ReplacementBanner: () => <div data-testid="replacement-banner" />,
+}));
+
 import { App } from '../../src/App';
 
 describe('App', () => {

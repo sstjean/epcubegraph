@@ -18,5 +18,18 @@ public interface IMetricsStore
     Task<IReadOnlyList<TimeSeries>> GetGridReadingsAsync(
         long startEpoch, long endEpoch, int stepSeconds, CancellationToken ct = default);
 
+    Task<IReadOnlyList<PendingReplacement>> GetPendingReplacementsAsync(CancellationToken ct = default);
+
+    Task<DismissResponse?> DismissPendingReplacementAsync(int id, CancellationToken ct = default);
+
+    Task<MergePreviewResponse?> GetMergePreviewAsync(string oldDeviceId, string newDeviceId, CancellationToken ct = default);
+
+    Task<MergeResponse?> ExecuteMergeAsync(string oldDeviceId, string newDeviceId, CancellationToken ct = default);
+
     Task<bool> PingAsync(CancellationToken ct = default);
+}
+
+public sealed class MergeValidationException : Exception
+{
+    public MergeValidationException(string message) : base(message) { }
 }
