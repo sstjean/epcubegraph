@@ -1,0 +1,3 @@
+# Dev/test dependencies — NOT used in production Dockerfile
+-r requirements.txt
+pytest-xdist==3.5.0

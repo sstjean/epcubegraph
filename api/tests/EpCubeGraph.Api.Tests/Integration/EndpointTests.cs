@@ -18,6 +18,8 @@ public class EndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     {
         _factory = factory;
         _factory.MockStore.Reset();
+        _factory.MockSettingsStore.Reset();
+        _factory.MockVueStore.Reset();
         _client = _factory.CreateClient();
     }
 

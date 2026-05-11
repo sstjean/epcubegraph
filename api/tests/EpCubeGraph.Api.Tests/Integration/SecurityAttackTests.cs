@@ -14,6 +14,8 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
 
     public SecurityAttackTests(MockableTestFactory factory)
     {
+        factory.MockSettingsStore.Reset();
+        factory.MockVueStore.Reset();
         factory.MockStore.Reset();
         _client = factory.CreateClient();
     }
