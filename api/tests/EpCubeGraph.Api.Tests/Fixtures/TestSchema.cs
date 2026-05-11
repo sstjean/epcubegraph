@@ -1,12 +1,35 @@
+using Testcontainers.PostgreSql;
+
 namespace EpCubeGraph.Api.Tests.Fixtures;
 
 /// <summary>
 /// Canonical DDL for the epcubegraph test database schema.
-/// Used by PostgresFixture and (after Phase 3 refactor) by each
-/// self-contained integration test that starts its own container.
+/// Used by PostgresFixture and by each self-contained integration test
+/// that starts its own container.
 /// </summary>
 public static class TestSchema
 {
+    /// <summary>
+    /// Creates a fresh PostgreSQL Testcontainer, starts it, and applies the schema.
+    /// Caller must dispose the returned container via <c>await using</c>.
+    /// </summary>
+    public static async Task<PostgreSqlContainer> CreateContainerAsync()
+    {
+        var container = new PostgreSqlBuilder("postgres:17-alpine")
+            .WithDatabase("epcubegraph_test")
+            .WithUsername("test")
+            .WithPassword("test")
+            .Build();
+        await container.StartAsync();
+
+        using var conn = new Npgsql.NpgsqlConnection(container.GetConnectionString());
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(Ddl, conn);
+        await cmd.ExecuteNonQueryAsync();
+
+        return container;
+    }
+
     public const string Ddl = """
         CREATE TABLE IF NOT EXISTS devices (
             id SERIAL PRIMARY KEY,

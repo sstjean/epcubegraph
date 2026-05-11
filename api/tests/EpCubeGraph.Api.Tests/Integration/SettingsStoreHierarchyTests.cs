@@ -1,29 +1,18 @@
 using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class SettingsStoreHierarchyTests : IClassFixture<PostgresFixture>
+public class SettingsStoreHierarchyTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public SettingsStoreHierarchyTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
-    private async Task<PostgresSettingsStore> ArrangeStoreAsync()
-    {
-        await _fixture.ClearDataAsync();
-        return new PostgresSettingsStore(_fixture.ConnectionString);
-    }
-
     [Fact]
     public async Task GetHierarchy_ReturnsNotNull()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var result = await store.GetHierarchyAsync();
@@ -36,7 +25,8 @@ public class SettingsStoreHierarchyTests : IClassFixture<PostgresFixture>
     public async Task UpdateHierarchy_InsertsAndReturnsEntries()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         var entries = new List<PanelHierarchyInputEntry>
         {
             new(10100, 10200),
@@ -55,7 +45,8 @@ public class SettingsStoreHierarchyTests : IClassFixture<PostgresFixture>
     public async Task UpdateHierarchy_ReplacesAllEntries()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateHierarchyAsync(new List<PanelHierarchyInputEntry>
         {
             new(20100, 20200),
@@ -78,7 +69,8 @@ public class SettingsStoreHierarchyTests : IClassFixture<PostgresFixture>
     public async Task UpdateHierarchy_EmptyListClearsAll()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateHierarchyAsync(new List<PanelHierarchyInputEntry>
         {
             new(30100, 30200),

@@ -5,37 +5,22 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class DeviceStatusFilterTests : IClassFixture<MockableTestFactory>, IDisposable
+public class DeviceStatusFilterTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public DeviceStatusFilterTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     [Fact]
     public async Task GetDevices_DefaultReturnsActiveOnly()
     {
         // Arrange
-        _factory.MockStore.DevicesResult = new List<DeviceInfo>
+        using var factory = new MockableTestFactory();
+        factory.MockStore.DevicesResult = new List<DeviceInfo>
         {
             new("epcube111_battery", "storage_battery", Online: true, Alias: "EP Cube"),
             new("epcube222_battery", "storage_battery", Online: false, Alias: "Old EP Cube"),
         };
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices");
+        var response = await client.GetAsync("/api/v1/devices");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -49,13 +34,15 @@ public class DeviceStatusFilterTests : IClassFixture<MockableTestFactory>, IDisp
     public async Task GetDevices_WithStatusParameter_PassesToStore()
     {
         // Arrange
-        _factory.MockStore.DevicesResult = new List<DeviceInfo>
+        using var factory = new MockableTestFactory();
+        factory.MockStore.DevicesResult = new List<DeviceInfo>
         {
             new("epcube111_battery", "storage_battery", Online: false, Alias: "Old EP Cube"),
         };
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices?status=removed");
+        var response = await client.GetAsync("/api/v1/devices?status=removed");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -68,14 +55,16 @@ public class DeviceStatusFilterTests : IClassFixture<MockableTestFactory>, IDisp
     public async Task GetDevices_WithStatusAll_PassesToStore()
     {
         // Arrange
-        _factory.MockStore.DevicesResult = new List<DeviceInfo>
+        using var factory = new MockableTestFactory();
+        factory.MockStore.DevicesResult = new List<DeviceInfo>
         {
             new("epcube111_battery", "storage_battery", Online: true, Alias: "EP Cube"),
             new("epcube222_battery", "storage_battery", Online: false, Alias: "Old EP Cube"),
         };
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices?status=all");
+        var response = await client.GetAsync("/api/v1/devices?status=all");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

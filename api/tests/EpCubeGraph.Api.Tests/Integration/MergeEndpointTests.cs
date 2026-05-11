@@ -6,35 +6,20 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
+public class MergeEndpointTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public MergeEndpointTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     // ── GET /devices/merge-preview ──
 
     [Fact]
     public async Task GetMergePreview_ReturnsCountsFromStore()
     {
         // Arrange
-        _factory.MockStore.MergePreviewResult = new MergePreviewResponse("100", "200", 1234, 5);
+        using var factory = new MockableTestFactory();
+        factory.MockStore.MergePreviewResult = new MergePreviewResponse("100", "200", 1234, 5);
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
+        var response = await client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -49,11 +34,13 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     [Fact]
     public async Task GetMergePreview_Returns404WhenDevicesUnknown()
     {
-        // Arrange — store returns null
-        _factory.MockStore.MergePreviewResult = null;
+        // Arrange
+        using var factory = new MockableTestFactory();
+        factory.MockStore.MergePreviewResult = null;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/merge-preview?old_device_id=999&new_device_id=888");
+        var response = await client.GetAsync("/api/v1/devices/merge-preview?old_device_id=999&new_device_id=888");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -62,11 +49,13 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     [Fact]
     public async Task GetMergePreview_Returns422OnInvalidState()
     {
-        // Arrange — wrong-status validation error
-        _factory.MockStore.ThrowMergeValidation = "Old device must be in 'removed' status";
+        // Arrange
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ThrowMergeValidation = "Old device must be in 'removed' status";
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
+        var response = await client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -75,10 +64,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     [Fact]
     public async Task GetMergePreview_Returns400WhenMissingQueryParams()
     {
-        // Arrange — no params
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/merge-preview");
+        var response = await client.GetAsync("/api/v1/devices/merge-preview");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -88,10 +79,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     public async Task GetMergePreview_Returns422OnStoreError()
     {
         // Arrange
-        _factory.MockStore.ShouldThrow = true;
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ShouldThrow = true;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
+        var response = await client.GetAsync("/api/v1/devices/merge-preview?old_device_id=100&new_device_id=200");
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -103,10 +96,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     public async Task PostMerge_ReturnsResponseFromStore()
     {
         // Arrange
-        _factory.MockStore.MergeResult = new MergeResponse("100", "200", 4321, 7);
+        using var factory = new MockableTestFactory();
+        factory.MockStore.MergeResult = new MergeResponse("100", "200", 4321, 7);
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/devices/merge",
+        var response = await client.PostAsJsonAsync("/api/v1/devices/merge",
             new MergeRequest("100", "200"));
 
         // Assert
@@ -115,17 +110,19 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
         Assert.NotNull(body);
         Assert.Equal(4321, body.ReadingsTransferred);
         Assert.Equal(7, body.ConflictsSkipped);
-        Assert.Equal(("100", "200"), _factory.MockStore.LastMergeArgs);
+        Assert.Equal(("100", "200"), factory.MockStore.LastMergeArgs);
     }
 
     [Fact]
     public async Task PostMerge_Returns404WhenDevicesUnknown()
     {
         // Arrange
-        _factory.MockStore.MergeResult = null;
+        using var factory = new MockableTestFactory();
+        factory.MockStore.MergeResult = null;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/devices/merge",
+        var response = await client.PostAsJsonAsync("/api/v1/devices/merge",
             new MergeRequest("999", "888"));
 
         // Assert
@@ -136,10 +133,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     public async Task PostMerge_Returns422OnInvalidState()
     {
         // Arrange
-        _factory.MockStore.ThrowMergeValidation = "Cannot merge: new device is not active";
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ThrowMergeValidation = "Cannot merge: new device is not active";
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/devices/merge",
+        var response = await client.PostAsJsonAsync("/api/v1/devices/merge",
             new MergeRequest("100", "200"));
 
         // Assert
@@ -149,8 +148,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     [Fact]
     public async Task PostMerge_Returns400WhenBodyMissing()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.PostAsJsonAsync<MergeRequest?>("/api/v1/devices/merge", null);
+        var response = await client.PostAsJsonAsync<MergeRequest?>("/api/v1/devices/merge", null);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -159,8 +162,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     [Fact]
     public async Task PostMerge_Returns400WhenIdsBlank()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/devices/merge",
+        var response = await client.PostAsJsonAsync("/api/v1/devices/merge",
             new MergeRequest("", ""));
 
         // Assert
@@ -171,10 +178,12 @@ public class MergeEndpointTests : IClassFixture<MockableTestFactory>, IDisposabl
     public async Task PostMerge_Returns422OnStoreError()
     {
         // Arrange
-        _factory.MockStore.ShouldThrow = true;
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ShouldThrow = true;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/devices/merge",
+        var response = await client.PostAsJsonAsync("/api/v1/devices/merge",
             new MergeRequest("100", "200"));
 
         // Assert

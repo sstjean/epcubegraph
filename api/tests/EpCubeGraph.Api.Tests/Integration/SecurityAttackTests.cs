@@ -8,23 +8,8 @@ namespace EpCubeGraph.Api.Tests.Integration;
 /// traversal, and XSS payloads at the HTTP boundary.
 /// Uses MockableTestFactory (auth bypassed) so payloads reach the handlers.
 /// </summary>
-public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposable
+public class SecurityAttackTests
 {
-    private readonly HttpClient _client;
-
-    public SecurityAttackTests(MockableTestFactory factory)
-    {
-        factory.MockSettingsStore.Reset();
-        factory.MockVueStore.Reset();
-        factory.MockStore.Reset();
-        _client = factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     // ── SQL Injection via metric parameter ──
 
     [Theory]
@@ -36,8 +21,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("battery_soc'; TRUNCATE TABLE readings; --")]
     public async Task SqlInjection_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("invalid characters", body);
@@ -49,8 +40,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("battery'; INSERT INTO devices VALUES('hack','hack'); --")]
     public async Task SqlInjection_DeviceParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("invalid characters", body);
@@ -62,9 +59,15 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("0 UNION SELECT 1")]
     public async Task SqlInjection_StartParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync(
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(
             $"/api/v1/readings/range?metric=battery_soc&start={Uri.EscapeDataString(payload)}&end=2000&step=60");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -73,9 +76,15 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("1 OR 1=1")]
     public async Task SqlInjection_StepParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync(
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(
             $"/api/v1/readings/range?metric=battery_soc&start=1000&end=2000&step={Uri.EscapeDataString(payload)}");
 
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -88,8 +97,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("%2e%2e%2f%2e%2e%2fetc%2fpasswd")]
     public async Task PathTraversal_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -98,8 +113,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("..%2F..%2F..%2Fetc%2Fpasswd")]
     public async Task PathTraversal_DeviceParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -112,8 +133,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("<svg/onload=alert('XSS')>")]
     public async Task Xss_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -122,8 +149,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("<img src=x onerror=alert(1)>")]
     public async Task Xss_DeviceParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/devices/{Uri.EscapeDataString(payload)}/metrics");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -136,8 +169,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("デバイス")]                 // Non-latin characters
     public async Task UnicodeAttack_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -150,8 +189,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("`id`")]
     public async Task CommandInjection_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -163,8 +208,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [InlineData("{\"$ne\": null}")]
     public async Task NoSqlInjection_MetricParam_ReturnsBadRequest(string payload)
     {
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={Uri.EscapeDataString(payload)}");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
@@ -173,9 +224,15 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [Fact]
     public async Task OversizedInput_MetricParam_ReturnsBadRequest()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var payload = new string('A', 10000);
-        var response = await _client.GetAsync($"/api/v1/readings/current?metric={payload}");
 
+        // Act
+        var response = await client.GetAsync($"/api/v1/readings/current?metric={payload}");
+
+        // Assert
         // SafeName regex won't match because it starts with uppercase? Actually A is valid.
         // But a 10k char param that passes SafeName would just return empty results.
         // The important thing: it doesn't crash the server.
@@ -190,8 +247,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [Fact]
     public async Task PostToGetEndpoint_ReturnsMethodNotAllowed()
     {
-        var response = await _client.PostAsync("/api/v1/readings/current?metric=battery_soc", null);
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.PostAsync("/api/v1/readings/current?metric=battery_soc", null);
+
+        // Assert
         // Minimal API GET-only endpoints return 405 for POST
         Assert.True(
             response.StatusCode == HttpStatusCode.MethodNotAllowed ||
@@ -202,8 +265,14 @@ public class SecurityAttackTests : IClassFixture<MockableTestFactory>, IDisposab
     [Fact]
     public async Task DeleteToGetEndpoint_ReturnsMethodNotAllowed()
     {
-        var response = await _client.DeleteAsync("/api/v1/readings/current?metric=battery_soc");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.DeleteAsync("/api/v1/readings/current?metric=battery_soc");
+
+        // Assert
         Assert.True(
             response.StatusCode == HttpStatusCode.MethodNotAllowed ||
             response.StatusCode == HttpStatusCode.NotFound,

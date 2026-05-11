@@ -4,30 +4,19 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class GridEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
+public class GridEndpointTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public GridEndpointTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     [Fact]
     public async Task Grid_ReturnsOk_WithValidParams()
     {
-        var response = await _client.GetAsync("/api/v1/grid?start=1000&end=2000&step=60");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=1000&end=2000&step=60");
+
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal("grid_power_watts", doc.RootElement.GetProperty("metric").GetString());
@@ -36,50 +25,85 @@ public class GridEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task Grid_ReturnsOk_WithDefaults()
     {
-        var response = await _client.GetAsync("/api/v1/grid");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid");
+
+        // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStartInvalid()
     {
-        var response = await _client.GetAsync("/api/v1/grid?start=not-a-time&end=2000&step=60");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=not-a-time&end=2000&step=60");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStepInvalid()
     {
-        var response = await _client.GetAsync("/api/v1/grid?start=1000&end=2000&step=abc");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=1000&end=2000&step=abc");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStartAfterEnd()
     {
-        var response = await _client.GetAsync("/api/v1/grid?start=2000&end=1000&step=60");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=2000&end=1000&step=60");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_ReturnsBadRequest_WhenStartEqualsEnd()
     {
-        var response = await _client.GetAsync("/api/v1/grid?start=1000&end=1000&step=60");
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=1000&end=1000&step=60");
+
+        // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task Grid_Returns422_WhenStoreFails()
     {
-        _factory.MockStore.ShouldThrow = true;
+        // Arrange
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ShouldThrow = true;
+        using var client = factory.CreateClient();
 
-        var response = await _client.GetAsync("/api/v1/grid?start=1000&end=2000&step=60");
+        // Act
+        var response = await client.GetAsync("/api/v1/grid?start=1000&end=2000&step=60");
 
+        // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 }

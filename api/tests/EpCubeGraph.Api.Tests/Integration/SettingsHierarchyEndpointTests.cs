@@ -5,39 +5,24 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
+public class SettingsHierarchyEndpointTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public SettingsHierarchyEndpointTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     // ── GET /api/v1/settings/hierarchy ──
 
     [Fact]
     public async Task GetHierarchy_ReturnsEntries()
     {
         // Arrange
-        _factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>
+        using var factory = new MockableTestFactory();
+        factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>
         {
             new(1, 100, 200),
             new(2, 100, 300),
         });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/settings/hierarchy");
+        var response = await client.GetAsync("/api/v1/settings/hierarchy");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -50,10 +35,12 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     public async Task GetHierarchy_ReturnsEmptyWhenNoEntries()
     {
         // Arrange
-        _factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>());
+        using var factory = new MockableTestFactory();
+        factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>());
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/settings/hierarchy");
+        var response = await client.GetAsync("/api/v1/settings/hierarchy");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -68,6 +55,8 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     public async Task UpdateHierarchy_ValidEntries_Returns200()
     {
         // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
         {
             new(100, 200),
@@ -75,7 +64,7 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
         });
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -87,7 +76,9 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     [Fact]
     public async Task UpdateHierarchy_CircularReference_Returns400()
     {
-        // Arrange — A → B → A
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
         {
             new(100, 200),
@@ -95,7 +86,7 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
         });
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -107,14 +98,16 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     [Fact]
     public async Task UpdateHierarchy_SelfReference_Returns400()
     {
-        // Arrange — A → A
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
         {
             new(100, 100),
         });
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -123,15 +116,17 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     [Fact]
     public async Task UpdateHierarchy_EmptyEntries_ClearsAll()
     {
-        // Arrange — set up existing, then clear
-        _factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>
+        // Arrange
+        using var factory = new MockableTestFactory();
+        factory.MockSettingsStore.SetHierarchy(new List<PanelHierarchyEntry>
         {
             new(1, 100, 200),
         });
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>());
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -144,6 +139,8 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     public async Task UpdateHierarchy_DuplicateEdges_Returns400()
     {
         // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
         {
             new(100, 200),
@@ -151,7 +148,7 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
         });
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -163,7 +160,9 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
     [Fact]
     public async Task UpdateHierarchy_TransitiveCycle_Returns400()
     {
-        // Arrange — A → B → C → D → A (4-node cycle)
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new PanelHierarchyRequest(new List<PanelHierarchyInputEntry>
         {
             new(100, 200),
@@ -173,7 +172,7 @@ public class SettingsHierarchyEndpointTests : IClassFixture<MockableTestFactory>
         });
 
         // Act
-        var response = await _client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
+        var response = await client.PutAsJsonAsync("/api/v1/settings/hierarchy", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

@@ -3,25 +3,8 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class CorsEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
+public class CorsEndpointTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public CorsEndpointTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     [Theory]
     [InlineData("GET")]
     [InlineData("PUT")]
@@ -29,13 +12,15 @@ public class CorsEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task Cors_Preflight_AllowsMethod(string method)
     {
         // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/health");
         request.Headers.Add("Origin", "https://test-dashboard.example.com");
         request.Headers.Add("Access-Control-Request-Method", method);
         request.Headers.Add("Access-Control-Request-Headers", "Authorization, Content-Type");
 
         // Act
-        var response = await _client.SendAsync(request);
+        var response = await client.SendAsync(request);
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
@@ -47,12 +32,14 @@ public class CorsEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task Cors_Preflight_RejectsDisallowedOrigin()
     {
         // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
         var request = new HttpRequestMessage(HttpMethod.Options, "/api/v1/health");
         request.Headers.Add("Origin", "https://evil.example.com");
         request.Headers.Add("Access-Control-Request-Method", "GET");
 
         // Act
-        var response = await _client.SendAsync(request);
+        var response = await client.SendAsync(request);
 
         // Assert
         Assert.DoesNotContain("Access-Control-Allow-Origin", response.Headers.Select(h => h.Key));

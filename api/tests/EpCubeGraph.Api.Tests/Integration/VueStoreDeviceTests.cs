@@ -1,28 +1,17 @@
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
+public class VueStoreDeviceTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public VueStoreDeviceTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
-    private async Task<PostgresVueStore> ArrangeStoreAsync()
-    {
-        await _fixture.ClearDataAsync();
-        return new PostgresVueStore(_fixture.ConnectionString);
-    }
-
     [Fact]
     public async Task GetDevices_ReturnsEmptyWhenNoDevices()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresVueStore(container.GetConnectionString());
 
         // Act
         var devices = await store.GetDevicesAsync();
@@ -35,10 +24,12 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevices_ReturnsDeviceWithChannels()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100001, "Main Panel");
-        await _fixture.SeedVueChannelAsync(100001, "1,2,3", "Main");
-        await _fixture.SeedVueChannelAsync(100001, "1", "Kitchen");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100001, "Main Panel");
+        await SeedVueChannel(connStr, 100001, "1,2,3", "Main");
+        await SeedVueChannel(connStr, 100001, "1", "Kitchen");
 
         // Act
         var devices = await store.GetDevicesAsync();
@@ -55,11 +46,13 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevices_ResolvesDisplayNameOverride()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100002, "Device Raw Name");
-        await _fixture.SeedVueChannelAsync(100002, "1", "RawChannel");
-        await _fixture.SeedDisplayNameOverrideAsync(100002, null, "Custom Device Name");
-        await _fixture.SeedDisplayNameOverrideAsync(100002, "1", "Custom Channel Name");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100002, "Device Raw Name");
+        await SeedVueChannel(connStr, 100002, "1", "RawChannel");
+        await SeedDisplayNameOverride(connStr, 100002, null, "Custom Device Name");
+        await SeedDisplayNameOverride(connStr, 100002, "1", "Custom Channel Name");
 
         // Act
         var devices = await store.GetDevicesAsync();
@@ -74,9 +67,11 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevices_BalanceChannelDefaultsToUnmonitoredLoads()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100003, "Panel");
-        await _fixture.SeedVueChannelAsync(100003, "Balance", null);
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100003, "Panel");
+        await SeedVueChannel(connStr, 100003, "Balance", null);
 
         // Act
         var devices = await store.GetDevicesAsync();
@@ -89,9 +84,11 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevices_FallsBackToChannelNum()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100004, "Panel");
-        await _fixture.SeedVueChannelAsync(100004, "5", null);
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100004, "Panel");
+        await SeedVueChannel(connStr, 100004, "5", null);
 
         // Act
         var devices = await store.GetDevicesAsync();
@@ -104,7 +101,8 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevice_ReturnsNullForUnknownGid()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresVueStore(container.GetConnectionString());
 
         // Act
         var device = await store.GetDeviceAsync(999999);
@@ -117,8 +115,10 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevice_ReturnsMatchingDevice()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100005, "Workshop");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100005, "Workshop");
 
         // Act
         var device = await store.GetDeviceAsync(100005);
@@ -132,8 +132,10 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
     public async Task GetDevices_FallsBackToDeviceGidWhenNoName()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        using var conn = new Npgsql.NpgsqlConnection(_fixture.ConnectionString);
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
         await conn.OpenAsync();
         using var cmd = new Npgsql.NpgsqlCommand(
             "INSERT INTO vue_devices (device_gid, device_name) VALUES (100070, NULL)", conn);
@@ -145,5 +147,43 @@ public class VueStoreDeviceTests : IClassFixture<PostgresFixture>
         // Assert
         var dev = devices.First(d => d.DeviceGid == 100070);
         Assert.Equal("Device 100070", dev.DisplayName);
+    }
+
+    private static async Task SeedVueDevice(string connStr, long gid, string name, bool connected = true, string? model = null)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO vue_devices (device_gid, device_name, model, connected) VALUES ($1, $2, $3, $4) ON CONFLICT (device_gid) DO UPDATE SET device_name = $2, model = $3, connected = $4", conn);
+        cmd.Parameters.AddWithValue(gid);
+        cmd.Parameters.AddWithValue(name);
+        cmd.Parameters.AddWithValue((object?)model ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(connected);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedVueChannel(string connStr, long gid, string channelNum, string? name = null, string? channelType = null)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO vue_channels (device_gid, channel_num, name, channel_type) VALUES ($1, $2, $3, $4) ON CONFLICT (device_gid, channel_num) DO UPDATE SET name = $3, channel_type = $4", conn);
+        cmd.Parameters.AddWithValue(gid);
+        cmd.Parameters.AddWithValue(channelNum);
+        cmd.Parameters.AddWithValue((object?)name ?? DBNull.Value);
+        cmd.Parameters.AddWithValue((object?)channelType ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedDisplayNameOverride(string connStr, long deviceGid, string? channelNumber, string displayName)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO display_name_overrides (device_gid, channel_number, display_name) VALUES ($1, $2, $3) ON CONFLICT (device_gid, channel_number) DO UPDATE SET display_name = $3", conn);
+        cmd.Parameters.AddWithValue(deviceGid);
+        cmd.Parameters.AddWithValue((object?)channelNumber ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(displayName);
+        await cmd.ExecuteNonQueryAsync();
     }
 }

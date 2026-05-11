@@ -5,38 +5,23 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory>, IDisposable
+public class PendingReplacementEndpointTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public PendingReplacementEndpointTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockStore.Reset();
-        _factory.MockSettingsStore.Reset();
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose()
-    {
-        _client.Dispose();
-    }
-
     [Fact]
     public async Task GetPendingReplacements_ReturnsListFromStore()
     {
         // Arrange
+        using var factory = new MockableTestFactory();
         var detected = new DateTimeOffset(2026, 5, 8, 14, 30, 0, TimeSpan.Zero);
-        _factory.MockStore.PendingReplacementsResult = new List<PendingReplacement>
+        factory.MockStore.PendingReplacementsResult = new List<PendingReplacement>
         {
             new(1, "100", "200", detected),
             new(2, "300", "400", detected),
         };
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/pending-replacements");
+        var response = await client.GetAsync("/api/v1/devices/pending-replacements");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -50,10 +35,12 @@ public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory
     [Fact]
     public async Task GetPendingReplacements_ReturnsEmptyListWhenNone()
     {
-        // Arrange — default empty result
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/pending-replacements");
+        var response = await client.GetAsync("/api/v1/devices/pending-replacements");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -66,10 +53,12 @@ public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory
     public async Task GetPendingReplacements_Returns422OnStoreError()
     {
         // Arrange
-        _factory.MockStore.ShouldThrow = true;
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ShouldThrow = true;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/devices/pending-replacements");
+        var response = await client.GetAsync("/api/v1/devices/pending-replacements");
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
@@ -79,10 +68,12 @@ public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory
     public async Task DismissPendingReplacement_ReturnsOkWhenFound()
     {
         // Arrange
-        _factory.MockStore.DismissResult = new DismissResponse(true, "100", "200");
+        using var factory = new MockableTestFactory();
+        factory.MockStore.DismissResult = new DismissResponse(true, "100", "200");
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsync("/api/v1/devices/pending-replacements/42/dismiss", content: null);
+        var response = await client.PostAsync("/api/v1/devices/pending-replacements/42/dismiss", content: null);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -90,17 +81,19 @@ public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory
         Assert.NotNull(body);
         Assert.True(body.Dismissed);
         Assert.Equal("100", body.OldDeviceId);
-        Assert.Equal(42, _factory.MockStore.LastDismissedId);
+        Assert.Equal(42, factory.MockStore.LastDismissedId);
     }
 
     [Fact]
     public async Task DismissPendingReplacement_Returns404WhenNotFound()
     {
-        // Arrange — store returns null (record not found)
-        _factory.MockStore.DismissResult = null;
+        // Arrange
+        using var factory = new MockableTestFactory();
+        factory.MockStore.DismissResult = null;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsync("/api/v1/devices/pending-replacements/999/dismiss", content: null);
+        var response = await client.PostAsync("/api/v1/devices/pending-replacements/999/dismiss", content: null);
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -110,10 +103,12 @@ public class PendingReplacementEndpointTests : IClassFixture<MockableTestFactory
     public async Task DismissPendingReplacement_Returns422OnStoreError()
     {
         // Arrange
-        _factory.MockStore.ShouldThrow = true;
+        using var factory = new MockableTestFactory();
+        factory.MockStore.ShouldThrow = true;
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.PostAsync("/api/v1/devices/pending-replacements/1/dismiss", content: null);
+        var response = await client.PostAsync("/api/v1/devices/pending-replacements/1/dismiss", content: null);
 
         // Assert
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
