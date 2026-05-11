@@ -1,16 +1,33 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-10
+**Last Updated**: 2026-05-11
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `124-device-discovery`
 **Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
-**Unpushed commits**: 3 on `124-device-discovery` (spec + Phase 1+2 + docs); plus large uncommitted working tree
+**Unpushed commits**: 10 on `124-device-discovery`; plus 5 uncommitted dashboard test files
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-10)
+## ⚡ Current State (2026-05-11)
+
+### Test Isolation Refactor (IN PROGRESS — C# complete, Dashboard/Python partial)
+Full plan stored in Copilot repo memory: `test-isolation-refactor.md`
+
+**Completed phases:**
+- **Phase 0** — Preflight: reverted bulk AAA comments, added mock resets, xunit parallel config, vitest clearMocks/unstubEnvs/unstubGlobals, pytest-xdist (commit `f76a96a`)
+- **Phase 1** — Split 4 large C# test files into 20 smaller files (commits `cfffac8`→`1a6b0f4`)
+- **Phase 2** — Extracted `TestSchema.Ddl` constant + `CreateContainerAsync()` helper (commit `81dd556`)
+- **Phase 3** — All 28 C# test files refactored: zero IClassFixture, zero constructor injection, zero IDisposable. Each test constructs its own factory/container inline. 422/422 pass in 29s (commit `b3a7ceb`)
+- **Phase 4 (partial)** — 5 dashboard unit test files refactored (beforeEach removed, passing 595/595, uncommitted): auth, errors, polling, retry, telemetry. 7 more unit test files were already self-contained.
+
+**Remaining work:**
+- **Phase 4 (remaining)** — 18 dashboard test files still have beforeEach/afterEach:
+  - 4 unit: api, useDeviceDiscovery, useVueData, main
+  - 14 component: App, CircuitsPage, CurrentReadings, DeviceCard, DeviceMerge, EnergyFlowDiagram, ErrorBoundary, GaugeDial, GridEnergySummary, HistoricalGraph, HistoryView, ReplacementBanner, SettingsPage, TimeRangeSelector
+- **Phase 5** — 2 Python setUp methods (TestHTTPHandler line 608, TestHandleCallbackFull line 3915)
+- **Phase 6** — Final verification + cleanup (delete unused fixtures if unreferenced)
 
 ### Feature 124: Device Discovery (IN PROGRESS — Phase 6 functional + bugfixes)
 - **Issue #134** — Automatic device discovery with hourly re-scan and device merge
@@ -20,37 +37,31 @@
 - **Phase 1–6**: Complete (schema, models, settings, US1 add detection, US2 remove detection, pending replacements, merge UI, banner, cross-cycle alias detection)
 - **Next**: Manual end-to-end test against real account, then commit + push
 
-### Session 2026-05-10 — Multi-bug fixes + isolation refactor
-**Bugs fixed**
-1. Merge SQL: `vue_device_mapping` update used invalid `::text` cast on jsonb column AND wrong column name `updated_at` (actual: `last_modified`). Fixed in `PostgresMetricsStore.ExecuteMergeAsync`.
-2. Merge semantics: cutoff approach (`>= MIN(new_device_timestamp)`) — drop old rows after the new device starts reporting; transfer everything if no overlap. CTE-based implementation with 3 new integration tests in `MergeStoreCutoffTests.cs`.
-3. Merge target dropdown showed every active device. Fixed by filtering to `pendingMatches` from `pending_replacements` (falls back to all activeGroups when no pending exist).
-4. Auto-select fired for fallback path. Fixed: only when `pendingMatches.length === 1 && suggestedTargets.length === 1`.
-5. Banner not appearing on Current page first load: same-cycle add+remove never fired because real-world replacement spanned multiple discovery cycles.
-   - **Fix (Option 1)**: Cross-cycle alias-based detection. New `PostgresWriter.find_replacement_candidate(old_raw_cloud_id)` queries removed device's alias + `created_at`, finds most recent active `epcubeN_battery` device sharing alias registered later. `_discover_devices` tracks `same_cycle_pairs`; for any removed device not paired in-cycle, calls `find_replacement_candidate` and inserts pending row when found.
-6. **Test isolation violation** (caught + fixed): `TestConfigPsycopg2Import.test_psycopg2_imported_when_available` reloaded `config`, which rebound `_sessions`/`_pending_auth`/`_auth_lock`. `http_handler` retained references to the *original* objects, so subsequent session tests wrote to a different dict than the handler read. Caused `test_session_cookie_grants_access` to fail (401) only when run after that reload test.
-   - **Fix**: Moved session state (`_SESSION_MAX_AGE`, `_pending_auth`, `_sessions`, `_auth_lock`) from `config.py` to `http_handler.py` where it's used; removed `threading` import from `config.py`.
-   - **Isolation refactor**: All session/pending tests now `patch.object(http_handler, "_sessions", {})` etc. so each test owns its own dict + lock — every test fully self-contained, copy-paste portable.
+### Session 2026-05-11 — Test isolation refactor (Phases 0–3 + Phase 4 partial)
+**Commits made (7 new, all on `124-device-discovery`):**
+1. `f76a96a` — Phase 0: revert AAA, add mock resets, parallel config
+2. `cfffac8` — Split ValidateTests.cs → 6 files (74 tests)
+3. `f34defc` — Split ModelSerializationTests.cs → 4 files (31 tests)
+4. `205e215` — Split EndpointTests.cs → 7 files (46 tests: 2+6+11+8+7+8+4)
+5. `1a6b0f4` — Split SettingsEndpointTests.cs → 3 files (41 tests: 28+8+5)
+6. `81dd556` — Extract TestSchema.Ddl + CreateContainerAsync()
+7. `b3a7ceb` — All 28 C# test files → self-contained (zero shared fixtures)
 
-**New end-to-end UX additions**
-- `created_at` field exposed via API (`DeviceInfo`) and dashboard (`Device.created_at`)
-- DeviceMerge UI shows "(id={cloudId}, added {date})" in both source and target dropdowns
-- Pending replacements fetched alongside devices; auto-selects target when there's exactly one pending match
+**Key decisions:**
+- Copy-paste-portable = no shared fixtures, no constructor injection, no beforeEach/setUp
+- Accepted 29s C# runtime (up from 6s) — isolation > speed per constitution
+- TestSchema.CreateContainerAsync() is the only shared helper (static, stateless, creates fresh container)
+- PostgresFixture seed helpers replaced with static helpers per test class
+- vitest.config.ts clearMocks/unstubEnvs/unstubGlobals kept as defense-in-depth
 
-**Test results (post-isolation refactor)**
-- Exporter: **323 tests, 100% coverage** (all 7 modules)
-- API: 422/422 (prior to today's session — needs re-run of integration tests with current schema)
-- Dashboard: 593/593 (prior to today's session)
+**Test counts (verified):**
+- C#: 422/422 (29s)
+- Dashboard: 595/595 (2s)
+- Python: 323/323 (2s)
+- **Total: 1340 tests**
 
-**Files touched (uncommitted)**
-- `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs` (ILogger injection earlier)
-- `api/src/EpCubeGraph.Api/Models/Models.cs` (added `CreatedAt`)
-- `api/src/EpCubeGraph.Api/Services/IMetricsStore.cs`, `PostgresMetricsStore.cs` (cutoff merge, SQL bug fixes, created_at)
-- `api/tests/EpCubeGraph.Api.Tests/Fixtures/MockableTestFactory.cs`, `PostgresFixture.cs` (status column, pending_replacements table, ClearDataAsync)
-- `api/tests/EpCubeGraph.Api.Tests/Integration/MergeEndpointTests.cs`, `MergeStoreCutoffTests.cs`, `PendingReplacementEndpointTests.cs` (new)
-- `dashboard/src/{App.tsx,api.ts,types.ts,components/{SettingsPage.tsx,DeviceMerge.tsx,ReplacementBanner.tsx},hooks/useDeviceDiscovery.ts}` (UI integration)
-- `dashboard/tests/{component/{App,SettingsPage,DeviceMerge,ReplacementBanner}.test.tsx,unit/{api,useDeviceDiscovery}.test.ts}` (coverage)
-- `local/epcube-exporter/{config.py,db.py,epcube_collector.py,http_handler.py,test_exporter.py}` (cross-cycle detection + session state move)
+**Uncommitted files:**
+- `dashboard/tests/unit/{auth,errors,polling,retry,telemetry}.test.ts` (5 files, beforeEach removed)
 
 ### PR #136 — Exporter Refactor (MERGED ✅)
 - Issue #135 closed — see prior session entry below.
@@ -63,10 +74,10 @@
 - `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
 
 ### Tests
-- Dashboard: 544 tests, 100% all metrics
-- API: 401+ tests, 100% line + 100% branch (mock-based; Testcontainers need Docker)
-- Exporter: 282 tests, 100% coverage
-- **Total: 1227+ tests**
+- Dashboard: 595 tests, 100% all metrics
+- API: 422 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
+- Exporter: 323 tests, 100% coverage
+- **Total: 1340 tests**
 
 ### Open Issues
 | # | Title | Label | Status |
@@ -86,15 +97,17 @@
 | 74 | Custom domains on devsbx.xyz | closed (resolved before this session) |
 
 ### What's Next
-1. **Manual end-to-end test against real account**:
+1. **Complete test isolation refactor** (see `/memories/repo/test-isolation-refactor.md` for full plan):
+   - Commit the 5 done dashboard files
+   - Refactor 18 remaining dashboard test files (Phase 4)
+   - Refactor 2 Python setUp methods (Phase 5)
+   - Final verification + cleanup (Phase 6)
+2. **Manual end-to-end test against real account** (device discovery):
    - Restart exporter container: `docker compose -f local/docker-compose.prod-local.yml restart epcube-exporter`
-   - On next discovery cycle, cross-cycle alias detection should insert pending row for old EP Cube → new EP Cube (alias "Steve St Jean 3")
-   - Or short-circuit: `INSERT INTO pending_replacements (old_device_id, new_device_id) VALUES ('5488', '5840');`
-   - Verify banner appears on Current page first load; verify merge dropdown shows only the pending target with `(added <date>)`
-2. Re-run API integration tests (`dotnet test`) and dashboard tests (`npm run test:coverage`) to confirm no regressions from today's changes
-3. Commit + push `124-device-discovery` (3 unpushed commits + large working tree)
+   - Verify cross-cycle alias detection inserts pending replacement
+   - Verify banner + merge UI work end-to-end
+3. Commit + push `124-device-discovery` (10 unpushed commits + working tree)
 4. Open PR for review
-5. Then resume remaining Phase 7 polish tasks per `specs/124-device-discovery/tasks.md`
 
 ### Pending
 - Staging destroy for b123-def (run #25572637307) — check completion
