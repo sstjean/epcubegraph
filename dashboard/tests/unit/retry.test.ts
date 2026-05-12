@@ -1,13 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('retry', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   it('returns result on first success without retry', async () => {
     // Arrange
@@ -24,6 +17,7 @@ describe('retry', () => {
 
   it('retries on retryable error and succeeds', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn()
       .mockRejectedValueOnce(new ApiError('Server Error', 500))
@@ -39,10 +33,12 @@ describe('retry', () => {
     expect(result).toBe('recovered');
     expect(fn).toHaveBeenCalledTimes(2);
     expect(onRetry).toHaveBeenCalledWith(1);
+    vi.useRealTimers();
   });
 
   it('retries on network error (no status)', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry } = await import('../../src/utils/retry');
     const fn = vi.fn()
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
@@ -58,6 +54,7 @@ describe('retry', () => {
     expect(result).toBe('back');
     expect(fn).toHaveBeenCalledTimes(2);
     expect(onRetry).toHaveBeenCalledWith(1);
+    vi.useRealTimers();
   });
 
   it('does NOT retry on 4xx error (non-retryable)', async () => {
@@ -84,6 +81,7 @@ describe('retry', () => {
 
   it('throws after maxRetries exhausted', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn().mockRejectedValue(new ApiError('Server Error', 503));
     const onRetry = vi.fn();
@@ -106,10 +104,12 @@ describe('retry', () => {
     expect(onRetry).toHaveBeenCalledWith(1);
     expect(onRetry).toHaveBeenCalledWith(2);
     expect(onRetry).toHaveBeenCalledWith(3);
+    vi.useRealTimers();
   });
 
   it('uses exponential backoff (1s, 2s, 4s, 8s...)', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn()
       .mockRejectedValueOnce(new ApiError('fail', 500))
@@ -136,10 +136,12 @@ describe('retry', () => {
 
     const result = await promise;
     expect(result).toBe('ok');
+    vi.useRealTimers();
   });
 
   it('caps backoff at 30 seconds', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn().mockRejectedValue(new ApiError('fail', 500));
     const onRetry = vi.fn();
@@ -162,6 +164,7 @@ describe('retry', () => {
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).message).toBe('fail');
     expect(fn).toHaveBeenCalledTimes(8); // 1 initial + 7 retries
+    vi.useRealTimers();
   });
 
   it('ApiError exposes status property', async () => {
@@ -209,6 +212,7 @@ describe('retry', () => {
 
   it('defaults to maxRetries=10 when not specified', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn().mockRejectedValue(new ApiError('fail', 500));
 
@@ -227,10 +231,12 @@ describe('retry', () => {
     const error = await caught;
     expect(error).toBeInstanceOf(ApiError);
     expect(fn).toHaveBeenCalledTimes(11); // 1 initial + 10 retries
+    vi.useRealTimers();
   });
 
   it('with maxRetries=0 attempts once then throws', async () => {
     // Arrange
+    vi.useFakeTimers();
     const { withRetry, ApiError } = await import('../../src/utils/retry');
     const fn = vi.fn().mockRejectedValue(new ApiError('fail', 500));
 
@@ -242,5 +248,6 @@ describe('retry', () => {
     const error = await caught;
     expect(error).toBeInstanceOf(ApiError);
     expect(fn).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 });

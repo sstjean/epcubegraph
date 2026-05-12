@@ -1,14 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('telemetry', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.unstubAllEnvs();
-  });
 
   describe('initTelemetry', () => {
     it('initializes ApplicationInsights when connection string is set', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockLoadAppInsights = vi.fn();
       const MockAI = vi.fn().mockImplementation(function () {
@@ -39,6 +36,7 @@ describe('telemetry', () => {
 
     it('sets cloud role name via telemetry initializer', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       let capturedInitializer: ((item: { tags?: Record<string, string> }) => void) | null = null;
       const MockAI = vi.fn().mockImplementation(function () {
@@ -66,6 +64,7 @@ describe('telemetry', () => {
 
     it('is a no-op when connection string is empty', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', '');
       const MockAI = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
@@ -82,6 +81,7 @@ describe('telemetry', () => {
 
     it('is a no-op when connection string is undefined', async () => {
       // Arrange — VITE_APPINSIGHTS_CONNECTION_STRING not set
+      vi.resetModules();
       const MockAI = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: MockAI,
@@ -99,6 +99,7 @@ describe('telemetry', () => {
   describe('trackException', () => {
     it('calls appInsights.trackException when initialized', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackException = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
@@ -124,6 +125,7 @@ describe('telemetry', () => {
 
     it('is a no-op when not initialized', async () => {
       // Arrange — no connection string, no init
+      vi.resetModules();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn(),
       }));
@@ -137,6 +139,7 @@ describe('telemetry', () => {
   describe('trackApiError', () => {
     it('calls appInsights.trackEvent with url and status', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackEvent = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
@@ -164,6 +167,7 @@ describe('telemetry', () => {
 
     it('is a no-op when not initialized', async () => {
       // Arrange
+      vi.resetModules();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn(),
       }));
@@ -177,6 +181,7 @@ describe('telemetry', () => {
   describe('trackPageLoad', () => {
     it('calls appInsights.trackPageView when initialized', async () => {
       // Arrange
+      vi.resetModules();
       vi.stubEnv('VITE_APPINSIGHTS_CONNECTION_STRING', 'InstrumentationKey=test-key');
       const mockTrackPageView = vi.fn();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
@@ -201,6 +206,7 @@ describe('telemetry', () => {
 
     it('is a no-op when not initialized', async () => {
       // Arrange
+      vi.resetModules();
       vi.doMock('@microsoft/applicationinsights-web', () => ({
         ApplicationInsights: vi.fn(),
       }));
