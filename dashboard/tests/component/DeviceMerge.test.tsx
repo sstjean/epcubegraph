@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 
 vi.mock('../../src/api', () => ({
@@ -27,34 +27,31 @@ const activeDevices = [
   { device: 'epcube200_solar', class: 'home_solar', online: true, alias: 'New EP Cube' },
 ];
 
-describe('DeviceMerge', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockFetchDevices.mockImplementation((status: string) => {
-      if (status === 'removed') return Promise.resolve({ devices: removedDevices });
-      if (status === 'active') return Promise.resolve({ devices: activeDevices });
-      return Promise.resolve({ devices: [] });
-    });
-    // Default: no pending replacements → DeviceMerge falls back to listing all active devices.
-    mockFetchPending.mockResolvedValue([]);
-    mockFetchPreview.mockResolvedValue({
-      old_device_id: '100',
-      new_device_id: '200',
-      readings_to_transfer: 45230,
-      conflicts_to_skip: 12,
-    });
-    mockMerge.mockResolvedValue({
-      old_device_id: '100',
-      new_device_id: '200',
-      readings_transferred: 45230,
-      conflicts_skipped: 12,
-    });
+function setupMocks() {
+  mockFetchDevices.mockImplementation((status: string) => {
+    if (status === 'removed') return Promise.resolve({ devices: removedDevices });
+    if (status === 'active') return Promise.resolve({ devices: activeDevices });
+    return Promise.resolve({ devices: [] });
   });
+  mockFetchPending.mockResolvedValue([]);
+  mockFetchPreview.mockResolvedValue({
+    old_device_id: '100',
+    new_device_id: '200',
+    readings_to_transfer: 45230,
+    conflicts_to_skip: 12,
+  });
+  mockMerge.mockResolvedValue({
+    old_device_id: '100',
+    new_device_id: '200',
+    readings_transferred: 45230,
+    conflicts_skipped: 12,
+  });
+}
 
-  afterEach(cleanup);
-
+describe('DeviceMerge', () => {
   it('renders merge section heading', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     render(<DeviceMerge />);
 
     // Assert
@@ -63,6 +60,7 @@ describe('DeviceMerge', () => {
 
   it('shows informational message when no removed devices exist', async () => {
     // Arrange
+    setupMocks();
     mockFetchDevices.mockResolvedValue({ devices: [] });
 
     // Act
@@ -75,6 +73,9 @@ describe('DeviceMerge', () => {
   });
 
   it('lists removed device groups in source dropdown', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -86,6 +87,9 @@ describe('DeviceMerge', () => {
   });
 
   it('lists active device groups in target dropdown', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Active device/i));
@@ -96,6 +100,9 @@ describe('DeviceMerge', () => {
   });
 
   it('fetches merge preview after both selections are made', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -110,6 +117,9 @@ describe('DeviceMerge', () => {
   });
 
   it('displays reading count and conflict count from merge preview', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -125,6 +135,9 @@ describe('DeviceMerge', () => {
   });
 
   it('shows irreversibility warning in the confirmation panel', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -139,6 +152,9 @@ describe('DeviceMerge', () => {
   });
 
   it('renders a Merge button in the confirmation panel', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -154,6 +170,7 @@ describe('DeviceMerge', () => {
 
   it('shows error message when preview fails', async () => {
     // Arrange
+    setupMocks();
     mockFetchPreview.mockRejectedValue(new Error('Endpoint not available yet'));
 
     // Act
@@ -171,6 +188,7 @@ describe('DeviceMerge', () => {
 
   it('treats failed device fetches as empty lists', async () => {
     // Arrange — both calls reject
+    setupMocks();
     mockFetchDevices.mockRejectedValue(new Error('API down'));
 
     // Act
@@ -184,6 +202,7 @@ describe('DeviceMerge', () => {
 
   it('skips groups whose base id has no epcube prefix', async () => {
     // Arrange — non-epcube device produces empty cloudId after prefix strip
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') {
         return Promise.resolve({
@@ -204,6 +223,7 @@ describe('DeviceMerge', () => {
 
   it('does not update state when devices fetch resolves after unmount', async () => {
     // Arrange — fetchDevicesByStatus resolves AFTER unmount (collect all resolvers)
+    setupMocks();
     const resolvers: Array<(v: any) => void> = [];
     mockFetchDevices.mockImplementation(() => new Promise((res) => { resolvers.push(res); }));
 
@@ -220,6 +240,7 @@ describe('DeviceMerge', () => {
 
   it('does not update state when preview resolves after both inputs cleared', async () => {
     // Arrange — preview resolves slowly
+    setupMocks();
     let resolvePreview!: (v: any) => void;
     mockFetchPreview.mockImplementation(() => new Promise((res) => { resolvePreview = res; }));
 
@@ -239,6 +260,7 @@ describe('DeviceMerge', () => {
 
   it('does not update state when preview rejects after both inputs cleared', async () => {
     // Arrange — preview rejects slowly
+    setupMocks();
     let rejectPreview!: (e: any) => void;
     mockFetchPreview.mockImplementation(() => new Promise((_res, rej) => { rejectPreview = rej; }));
 
@@ -256,6 +278,9 @@ describe('DeviceMerge', () => {
   });
 
   it('clicking Merge calls mergeDevices and shows success feedback', async () => {
+    // Arrange
+    setupMocks();
+
     // Act
     render(<DeviceMerge />);
     await waitFor(() => screen.getByLabelText(/Removed device/i));
@@ -274,6 +299,7 @@ describe('DeviceMerge', () => {
 
   it('shows error feedback when merge API fails', async () => {
     // Arrange
+    setupMocks();
     mockMerge.mockRejectedValue(new Error('Merge endpoint exploded'));
 
     // Act
@@ -293,6 +319,7 @@ describe('DeviceMerge', () => {
 
   it('disables button while merge is in flight', async () => {
     // Arrange — slow merge
+    setupMocks();
     let resolveMerge!: (v: any) => void;
     mockMerge.mockImplementation(() => new Promise((res) => { resolveMerge = res; }));
 
@@ -317,6 +344,7 @@ describe('DeviceMerge', () => {
 
   it('treats post-merge refetch failures as empty lists', async () => {
     // Arrange — initial fetches succeed, refetches after merge reject
+    setupMocks();
     let callCount = 0;
     mockFetchDevices.mockImplementation((status: string) => {
       callCount++;
@@ -343,6 +371,7 @@ describe('DeviceMerge', () => {
 
   it('renders added date in dropdown options when devices have created_at', async () => {
     // Arrange — devices include created_at
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') {
         return Promise.resolve({
@@ -375,6 +404,7 @@ describe('DeviceMerge', () => {
 
   it('omits added date label when created_at is missing or invalid', async () => {
     // Arrange — invalid date triggers formatAddedAt's NaN guard
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') {
         return Promise.resolve({
@@ -397,6 +427,7 @@ describe('DeviceMerge', () => {
 
   it('handles fetchPendingReplacements rejection gracefully', async () => {
     // Arrange — pending fetch rejects (caught and treated as empty)
+    setupMocks();
     mockFetchPending.mockRejectedValue(new Error('pending API down'));
 
     // Act
@@ -410,6 +441,7 @@ describe('DeviceMerge', () => {
 
   it('filters target dropdown to only suggested replacements when pending row exists', async () => {
     // Arrange — pending replacement says 100 → 200; add a third active device
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') return Promise.resolve({ devices: removedDevices });
       if (status === 'active') {
@@ -443,8 +475,7 @@ describe('DeviceMerge', () => {
 
   it('clears target when source changes and previously-selected target is no longer allowed', async () => {
     // Arrange — old=100 has no pending (manual fallback path); old=101 has pending → 201.
-    // After selecting old=100 + newId=200 manually, switching to old=101 must clear newId
-    // because '200' is not in the suggested list ['201'].
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') {
         return Promise.resolve({
@@ -489,8 +520,7 @@ describe('DeviceMerge', () => {
 
   it('clears stale newId when source switches to a pending row whose target does not exist', async () => {
     // Arrange — old=100 has no pending (manual fallback). old=101 points at a device id
-    // (999) that doesn't appear in the active list, producing suggestedTargets=[]. The
-    // auto-select branch can't fire (length !== 1), so the clear branch must run.
+    setupMocks();
     mockFetchDevices.mockImplementation((status: string) => {
       if (status === 'removed') {
         return Promise.resolve({

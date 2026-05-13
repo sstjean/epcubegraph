@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { h } from 'preact';
 
 // Mock auth module
@@ -14,17 +14,10 @@ vi.mock('../../src/App', () => ({
 }));
 
 describe('main', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    document.body.innerHTML = '<main><div id="app"></div></main>';
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('initializes MSAL on startup', async () => {
     // Arrange
+    vi.resetModules();
+    document.body.innerHTML = '<main><div id="app"></div></main>';
     const { initializeMsal, isAuthenticated } = await import('../../src/auth') as any;
     initializeMsal.mockResolvedValue({});
     isAuthenticated.mockReturnValue(true);
@@ -40,6 +33,8 @@ describe('main', () => {
 
   it('redirects unauthenticated user to login', async () => {
     // Arrange
+    vi.resetModules();
+    document.body.innerHTML = '<main><div id="app"></div></main>';
     const { initializeMsal, isAuthenticated, getAccessToken } = await import('../../src/auth') as any;
     initializeMsal.mockResolvedValue({});
     isAuthenticated.mockReturnValue(false);
@@ -55,6 +50,8 @@ describe('main', () => {
 
   it('renders app when authenticated', async () => {
     // Arrange
+    vi.resetModules();
+    document.body.innerHTML = '<main><div id="app"></div></main>';
     const { initializeMsal, isAuthenticated } = await import('../../src/auth') as any;
     initializeMsal.mockResolvedValue({});
     isAuthenticated.mockReturnValue(true);
@@ -73,6 +70,7 @@ describe('main', () => {
     vi.stubEnv('VITE_DISABLE_AUTH', 'true');
     vi.clearAllMocks();
     vi.resetModules();
+    document.body.innerHTML = '<main><div id="app"></div></main>';
 
     // Act — import main (picks up VITE_DISABLE_AUTH=true at module level)
     await import('../../src/main');
@@ -87,6 +85,7 @@ describe('main', () => {
 
   it('does not crash when #app element is missing', async () => {
     // Arrange
+    vi.resetModules();
     document.body.innerHTML = '';
     const { initializeMsal, isAuthenticated } = await import('../../src/auth') as any;
     initializeMsal.mockResolvedValue({});

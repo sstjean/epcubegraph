@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
 import { TimeRangeSelector, formatDateLabel } from '../../src/components/TimeRangeSelector';
 import type { TimeRangeValue } from '../../src/types';
@@ -14,8 +14,6 @@ const sevenDayValue: TimeRangeValue = { start: NOW_SEC - 7 * 86400, end: NOW_SEC
 const customValue: TimeRangeValue = { start: NOW_SEC - 86400, end: NOW_SEC, step: 60 };
 
 describe('TimeRangeSelector', () => {
-  afterEach(cleanup);
-
   it('renders 1d/7d/30d/1y/custom preset buttons', () => {
     // Arrange
     const onChange = vi.fn();

@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/preact';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/preact';
 import { h } from 'preact';
 import { EnergyFlowDiagram, getCircuitsForGroup } from '../../src/components/EnergyFlowDiagram';
 import type { DeviceGroup } from '../../src/components/CurrentReadings';
@@ -24,8 +24,6 @@ function makeGroup(overrides: Partial<DeviceGroup['metrics']> = {}, name = 'EP C
 }
 
 describe('EnergyFlowDiagram', () => {
-  afterEach(cleanup);
-
   it('renders one article per device group', () => {
     const groups = [makeGroup({}, 'System 1', true, 'system1'), makeGroup({}, 'System 2', true, 'system2')];
     render(<EnergyFlowDiagram groups={groups} />);

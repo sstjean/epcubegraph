@@ -1,11 +1,9 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/preact';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/preact';
 import { h } from 'preact';
 import { GaugeDial } from '../../src/components/GaugeDial';
 
 describe('GaugeDial', () => {
-  afterEach(cleanup);
-
   it('renders with role="meter" and correct aria attributes', () => {
     render(
       <GaugeDial value={3456} max={12000} label="Solar" displayValue="3.456 kW" unit="generation" color="#f59e0b" />

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/preact';
 
 vi.mock('../../src/api', () => ({
@@ -33,33 +33,28 @@ async function flushInitialLoad() {
   await act(() => vi.advanceTimersByTimeAsync(0));
 }
 
+function setupMocks() {
+  vi.useFakeTimers();
+  mockFetchPending.mockResolvedValue(samplePending);
+  mockFetchPreview.mockResolvedValue({
+    old_device_id: '100',
+    new_device_id: '200',
+    readings_to_transfer: 12345,
+    conflicts_to_skip: 7,
+  });
+  mockDismiss.mockResolvedValue({ dismissed: true, old_device_id: '100', new_device_id: '200' });
+  mockMerge.mockResolvedValue({
+    old_device_id: '100',
+    new_device_id: '200',
+    readings_transferred: 12345,
+    conflicts_skipped: 7,
+  });
+}
+
 describe('useDeviceDiscovery', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.clearAllMocks();
-    mockFetchPending.mockResolvedValue(samplePending);
-    mockFetchPreview.mockResolvedValue({
-      old_device_id: '100',
-      new_device_id: '200',
-      readings_to_transfer: 12345,
-      conflicts_to_skip: 7,
-    });
-    mockDismiss.mockResolvedValue({ dismissed: true, old_device_id: '100', new_device_id: '200' });
-    mockMerge.mockResolvedValue({
-      old_device_id: '100',
-      new_device_id: '200',
-      readings_transferred: 12345,
-      conflicts_skipped: 7,
-    });
-  });
-
-  afterEach(() => {
-    cleanup();
-    vi.useRealTimers();
-  });
-
   it('returns empty list before initial load completes', () => {
     // Arrange — block fetch from resolving
+    setupMocks();
     mockFetchPending.mockReturnValue(new Promise(() => {}));
 
     // Act
@@ -70,7 +65,8 @@ describe('useDeviceDiscovery', () => {
   });
 
   it('loads pending replacements on mount and enriches with reading counts', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     const { result } = renderHook(() => useDeviceDiscovery());
     await flushInitialLoad();
 
@@ -84,6 +80,7 @@ describe('useDeviceDiscovery', () => {
 
   it('handles empty pending list', async () => {
     // Arrange
+    setupMocks();
     mockFetchPending.mockResolvedValue([]);
 
     // Act
@@ -97,6 +94,7 @@ describe('useDeviceDiscovery', () => {
 
   it('returns null reading count when merge-preview fails (Phase 6 endpoint not yet deployed)', async () => {
     // Arrange
+    setupMocks();
     mockFetchPreview.mockRejectedValue(new Error('Not Found'));
 
     // Act
@@ -109,7 +107,8 @@ describe('useDeviceDiscovery', () => {
   });
 
   it('polls pending-replacements on 30s cycle', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     renderHook(() => useDeviceDiscovery());
     await flushInitialLoad();
     expect(mockFetchPending).toHaveBeenCalledTimes(1);
@@ -122,6 +121,7 @@ describe('useDeviceDiscovery', () => {
 
   it('handles fetchPendingReplacements failure silently', async () => {
     // Arrange
+    setupMocks();
     mockFetchPending.mockRejectedValue(new Error('Network error'));
 
     // Act
@@ -133,7 +133,8 @@ describe('useDeviceDiscovery', () => {
   });
 
   it('dismiss action removes the item from local state and calls API', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     const { result } = renderHook(() => useDeviceDiscovery());
     await flushInitialLoad();
     expect(result.current.pending).toHaveLength(1);
@@ -149,6 +150,7 @@ describe('useDeviceDiscovery', () => {
 
   it('dismiss leaves item in place if API call fails', async () => {
     // Arrange
+    setupMocks();
     mockDismiss.mockRejectedValue(new Error('Server error'));
 
     // Act
@@ -165,6 +167,7 @@ describe('useDeviceDiscovery', () => {
 
   it('does not call setState after unmount during load', async () => {
     // Arrange — pending fetch resolves AFTER unmount
+    setupMocks();
     let resolvePending!: (value: any) => void;
     mockFetchPending.mockImplementation(() => new Promise((res) => { resolvePending = res; }));
 
@@ -181,6 +184,7 @@ describe('useDeviceDiscovery', () => {
 
   it('does not call setState after unmount during dismiss', async () => {
     // Arrange
+    setupMocks();
     let resolveDismiss!: (value: any) => void;
     mockDismiss.mockImplementation(() => new Promise((res) => { resolveDismiss = res; }));
 
@@ -198,6 +202,7 @@ describe('useDeviceDiscovery', () => {
 
   it('merge calls mergeDevices and removes the item from pending list', async () => {
     // Arrange — start with one pending item
+    setupMocks();
     const { result } = renderHook(() => useDeviceDiscovery());
     await flushInitialLoad();
     expect(result.current.pending).toHaveLength(1);
@@ -216,6 +221,7 @@ describe('useDeviceDiscovery', () => {
 
   it('merge propagates errors and leaves pending list intact', async () => {
     // Arrange
+    setupMocks();
     mockMerge.mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useDeviceDiscovery());
     await flushInitialLoad();
@@ -229,6 +235,7 @@ describe('useDeviceDiscovery', () => {
 
   it('does not call setState after unmount during merge', async () => {
     // Arrange
+    setupMocks();
     let resolveMerge!: (v: any) => void;
     mockMerge.mockImplementation(() => new Promise((res) => { resolveMerge = res; }));
 

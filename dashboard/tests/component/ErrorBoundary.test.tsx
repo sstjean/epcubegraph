@@ -1,10 +1,9 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
 import { ErrorBoundary } from '../../src/components/ErrorBoundary';
 
 describe('ErrorBoundary', () => {
-  afterEach(cleanup);
   it('renders children when no error', () => {
     // Arrange & Act
     render(

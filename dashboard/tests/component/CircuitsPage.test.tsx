@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, act } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor, act } from '@testing-library/preact';
 import { h } from 'preact';
 import { fetchVueBulkCurrentReadings, fetchVueDailyReadings, fetchSettings, fetchHierarchy, fetchVueDevices } from '../../src/api';
 
@@ -114,12 +114,6 @@ function setupMocks(opts?: {
 }
 
 describe('CircuitsPage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('renders panel sections with panel names', async () => {
     // Arrange
     setupMocks();

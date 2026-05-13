@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/preact';
 import { h } from 'preact';
 
 // Mock route components to avoid side effects (fetch calls, etc.)
@@ -22,8 +22,6 @@ vi.mock('../../src/components/ReplacementBanner', () => ({
 import { App } from '../../src/App';
 
 describe('App', () => {
-  afterEach(cleanup);
-
   it('renders <nav> landmark with navigation links (FR-015)', () => {
     // Arrange
     history.pushState({}, '', '/');

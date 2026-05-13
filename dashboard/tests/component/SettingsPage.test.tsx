@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/preact';
 import { h } from 'preact';
 
 const mockFetchSettings = vi.fn();
@@ -65,17 +65,15 @@ describe('resolveDeviceAlias', () => {
 });
 
 describe('SettingsPage — Polling Intervals', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  function setupDefaults() {
     mockFetchDevices.mockResolvedValue({ devices: [] });
     mockFetchVueDevices.mockResolvedValue({ devices: [] });
     mockFetchHierarchy.mockResolvedValue({ entries: [] });
-  });
-
-  afterEach(cleanup);
+  }
 
   it('renders polling interval inputs with current values from API', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({
       settings: [
         { key: 'epcube_poll_interval_seconds', value: '45', last_modified: '2026-04-05T00:00:00Z' },
@@ -94,6 +92,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows fallback defaults when no settings exist', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -108,6 +107,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('Vue polling inputs are enabled and editable', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -124,6 +124,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows validation error for value below minimum', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -144,6 +145,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows validation error for value above maximum', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -164,6 +166,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('saves successfully and shows success message', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
     mockUpdateSetting.mockResolvedValue(undefined);
 
@@ -185,6 +188,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows error when save fails', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
     mockUpdateSetting.mockRejectedValue(new Error('Network error'));
 
@@ -202,6 +206,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows loading state while fetching', () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockReturnValue(new Promise(() => {})); // never resolves
 
     // Act
@@ -213,6 +218,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows error when fetch fails', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockRejectedValue(new Error('API down'));
 
     // Act
@@ -227,6 +233,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('does not update state after unmount during load', async () => {
     // Arrange — resolve after unmount to exercise cancelled guard
+    setupDefaults();
     let resolve: (v: unknown) => void;
     mockFetchSettings.mockReturnValue(new Promise((r) => { resolve = r; }));
 
@@ -241,6 +248,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('does not update state after unmount during load error', async () => {
     // Arrange — reject after unmount to exercise cancelled guard in catch
+    setupDefaults();
     let reject: (e: Error) => void;
     mockFetchSettings.mockReturnValue(new Promise((_, r) => { reject = r; }));
 
@@ -255,6 +263,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('shows validation error for non-integer value', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -273,6 +282,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('handles non-Error rejection during save', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
     mockUpdateSetting.mockRejectedValue('string error');
 
@@ -289,6 +299,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('handles non-Error rejection during fetch', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockRejectedValue('string error');
 
     // Act
@@ -302,6 +313,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('renders panel hierarchy section with heading', async () => {
     // Arrange
+    setupDefaults();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -316,6 +328,7 @@ describe('SettingsPage — Polling Intervals', () => {
 
   it('saves with defaults when fetch failed and values are empty', async () => {
     // Arrange — fetch fails, values stays empty, but save uses defaults
+    setupDefaults();
     mockFetchSettings.mockRejectedValue(new Error('API down'));
     mockUpdateSetting.mockResolvedValue(undefined);
 
@@ -345,12 +358,6 @@ describe('SettingsPage — Vue Device Mapping', () => {
     { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
     { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
   ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
 
   function setupMocks(overrides?: {
     settings?: object[];
@@ -910,12 +917,6 @@ describe('SettingsPage — Panel Hierarchy Editor', () => {
     { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
     { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
   ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
 
   function setupMocks(overrides?: {
     settings?: object[];

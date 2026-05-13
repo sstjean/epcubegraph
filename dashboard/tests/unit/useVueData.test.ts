@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/preact';
 
 vi.mock('../../src/api', () => ({
@@ -38,28 +38,22 @@ const hierarchyResponse = {
   entries: [{ id: 1, parent_device_gid: 100, child_device_gid: 123 }],
 };
 
-/** Flush the initial useEffect calls and their resolved promises. */
 async function flushInitialLoad() {
   await act(() => vi.advanceTimersByTimeAsync(0));
 }
 
+function setupMocks() {
+  vi.useFakeTimers();
+  mockFetchVueReadings.mockResolvedValue(vueReadingsResponse);
+  mockFetchSettings.mockResolvedValue(settingsResponse);
+  mockFetchHierarchy.mockResolvedValue(hierarchyResponse);
+  mockFetchVueDevices.mockResolvedValue({ devices: [] });
+}
+
 describe('useVueData', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.clearAllMocks();
-    mockFetchVueReadings.mockResolvedValue(vueReadingsResponse);
-    mockFetchSettings.mockResolvedValue(settingsResponse);
-    mockFetchHierarchy.mockResolvedValue(hierarchyResponse);
-    mockFetchVueDevices.mockResolvedValue({ devices: [] });
-  });
-
-  afterEach(() => {
-    cleanup();
-    vi.useRealTimers();
-  });
-
   it('returns initial state before data loads', () => {
     // Arrange: block all fetches from resolving
+    setupMocks();
     mockFetchVueReadings.mockReturnValue(new Promise(() => {}));
     mockFetchSettings.mockReturnValue(new Promise(() => {}));
     mockFetchHierarchy.mockReturnValue(new Promise(() => {}));
@@ -76,7 +70,8 @@ describe('useVueData', () => {
   });
 
   it('loads vue readings on mount', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     const { result } = renderHook(() => useVueData());
     await flushInitialLoad();
 
@@ -87,7 +82,8 @@ describe('useVueData', () => {
   });
 
   it('loads settings and hierarchy on mount', async () => {
-    // Act
+    // Arrange
+    setupMocks();
     const { result } = renderHook(() => useVueData());
     await flushInitialLoad();
 
@@ -100,6 +96,7 @@ describe('useVueData', () => {
 
   it('polls vue readings every 1 second', async () => {
     // Arrange
+    setupMocks();
     renderHook(() => useVueData());
     await flushInitialLoad();
     vi.clearAllMocks();
@@ -114,6 +111,7 @@ describe('useVueData', () => {
 
   it('polls settings/hierarchy every 60 seconds', async () => {
     // Arrange
+    setupMocks();
     renderHook(() => useVueData());
     await flushInitialLoad();
     vi.clearAllMocks();
@@ -130,6 +128,7 @@ describe('useVueData', () => {
 
   it('sets vueError and tracks exception when readings fetch fails', async () => {
     // Arrange
+    setupMocks();
     const error = new Error('Network error');
     mockFetchVueReadings.mockRejectedValue(error);
 
@@ -144,6 +143,7 @@ describe('useVueData', () => {
 
   it('sets vueError with fallback message for non-Error throws', async () => {
     // Arrange
+    setupMocks();
     mockFetchVueReadings.mockRejectedValue('string error');
 
     // Act
@@ -157,6 +157,7 @@ describe('useVueData', () => {
 
   it('clears vueError on successful readings after failure', async () => {
     // Arrange — first call fails, second succeeds
+    setupMocks();
     mockFetchVueReadings.mockRejectedValueOnce(new Error('Temporary failure'));
     mockFetchVueReadings.mockResolvedValue(vueReadingsResponse);
 
@@ -175,6 +176,7 @@ describe('useVueData', () => {
 
   it('sets vueDeviceMapping to undefined when setting is missing', async () => {
     // Arrange
+    setupMocks();
     mockFetchSettings.mockResolvedValue({ settings: [] });
 
     // Act
@@ -187,6 +189,7 @@ describe('useVueData', () => {
 
   it('sets vueDeviceMapping to undefined when JSON parse fails', async () => {
     // Arrange
+    setupMocks();
     mockFetchSettings.mockResolvedValue({
       settings: [{ key: 'vue_device_mapping', value: 'not valid json' }],
     });
@@ -202,6 +205,7 @@ describe('useVueData', () => {
 
   it('catches hierarchy fetch errors gracefully and defaults to empty entries', async () => {
     // Arrange
+    setupMocks();
     mockFetchHierarchy.mockRejectedValue(new Error('hierarchy down'));
 
     // Act
@@ -214,6 +218,7 @@ describe('useVueData', () => {
 
   it('catches vueDevices fetch errors gracefully and defaults to empty array', async () => {
     // Arrange
+    setupMocks();
     mockFetchVueDevices.mockRejectedValue(new Error('vue devices down'));
 
     // Act
@@ -226,6 +231,7 @@ describe('useVueData', () => {
 
   it('tracks exception when settings fetch fails', async () => {
     // Arrange
+    setupMocks();
     const error = new Error('settings fetch failed');
     mockFetchSettings.mockRejectedValue(error);
 
@@ -239,6 +245,7 @@ describe('useVueData', () => {
 
   it('tracks exception for non-Error settings failures via toTrackedError', async () => {
     // Arrange
+    setupMocks();
     mockFetchSettings.mockRejectedValue('string failure');
 
     // Act
@@ -251,6 +258,7 @@ describe('useVueData', () => {
 
   it('clears polling intervals on unmount', async () => {
     // Arrange
+    setupMocks();
     const { unmount } = renderHook(() => useVueData());
     await flushInitialLoad();
     vi.clearAllMocks();
@@ -266,6 +274,7 @@ describe('useVueData', () => {
 
   it('does not track errors when readings reject after unmount', async () => {
     // Arrange — readings reject after unmount
+    setupMocks();
     let rejectReadings!: (err: Error) => void;
     mockFetchVueReadings.mockReturnValue(new Promise((_r, rej) => { rejectReadings = rej; }));
 
@@ -283,6 +292,7 @@ describe('useVueData', () => {
 
   it('does not update state when readings resolve after unmount', async () => {
     // Arrange — readings resolve after unmount
+    setupMocks();
     let resolveReadings!: (v: typeof vueReadingsResponse) => void;
     mockFetchVueReadings.mockReturnValue(new Promise((r) => { resolveReadings = r; }));
 
@@ -299,6 +309,7 @@ describe('useVueData', () => {
 
   it('does not update state when settings resolve after unmount', async () => {
     // Arrange — settings resolve after unmount
+    setupMocks();
     let resolveSettings!: (v: typeof settingsResponse) => void;
     mockFetchSettings.mockReturnValue(new Promise((r) => { resolveSettings = r; }));
 
@@ -315,6 +326,7 @@ describe('useVueData', () => {
 
   it('does not track errors when settings reject after unmount', async () => {
     // Arrange — settings reject after unmount
+    setupMocks();
     let rejectSettings!: (err: Error) => void;
     mockFetchSettings.mockReturnValue(new Promise((_r, rej) => { rejectSettings = rej; }));
 
@@ -332,6 +344,7 @@ describe('useVueData', () => {
 
   it('sets vueDeviceMapping to undefined and tracks error when old array format is detected', async () => {
     // Arrange — old array format
+    setupMocks();
     mockFetchSettings.mockResolvedValue({
       settings: [{ key: 'vue_device_mapping', value: '{"panel1":[{"gid":123,"alias":"Main Panel"}]}' }],
     });

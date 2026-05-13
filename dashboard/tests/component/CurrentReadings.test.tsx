@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/preact';
 import { h } from 'preact';
 import { fetchDevices, fetchCurrentReadings } from '../../src/api';
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
@@ -65,12 +65,6 @@ function setupCommonMocks() {
 }
 
 describe('CurrentReadings', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('renders as <section> with heading (FR-015)', async () => {
     // Arrange
     setupCommonMocks();

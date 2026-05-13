@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/preact';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/preact';
 import { h } from 'preact';
 import { DeviceCard } from '../../src/components/DeviceCard';
 
@@ -13,7 +13,6 @@ const baseMetrics = {
 };
 
 describe('DeviceCard', () => {
-  afterEach(cleanup);
   it('renders as <article> with aria-label including group name (FR-015)', () => {
     // Arrange & Act
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);

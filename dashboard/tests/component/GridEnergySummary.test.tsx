@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 import { GridEnergySummary } from '../../src/components/GridEnergySummary';
 import { fetchGridPower } from '../../src/api';
@@ -14,12 +14,6 @@ const mockFetchGridPower = fetchGridPower as ReturnType<typeof vi.fn>;
 const timeRange: TimeRangeValue = { start: 1711152000, end: 1711238400, step: 60 };
 
 describe('GridEnergySummary', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('shows loading state initially', () => {
     // Arrange
     mockFetchGridPower.mockReturnValue(new Promise(() => {})); // never resolves

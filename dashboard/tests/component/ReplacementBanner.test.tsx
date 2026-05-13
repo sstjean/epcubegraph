@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
 
 vi.mock('../../src/hooks/useDeviceDiscovery', () => ({
@@ -31,12 +31,6 @@ function setHookResult(
 }
 
 describe('ReplacementBanner', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('renders nothing when there are no pending replacements', () => {
     // Arrange
     setHookResult([]);
