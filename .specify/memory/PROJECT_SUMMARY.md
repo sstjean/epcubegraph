@@ -1,67 +1,55 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-11
+**Last Updated**: 2026-05-12
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `124-device-discovery`
 **Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
-**Unpushed commits**: 10 on `124-device-discovery`; plus 5 uncommitted dashboard test files
+**Open PR**: #137 — Test isolation refactor: every test self-contained (Phases 0–5)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-11)
+## ⚡ Current State (2026-05-12)
 
-### Test Isolation Refactor (IN PROGRESS — C# complete, Dashboard/Python partial)
-Full plan stored in Copilot repo memory: `test-isolation-refactor.md`
+### Test Isolation Refactor (COMPLETE ✅)
+Full history in Copilot repo memory: `test-isolation-refactor.md`
 
-**Completed phases:**
-- **Phase 0** — Preflight: reverted bulk AAA comments, added mock resets, xunit parallel config, vitest clearMocks/unstubEnvs/unstubGlobals, pytest-xdist (commit `f76a96a`)
-- **Phase 1** — Split 4 large C# test files into 20 smaller files (commits `cfffac8`→`1a6b0f4`)
-- **Phase 2** — Extracted `TestSchema.Ddl` constant + `CreateContainerAsync()` helper (commit `81dd556`)
-- **Phase 3** — All 28 C# test files refactored: zero IClassFixture, zero constructor injection, zero IDisposable. Each test constructs its own factory/container inline. 422/422 pass in 29s (commit `b3a7ceb`)
-- **Phase 4 (partial)** — 5 dashboard unit test files refactored (beforeEach removed, passing 595/595, uncommitted): auth, errors, polling, retry, telemetry. 7 more unit test files were already self-contained.
+All 1,340 tests across C#, TypeScript, and Python are fully self-contained.
+Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 
-**Remaining work:**
-- **Phase 4 (remaining)** — 18 dashboard test files still have beforeEach/afterEach:
-  - 4 unit: api, useDeviceDiscovery, useVueData, main
-  - 14 component: App, CircuitsPage, CurrentReadings, DeviceCard, DeviceMerge, EnergyFlowDiagram, ErrorBoundary, GaugeDial, GridEnergySummary, HistoricalGraph, HistoryView, ReplacementBanner, SettingsPage, TimeRangeSelector
-- **Phase 5** — 2 Python setUp methods (TestHTTPHandler line 608, TestHandleCallbackFull line 3915)
-- **Phase 6** — Final verification + cleanup (delete unused fixtures if unreferenced)
+- **Phase 0** — Preflight (commit `f76a96a`)
+- **Phase 1** — Split 4 large C# test files into 20 (commits `cfffac8`→`1a6b0f4`)
+- **Phase 2** — Schema extraction (commit `81dd556`)
+- **Phase 3** — All 28 C# tests self-contained (commit `b3a7ceb`)
+- **Phase 4** — All 30 dashboard tests self-contained (commits `f1c3b3a`, `cf868d8`)
+  - Global `afterEach(cleanup)` added to `tests/setup.ts`
+  - `setupMocks()` helpers in DeviceMerge, HistoricalGraph, SettingsPage
+- **Phase 5** — All 115 Python tests self-contained (commit `c82fd57`)
 
-### Feature 124: Device Discovery (IN PROGRESS — Phase 6 functional + bugfixes)
+### Feature 124: Device Discovery (IN PROGRESS — Phase 1–2 done, Phases 3–7 remaining)
 - **Issue #134** — Automatic device discovery with hourly re-scan and device merge
-- **Branch**: `124-device-discovery`
+- **Branch**: `124-device-discovery` (pushed, PR #137 open)
 - **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
 - **Plan**: Complete
-- **Phase 1–6**: Complete (schema, models, settings, US1 add detection, US2 remove detection, pending replacements, merge UI, banner, cross-cycle alias detection)
-- **Next**: Manual end-to-end test against real account, then commit + push
+- **Tasks done**: T001–T014 (Phase 1 setup + Phase 2 foundational)
+- **Tasks remaining**: T015–T060 (Phases 3–7: US1–US4 + polish)
+- **Next**: Phase 3 — User Story 1 (automatic new device detection)
 
-### Session 2026-05-11 — Test isolation refactor (Phases 0–3 + Phase 4 partial)
-**Commits made (7 new, all on `124-device-discovery`):**
-1. `f76a96a` — Phase 0: revert AAA, add mock resets, parallel config
-2. `cfffac8` — Split ValidateTests.cs → 6 files (74 tests)
-3. `f34defc` — Split ModelSerializationTests.cs → 4 files (31 tests)
-4. `205e215` — Split EndpointTests.cs → 7 files (46 tests: 2+6+11+8+7+8+4)
-5. `1a6b0f4` — Split SettingsEndpointTests.cs → 3 files (41 tests: 28+8+5)
-6. `81dd556` — Extract TestSchema.Ddl + CreateContainerAsync()
-7. `b3a7ceb` — All 28 C# test files → self-contained (zero shared fixtures)
+### Session 2026-05-12 — Test isolation refactor complete + push + PR
+**Commits made (3 new, all on `124-device-discovery`):**
+1. `f1c3b3a` — Commit 5 previously-done dashboard unit test files
+2. `cf868d8` — Phase 4 complete: remove all beforeEach/afterEach from 18 dashboard files
+3. `c82fd57` — Phase 5 complete: inline setUp into 115 Python test methods
 
 **Key decisions:**
-- Copy-paste-portable = no shared fixtures, no constructor injection, no beforeEach/setUp
-- Accepted 29s C# runtime (up from 6s) — isolation > speed per constitution
-- TestSchema.CreateContainerAsync() is the only shared helper (static, stateless, creates fresh container)
-- PostgresFixture seed helpers replaced with static helpers per test class
-- vitest.config.ts clearMocks/unstubEnvs/unstubGlobals kept as defense-in-depth
+- `@testing-library/preact` does NOT auto-cleanup — added global `afterEach(cleanup)` in `tests/setup.ts`
+- Complex mock setup extracted to `setupMocks()` helpers (DeviceMerge, HistoricalGraph, SettingsPage)
+- Python setUp inlined via script for 115 methods across 2 classes
 
-**Test counts (verified):**
-- C#: 422/422 (29s)
-- Dashboard: 595/595 (2s)
-- Python: 323/323 (2s)
-- **Total: 1340 tests**
-
-**Uncommitted files:**
-- `dashboard/tests/unit/{auth,errors,polling,retry,telemetry}.test.ts` (5 files, beforeEach removed)
+**Branch pushed + PR opened:**
+- PR #137 — Test isolation refactor: every test self-contained (Phases 0–5)
+- 15 commits total on `124-device-discovery`, all pushed
 
 ### PR #136 — Exporter Refactor (MERGED ✅)
 - Issue #135 closed — see prior session entry below.
@@ -82,46 +70,25 @@ Full plan stored in Copilot repo memory: `test-isolation-refactor.md`
 ### Open Issues
 | # | Title | Label | Status |
 |---|-------|-------|--------|
-| 134 | Automatic device discovery | feature | In progress (Phase 3 next) |
-| 135 | Refactor exporter + coverage | enhancement | Closed (PR #136 merged) |
+| 134 | Automatic device discovery | feature | In progress (PR #137 open, Phases 1–2 done) |
 | 115 | Separate Application Insights per environment | enhancement | Open |
 | 66 | Calendar-aware time range selector | enhancement | Open |
 | 52 | Port exporter Python→C# | enhancement | Open |
 | 6 | iPad App | feature | Spec only |
 | 5 | iPhone App | feature | Spec only |
 
-### Closed This Session
-| # | Title | Reason |
-|---|-------|--------|
-| 135 | Refactor exporter + coverage | completed (PR #136 merged) |
-| 74 | Custom domains on devsbx.xyz | closed (resolved before this session) |
-
 ### What's Next
-1. **Complete test isolation refactor** (see `/memories/repo/test-isolation-refactor.md` for full plan):
-   - Commit the 5 done dashboard files
-   - Refactor 18 remaining dashboard test files (Phase 4)
-   - Refactor 2 Python setUp methods (Phase 5)
-   - Final verification + cleanup (Phase 6)
-2. **Manual end-to-end test against real account** (device discovery):
+1. **Merge PR #137** after CI passes
+2. **Continue Feature 124** — Phase 3 (User Story 1: automatic new device detection, tasks T015–T022)
+3. **Manual end-to-end test against real account** (device discovery):
    - Restart exporter container: `docker compose -f local/docker-compose.prod-local.yml restart epcube-exporter`
    - Verify cross-cycle alias detection inserts pending replacement
    - Verify banner + merge UI work end-to-end
-3. Commit + push `124-device-discovery` (10 unpushed commits + working tree)
-4. Open PR for review
 
 ### Pending
+- PR #137 — awaiting CI + review
 - Staging destroy for b123-def (run #25572637307) — check completion
 - Staging destroy for b093-exp (run #25588799137) — check completion
-- Feature branch `124-device-discovery` not yet pushed
-
-### Decisions Made This Session
-- Exporter refactored from monolith (2083 lines) to 7 modules — simplicity over facade patterns
-- `if __name__ == "__main__"` excluded from coverage via `.coveragerc` (standard Python practice per coverage.py author)
-- `except ImportError` excluded from coverage via `.coveragerc` (environment-dependent import paths)
-- Tests import from actual modules, patch at point of use — no facade, no star imports
-- XSS: all user-controlled text in debug pages must use `html.escape()` — Vue device/circuit names added
-- Thread safety: all shared state mutations must hold `_lock` — _discover_devices and _poll_inner fixed
-- Dockerfile: explicit file list prevents test code in production images
 
 ### Production Services
 | Service | URL |
