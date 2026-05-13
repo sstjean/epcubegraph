@@ -605,10 +605,6 @@ class TestRenderStatusPage(unittest.TestCase):
 
 class TestHTTPHandler(unittest.TestCase):
 
-    def setUp(self):
-        self.collector = _make_collector()
-        self.collector._last_poll = time.time()
-
     def _make_handler(self, path, headers=None):
         """Build a testable handler without opening a real socket."""
         h = _TestableHandler()
@@ -623,37 +619,58 @@ class TestHTTPHandler(unittest.TestCase):
         return h
 
     def test_metrics_returns_404(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/metrics")
         h.send_response.assert_called_with(404)
 
     def test_health_returns_200_when_healthy(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/health")
         h.send_response.assert_called_with(200)
         self.assertIn(b"ok", h.wfile.getvalue())
 
     def test_health_returns_503_when_unhealthy(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         self.collector._last_poll = 0.0  # no poll yet
         h = self._make_handler("/health")
         h.send_response.assert_called_with(503)
         self.assertIn(b"unhealthy", h.wfile.getvalue())
 
     def test_health_no_auth_required(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/health")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_returns_200_auth_disabled(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_401_api_client_without_token(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """API client (no Accept: text/html) gets 401 without auth."""
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={})
             h.send_response.assert_called_with(401)
 
     def test_debug_page_redirects_browser_to_login(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Browser (Accept: text/html) without auth gets redirected to /login."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
              patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"):
@@ -662,11 +679,17 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_header.assert_any_call("Location", "/login")
 
     def test_debug_page_401_with_bad_bearer(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={"Authorization": "Bearer bad-token"})
             h.send_response.assert_called_with(401)
 
     def test_login_redirects_to_microsoft(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /login redirects to Microsoft authorization endpoint."""
         with patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"), \
              patch.object(http_handler, "AZURE_CLIENT_ID", "test-client-id"), \
@@ -681,6 +704,9 @@ class TestHTTPHandler(unittest.TestCase):
             self.assertIn("client_id=test-client-id", url)
 
     def test_login_returns_500_when_not_configured(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /login returns 500 when OAuth is not configured."""
         with patch.object(http_handler, "AZURE_REDIRECT_URI", ""), \
              patch.object(http_handler, "AZURE_CLIENT_ID", ""):
@@ -688,16 +714,25 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_response.assert_called_with(500)
 
     def test_callback_returns_400_without_params(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /.auth/callback without code/state returns 400."""
         h = self._make_handler("/.auth/callback")
         h.send_response.assert_called_with(400)
 
     def test_callback_returns_400_with_invalid_state(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /.auth/callback with unknown state returns 400."""
         h = self._make_handler("/.auth/callback?code=test&state=invalid")
         h.send_response.assert_called_with(400)
 
     def test_session_cookie_grants_access(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Valid session cookie grants access to debug page."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
              patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
@@ -714,6 +749,9 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_response.assert_called_with(200)
 
     def test_expired_session_denied(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Expired session cookie is rejected."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
              patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
@@ -730,11 +768,17 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_response.assert_called_with(401)
 
     def test_status_alias_works(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/status")
             h.send_response.assert_called_with(200)
 
     def test_unknown_path_returns_404(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/unknown")
         h.send_response.assert_called_with(404)
 
@@ -3912,10 +3956,6 @@ class TestRenderVueDebugPageEdgeCases(unittest.TestCase):
 class TestHandleCallbackFull(unittest.TestCase):
     """Cover _handle_callback OAuth code exchange paths."""
 
-    def setUp(self):
-        self.collector = _make_collector()
-        self.collector._last_poll = time.time()
-
     def _make_handler(self, path, headers=None):
         h = _TestableHandler()
         h.collector = self.collector
@@ -3930,6 +3970,8 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_with_error_param_returns_400(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/.auth/callback?error=access_denied&error_description=User+denied")
 
         # Act
@@ -3941,6 +3983,8 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_token_exchange_failure_returns_500(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-123"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
@@ -3963,6 +4007,8 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_jwt_validation_failure_returns_401(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-456"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
@@ -3992,6 +4038,8 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_success_creates_session(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-789"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
