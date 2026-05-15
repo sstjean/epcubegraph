@@ -1,6 +1,6 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-12
+**Last Updated**: 2026-05-15
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `124-device-discovery`
 **Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
@@ -10,7 +10,7 @@
 
 ---
 
-## ⚡ Current State (2026-05-12)
+## ⚡ Current State (2026-05-15)
 
 ### Test Isolation Refactor (COMPLETE ✅)
 Full history in Copilot repo memory: `test-isolation-refactor.md`
@@ -27,14 +27,37 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
   - `setupMocks()` helpers in DeviceMerge, HistoricalGraph, SettingsPage
 - **Phase 5** — All 115 Python tests self-contained (commit `c82fd57`)
 
-### Feature 124: Device Discovery (IN PROGRESS — Phase 1–2 done, Phases 3–7 remaining)
+### Feature 124: Device Discovery (IN PROGRESS — Core flow done, polish remaining)
 - **Issue #134** — Automatic device discovery with hourly re-scan and device merge
 - **Branch**: `124-device-discovery` (pushed, PR #137 open)
 - **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
 - **Plan**: Complete
-- **Tasks done**: T001–T014 (Phase 1 setup + Phase 2 foundational)
-- **Tasks remaining**: T015–T060 (Phases 3–7: US1–US4 + polish)
-- **Next**: Phase 3 — User Story 1 (automatic new device detection)
+- **Tasks done**: T001–T053 plus T055–T057
+- **Tasks remaining**: T054, T058, T059, T060 (removed-device toggle polish + quickstart validation)
+- **Next**: Finish Phase 7 polish and run quickstart validation
+
+### Session 2026-05-15 — Feature 124 audit + removed-device toggle progress
+**Work completed:**
+- Performed startup procedure and full status audit against specs/tasks/code.
+- Verified test state end-to-end:
+  - Exporter: 323/323 pass, `epcube_collector.py` 100% coverage
+  - API: 422/422 pass (after starting Docker Desktop)
+  - Dashboard: 595/595 pass, 100% coverage
+- Audited `specs/124-device-discovery/tasks.md` against implementation and updated stale checkboxes:
+  - Marked T015–T053 and T055–T057 complete
+  - Left T054, T058, T059, T060 open
+- Implemented removed-device visibility feature work in dashboard:
+  - Added removed-device toggle and persistence via localStorage (`showRemovedDevices`)
+  - Added removed-device rendering/styling (`device-removed`, `removed-toggle`)
+  - Fetched removed devices via `fetchDevicesByStatus('removed')`
+- Added/updated component tests for removed-device toggle behavior and hardened selectors to avoid ambiguous label matches.
+- Verified `CurrentReadings` component suite: 34/34 passing.
+
+**Working tree at shutdown (uncommitted):**
+- `dashboard/src/app.css`
+- `dashboard/src/components/CurrentReadings.tsx`
+- `dashboard/tests/component/CurrentReadings.test.tsx`
+- `specs/124-device-discovery/tasks.md`
 
 ### Session 2026-05-12 — Test isolation refactor complete + push + PR
 **Commits made (3 new, all on `124-device-discovery`):**
@@ -79,16 +102,19 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 
 ### What's Next
 1. **Merge PR #137** after CI passes
-2. **Continue Feature 124** — Phase 3 (User Story 1: automatic new device detection, tasks T015–T022)
-3. **Manual end-to-end test against real account** (device discovery):
+2. **Complete remaining Feature 124 polish** — T054/T058/T059 and validate T060
+3. **Run full dashboard suite after final polish** (`npm run test:coverage`) and re-run API/exporter checks if needed
+4. **Manual end-to-end test against real account** (device discovery):
    - Restart exporter container: `docker compose -f local/docker-compose.prod-local.yml restart epcube-exporter`
    - Verify cross-cycle alias detection inserts pending replacement
-   - Verify banner + merge UI work end-to-end
+  - Verify banner + merge UI work end-to-end
+  - Verify removed-device toggle behavior and persistence
 
 ### Pending
 - PR #137 — awaiting CI + review
 - Staging destroy for b123-def (run #25572637307) — check completion
 - Staging destroy for b093-exp (run #25588799137) — check completion
+- Local uncommitted dashboard/spec changes from 2026-05-15 session (toggle + tasks sync)
 
 ### Production Services
 | Service | URL |
