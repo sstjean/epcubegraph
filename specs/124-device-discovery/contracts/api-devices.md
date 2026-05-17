@@ -16,31 +16,30 @@
 |-----------|------|---------|-------------|
 | `status` | string | `active` | Filter by device status: `active`, `removed`, `merged`, or `all` |
 
-**Response** (unchanged shape):
+Unknown or case-mismatched values (e.g. `Removed`, `inactive`) are rejected with HTTP `400 bad_data`.
 
-```json
-[
-  {
-    "device_id": "epcube12345_battery",
-    "device_class": "storage_battery",
-    "alias": "EP Cube",
-    "manufacturer": "Canadian Solar",
-    "product_code": "EP Cube (devType=2)",
-    "uid": "SG12345",
-    "online": true
-  }
-]
-```
-
-**Note**: When `status=all`, the response includes a `status` field on each device:
+**Response**: object containing a `devices` array. Each device entry uses `device` for the device id and `class` for the device class.
 
 ```json
 {
-  "device_id": "epcube12345_battery",
-  "status": "removed",
-  ...
+  "devices": [
+    {
+      "device": "epcube12345_battery",
+      "class": "storage_battery",
+      "alias": "EP Cube",
+      "manufacturer": "Canadian Solar",
+      "product_code": "EP Cube (devType=2)",
+      "uid": "SG12345",
+      "online": true,
+      "status": "active",
+      "created_at": "2026-04-01T00:00:00Z",
+      "updated_at": "2026-05-08T14:30:00Z"
+    }
+  ]
 }
 ```
+
+The `status` field is populated on every response (not just `status=all`) so consumers can distinguish lifecycle states without re-querying.
 
 ### `PUT /settings/{key}`
 

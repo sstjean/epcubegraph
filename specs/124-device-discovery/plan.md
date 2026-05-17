@@ -36,7 +36,7 @@ Add hourly EP Cube device re-discovery to the exporter, with database-backed pen
 
 - Every feature maps directly to an FR in the spec
 - No plugin system, no provider abstraction, no multi-tenant support
-- Cross-cycle replacement matching explicitly deferred to Settings page manual merge (not built)
+- Cross-cycle replacement matching IS built (alias match against the most recent `status='removed'` device); the Settings page manual merge remains as a backstop for cases the heuristic doesn't catch
 - No separate discovery thread (the simpler poll-loop approach is sufficient)
 - Configurable interval justified by existing pattern (`poll_interval_seconds`) and explicit user request
 

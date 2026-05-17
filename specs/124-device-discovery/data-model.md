@@ -55,7 +55,12 @@ CREATE TABLE IF NOT EXISTS pending_replacements (
 | new_device_id | TEXT | NOT NULL | The cloud device ID of the replacement |
 | detected_at | TIMESTAMPTZ | NOT NULL DEFAULT NOW() | When the exporter detected the simultaneous removal+addition |
 
-**Lifecycle**: Created by the exporter on same-cycle removal+addition. Deleted when the user confirms (merge executed) or dismisses (no merge). Not created for cross-cycle changes — the Settings page manual merge handles those.
+**Lifecycle**: Created by the exporter's `_detect_replacements` step at the end of each discovery cycle. Two paths produce a row:
+
+1. **Same-cycle**: a device disappeared from the cloud account and another appeared in the same discovery cycle with the same alias.
+2. **Cross-cycle**: a previously-added device (still `status='active'`) finds an alias match against a device that was marked `removed` in an earlier cycle (`find_removed_predecessor`).
+
+Rows are deleted when the user confirms the merge (executed via the API) or dismisses the prompt. The Settings page also exposes a manual merge UI for ad-hoc cases where the alias-based heuristic doesn't trigger.
 
 ### New Settings Key: `discovery_interval_seconds`
 
