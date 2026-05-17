@@ -11,7 +11,8 @@ public record DeviceInfo(
     [property: JsonPropertyName("online")] bool Online = false,
     [property: JsonPropertyName("alias")] string? Alias = null,
     [property: JsonPropertyName("created_at")] DateTimeOffset? CreatedAt = null,
-    [property: JsonPropertyName("updated_at")] DateTimeOffset? UpdatedAt = null);
+    [property: JsonPropertyName("updated_at")] DateTimeOffset? UpdatedAt = null,
+    [property: JsonPropertyName("status")] string? Status = null);
 
 public record DeviceListResponse(
     [property: JsonPropertyName("devices")] IReadOnlyList<DeviceInfo> Devices);

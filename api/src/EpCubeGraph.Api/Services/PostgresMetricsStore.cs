@@ -36,10 +36,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             sql = """
                 SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
                        CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
-                       d.created_at, d.updated_at
+                       d.created_at, d.updated_at, d.status
                 FROM devices d
                 LEFT JOIN readings r ON d.device_id = r.device_id
-                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at
+                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at, d.status
                 ORDER BY d.device_id
                 """;
             await using var cmdAll = _dataSource.CreateCommand(sql);
@@ -50,11 +50,11 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         sql = """
             SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
                    CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
-                   d.created_at, d.updated_at
+                   d.created_at, d.updated_at, d.status
             FROM devices d
             LEFT JOIN readings r ON d.device_id = r.device_id
             WHERE d.status = $1
-            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at
+            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at, d.status
             ORDER BY d.device_id
             """;
         await using var cmd = _dataSource.CreateCommand(sql);
@@ -77,7 +77,8 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
                 Online: reader.GetBoolean(6),
                 Alias: reader.IsDBNull(2) ? null : reader.GetString(2),
                 CreatedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
-                UpdatedAt: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8)));
+                UpdatedAt: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8),
+                Status: reader.IsDBNull(9) ? null : reader.GetString(9)));
         }
         return devices;
     }

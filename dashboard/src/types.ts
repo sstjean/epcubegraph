@@ -11,6 +11,12 @@ export interface Device {
   alias?: string;
   created_at?: string;
   updated_at?: string;
+  /**
+   * Lifecycle state of the device. Populated by GET /devices for all
+   * variants of the `status` query (active|removed|merged|all). Optional
+   * for backwards compatibility with older API builds.
+   */
+  status?: "active" | "removed" | "merged";
 }
 
 export interface DeviceListResponse {
