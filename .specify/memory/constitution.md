@@ -99,6 +99,9 @@ mock complexity, and tests that break for unrelated reasons.
   external service availability. Live-data local stacks
   (e.g., docker-compose.prod-local.yml) are for manual
   verification only and MUST NOT be invoked by CI pipelines.
+- **Bug Fix Regression Tests (NON-NEGOTIABLE)**: Every bug fix
+  MUST start with the creation of one or more failing tests
+  (unit and integration). This builds our regression suite.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.
