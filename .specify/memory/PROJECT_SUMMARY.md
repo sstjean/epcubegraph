@@ -1,8 +1,8 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-15
+**Last Updated**: 2026-05-16
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `124-device-discovery`
+**Branch**: `124-device-discovery` (complete — ready for PR)
 **Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
 **Open PR**: #137 — Test isolation refactor: every test self-contained (Phases 0–5)
 
@@ -27,14 +27,46 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
   - `setupMocks()` helpers in DeviceMerge, HistoricalGraph, SettingsPage
 - **Phase 5** — All 115 Python tests self-contained (commit `c82fd57`)
 
-### Feature 124: Device Discovery (IN PROGRESS — Core flow done, polish remaining)
+### Feature 124: Device Discovery (COMPLETE ✅)
 - **Issue #134** — Automatic device discovery with hourly re-scan and device merge
-- **Branch**: `124-device-discovery` (pushed, PR #137 open)
+- **Branch**: `124-device-discovery` (9 commits ahead of origin — push pending)
 - **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
-- **Plan**: Complete
-- **Tasks done**: T001–T053 plus T055–T057
-- **Tasks remaining**: T054, T058, T059, T060 (removed-device toggle polish + quickstart validation)
-- **Next**: Finish Phase 7 polish and run quickstart validation
+- **All 60 tasks done across 7 phases.**
+- Quickstart end-to-end verified locally (banner appears → telemetry collected on same cycle → Yes flow merges history → No flow keeps both devices → Remove flow hard-deletes).
+
+**Beyond original spec, also delivered on this branch:**
+- Cross-cycle replacement detection (alias matching between newly-added and previously-removed devices, not just same-cycle)
+- Poll-before-sleep exporter fix (new devices begin emitting telemetry on the same poll cycle as discovery; was previously delayed by a full poll interval)
+- `DELETE /api/v1/devices/{cloudId}` endpoint + `RemovedDevicesSection` UI for hard-deleting devices the user does not want to merge (option C management view)
+- `SettingsPage` SRP refactor — god component split into `PollingIntervalsSection`, `VueDeviceMappingSection`, `PanelHierarchySection` plus a tab orchestrator. Per-section tests only mock what each section uses.
+- Banner UX redesign: two-column table (Last Seen / Device ID / Device Name / Readings / Duplicates) with Yes/No buttons. `DeviceDiscoveryProvider` lifts pending state so the banner and the device card share it (merge/dismiss updates both instantly without polling lag).
+- Card-level "These are the new device readings. The old device is offline." indicator on the active device card during a pending replacement (only when both devices would resolve to the same display title).
+- Disambiguation of duplicate-titled cards (`EP Cube v2 (5488)` / `EP Cube v2 (5840)` when both share product_code).
+- Offline-zero fix: offline cards no longer render stale last-known values.
+- `updated_at` field on `DeviceInfo` (exposes when a device was marked removed, shown in the Removed tab as "Removed Date").
+- Bug fix: `vue_device_mapping` rename in merge now uses proper `epcube{id}` prefix (was previously a silent no-op on key mismatch; now logged via new `ILogger<PostgresMetricsStore>`).
+- Bug fix: `DismissPendingReplacementAsync` closes the lookup reader before rollback (was raising `NpgsqlOperationInProgressException` when the pending row didn't exist).
+- Constitution Section IV: new "Bug Fix Regression Tests (NON-NEGOTIABLE)" rule — every bug fix must start with one or more failing tests.
+
+### Session 2026-05-16 — Feature 124 wrap + branch ready for PR
+**Work completed (9 new commits on `124-device-discovery`, not yet pushed):**
+1. `6385888` chore: constitution + .gitignore (`*.lscache`)
+2. `d1fab4c` test(local): `scripts/simulate-device-replacement.sh`
+3. `129127a` fix(exporter): cross-cycle detection + poll-before-sleep + helper consolidation
+4. `f423049` feat(api): merge fixes, `DELETE /devices`, `updated_at`, regression coverage (`MergeStoreFullTests`, `DeleteDeviceStoreTests`, `DeleteDeviceEndpointTests`, `DevicesUpdatedAtTests`)
+5. `7afd0a2` feat(dashboard): redesign replacement banner + shared `useDeviceDiscoveryContext`
+6. `5a2d951` feat(dashboard): card-level pending-merge note, offline-zero, disambiguation
+7. `67b17af` refactor(dashboard): split `SettingsPage` into per-tab sections (SRP)
+8. `fbf944d` feat(dashboard): `RemovedDevicesSection` — manage and hard-delete removed devices
+9. (PROJECT_SUMMARY update — this commit)
+
+**Tests:**
+- Exporter: 331/331 pass
+- API: 452/452 pass
+- Dashboard: 664/664 pass
+- **Total: 1447 tests**
+
+**Working tree at session end:** clean. Push pending user approval.
 
 ### Session 2026-05-15 — Feature 124 audit + removed-device toggle progress
 **Work completed:**
@@ -85,15 +117,15 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 - `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
 
 ### Tests
-- Dashboard: 595 tests, 100% all metrics
-- API: 422 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
-- Exporter: 323 tests, 100% coverage
-- **Total: 1340 tests**
+- Dashboard: 664 tests, 100% all metrics
+- API: 452 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
+- Exporter: 331 tests, 100% coverage
+- **Total: 1447 tests**
 
 ### Open Issues
 | # | Title | Label | Status |
 |---|-------|-------|--------|
-| 134 | Automatic device discovery | feature | In progress (PR #137 open, Phases 1–2 done) |
+| 134 | Automatic device discovery | feature | Implementation complete on `124-device-discovery` (push pending) |
 | 115 | Separate Application Insights per environment | enhancement | Open |
 | 66 | Calendar-aware time range selector | enhancement | Open |
 | 52 | Port exporter Python→C# | enhancement | Open |
@@ -101,20 +133,16 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 | 5 | iPhone App | feature | Spec only |
 
 ### What's Next
-1. **Merge PR #137** after CI passes
-2. **Complete remaining Feature 124 polish** — T054/T058/T059 and validate T060
-3. **Run full dashboard suite after final polish** (`npm run test:coverage`) and re-run API/exporter checks if needed
-4. **Manual end-to-end test against real account** (device discovery):
-   - Restart exporter container: `docker compose -f local/docker-compose.prod-local.yml restart epcube-exporter`
-   - Verify cross-cycle alias detection inserts pending replacement
-  - Verify banner + merge UI work end-to-end
-  - Verify removed-device toggle behavior and persistence
+1. **Push `124-device-discovery` to origin** (9 new commits, user approval required)
+2. **Open / update PR for Feature 124** (or fold into PR #137 — see Pending)
+3. **Merge PR after CI passes** → close Issue #134
+4. **Next feature**
 
 ### Pending
-- PR #137 — awaiting CI + review
+- 9 commits on `124-device-discovery` awaiting push approval
+- Decide: extend PR #137 to cover the full Feature 124 scope, or open a fresh PR (#137 currently scoped as "Test isolation refactor"; this branch now also delivers 124 implementation)
 - Staging destroy for b123-def (run #25572637307) — check completion
 - Staging destroy for b093-exp (run #25588799137) — check completion
-- Local uncommitted dashboard/spec changes from 2026-05-15 session (toggle + tasks sync)
 
 ### Production Services
 | Service | URL |
@@ -161,8 +189,13 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 | `GET /health` | No | Datastore health check |
 | `GET /readings/current?metric={name}` | Yes | Latest reading per device |
 | `GET /readings/range?metric={name}&start=&end=&step=` | Yes | Bucketed time-series |
-| `GET /devices` | Yes | Device inventory |
+| `GET /devices` | Yes | Device inventory (`?status=active|removed|merged|all`, default `active`) |
 | `GET /devices/{device}/metrics` | Yes | Metrics for one device |
+| `GET /devices/pending-replacements` | Yes | List pending replacement prompts |
+| `POST /devices/pending-replacements/{id}/dismiss` | Yes | Dismiss a pending replacement |
+| `GET /devices/merge-preview?old_device_id=X&new_device_id=Y` | Yes | Preview reading counts before merge |
+| `POST /devices/merge` | Yes | Execute device merge (transfer readings, mark old merged) |
+| `DELETE /devices/{cloudId}` | Yes | Hard-delete a removed/merged device + its readings (refuses active) |
 | `GET /grid?start=&end=&step=` | Yes | Grid power time-series |
 | `GET /settings` | Yes | All settings key-value pairs |
 | `PUT /settings/{key}` | Yes | Update setting (allowlisted keys only) |
@@ -182,6 +215,8 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 ### Feature 006: Dashboard Settings Page (COMPLETE ✅, PR #90)
 ### Feature 007: Dashboard Vue Circuits (COMPLETE ✅, PR #108)
 ### Feature 010: Simplify Vue Mapping (COMPLETE ✅, PR #124)
+### Feature 093: Remove Vestigial Metrics (COMPLETE ✅)
+### Feature 124: Automatic Device Discovery (COMPLETE ✅, push pending)
 ### Feature 003: iPhone App (SPEC ONLY)
 ### Feature 004: iPad App (SPEC ONLY)
 
