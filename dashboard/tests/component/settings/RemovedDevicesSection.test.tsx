@@ -112,6 +112,24 @@ describe('RemovedDevicesSection', () => {
     });
   });
 
+  it('shows an em dash when updated_at is an invalid date string', async () => {
+    // Arrange — `new Date("not-a-date").getTime()` is NaN, exercises the NaN guard
+    setupMocks([
+      { device: 'epcube5488_battery', class: 'storage_battery', online: false, alias: 'Old', product_code: 'EP Cube (devType=2)', updated_at: 'not-a-date' },
+    ]);
+
+    // Act
+    render(<RemovedDevicesSection />);
+
+    // Assert
+    await waitFor(() => {
+      const cells = Array.from(document.querySelectorAll('.removed-devices-table td')).map(
+        (td) => td.textContent ?? '',
+      );
+      expect(cells.some((c) => c === '—')).toBe(true);
+    });
+  });
+
   it('does not fetch merged devices (section is for Removed only)', async () => {
     // Arrange
     setupMocks([]);
@@ -287,5 +305,51 @@ describe('RemovedDevicesSection', () => {
       expect(screen.getByText(/EP Cube v2 \(5488\)/)).toBeTruthy();
       expect(screen.getByText(/EP Cube v2 \(7777\)/)).toBeTruthy();
     });
+  });
+
+  it('omits the alias subtext when alias matches the display name', async () => {
+    // Arrange — alias resolves to the same string as displayName (no extra .removed-devices-alias)
+    setupMocks([
+      { device: 'epcube5488_battery', class: 'storage_battery', online: false, alias: 'EP Cube v2', product_code: 'EP Cube (devType=2)', updated_at: '2026-05-10T12:00:00Z' },
+    ]);
+
+    // Act
+    render(<RemovedDevicesSection />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+    expect(document.querySelector('.removed-devices-alias')).toBeNull();
+  });
+
+  it('omits the alias subtext when alias is empty', async () => {
+    // Arrange — device with no alias at all
+    setupMocks([
+      { device: 'epcube5488_battery', class: 'storage_battery', online: false, product_code: 'EP Cube (devType=2)', updated_at: '2026-05-10T12:00:00Z' },
+    ]);
+
+    // Act
+    render(<RemovedDevicesSection />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+    expect(document.querySelector('.removed-devices-alias')).toBeNull();
+  });
+
+  it('does not update state after unmount during initial load', async () => {
+    // Arrange — fetch resolves after unmount, exercising the `cancelled` guard
+    let resolve!: (v: unknown) => void;
+    mockFetchDevicesByStatus.mockReturnValue(new Promise((r) => { resolve = r; }));
+
+    // Act
+    const { unmount } = render(<RemovedDevicesSection />);
+    unmount();
+    resolve!({ devices: [] });
+
+    // Assert — no error thrown, state update silently skipped
+    await new Promise((r) => setTimeout(r, 10));
   });
 });

@@ -1168,4 +1168,52 @@ describe('CurrentReadings', () => {
       expect(screen.queryByText(/These are the new device readings/)).toBeNull();
     });
   });
+
+  it('renders removed device cards in Gauges view when toggle is on', async () => {
+    // Arrange — exercises the gauges-view branch of the removed-device render
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'true');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Removed One' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+    await waitFor(() => screen.getByText('Gauges'));
+    fireEvent.click(screen.getByText('Gauges'));
+
+    // Assert — removed-device card visible in gauges view
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed .device-card')).toBeTruthy();
+    });
+  });
+
+  it('treats fetchDevicesByStatus rejection as empty removed list (no crash)', async () => {
+    // Arrange — exercises the catch branch that resets removedGroups to []
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockRejectedValue(new Error('Removed API fail'));
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — main view still renders; no removed devices and no toggle
+    await waitFor(() => {
+      expect(document.querySelector('.device-card')).toBeTruthy();
+    });
+    expect(screen.queryByRole('checkbox', { name: /show removed devices/i })).toBeNull();
+  });
 });

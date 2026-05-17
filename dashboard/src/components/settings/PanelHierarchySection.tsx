@@ -2,10 +2,10 @@ import { useState, useEffect } from 'preact/hooks';
 import { fetchVueDevices, fetchHierarchy, updateHierarchy } from '../../api';
 import type { VueDeviceInfo, PanelHierarchyEntry } from '../../types';
 import { errorMessage } from '../../utils/errors';
+import { resolveVueDeviceAlias } from '../../utils/devices';
 
-export function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
-  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
-}
+// Re-exported so the existing PanelHierarchySection unit tests keep working.
+export { resolveVueDeviceAlias as resolveDeviceAlias };
 
 type Message = { type: 'success' | 'error'; text: string } | null;
 
@@ -16,27 +16,23 @@ export function PanelHierarchySection() {
   const [addChildGid, setAddChildGid] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<Message>(null);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      setError(null);
-      try {
-        const [vueDevicesRes, hierarchyRes] = await Promise.all([
-          fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
-          fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
-        ]);
-        if (cancelled) return;
-        setVueDevices(vueDevicesRes.devices);
-        setEntries(hierarchyRes.entries);
-      } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Failed to load hierarchy'));
-      } finally {
-        if (!cancelled) setLoading(false);
+      // Both fetches have inner .catch() fallbacks so Promise.all never rejects.
+      const [vueDevicesRes, hierarchyRes] = await Promise.all([
+        fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
+        fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
+      ]);
+      if (cancelled) {
+        return;
       }
+      setVueDevices(vueDevicesRes.devices);
+      setEntries(hierarchyRes.entries);
+      setLoading(false);
     }
     load();
     return () => { cancelled = true; };
@@ -99,7 +95,6 @@ export function PanelHierarchySection() {
   return (
     <div class="settings-section">
       <h3>Panel Hierarchy</h3>
-      {error && <p role="alert" class="settings-error">{error}</p>}
       {vueDevices.length === 0 && <p class="settings-coming-soon">No Vue devices available</p>}
       {vueDevices.length > 0 && (
         <>
@@ -107,7 +102,7 @@ export function PanelHierarchySection() {
             <div class="hierarchy-entries">
               {entries.map((e) => (
                 <div class="hierarchy-entry-row" key={`${e.parent_device_gid}-${e.child_device_gid}`}>
-                  <span>{resolveDeviceAlias(vueDevices, e.parent_device_gid)} → {resolveDeviceAlias(vueDevices, e.child_device_gid)}</span>
+                  <span>{resolveVueDeviceAlias(vueDevices, e.parent_device_gid)} → {resolveVueDeviceAlias(vueDevices, e.child_device_gid)}</span>
                   <button
                     type="button"
                     aria-label={`Remove hierarchy entry ${e.child_device_gid}`}

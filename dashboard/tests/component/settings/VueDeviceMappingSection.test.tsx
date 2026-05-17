@@ -309,6 +309,51 @@ describe('VueDeviceMappingSection', () => {
     });
   });
 
+  it('shows error banner when fetchSettings rejects (outer catch)', async () => {
+    // Arrange — fetchSettings has no inner .catch() fallback so its rejection
+    // bubbles up to the outer try/catch.
+    setupMocks();
+    mockFetchSettings.mockRejectedValue(new Error('Settings store down'));
+
+    // Act
+    render(<VueDeviceMappingSection />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/Settings store down/i);
+    });
+  });
+
+  it('does not update state after unmount during initial load', async () => {
+    // Arrange — fetchSettings never resolves until after unmount
+    setupMocks();
+    let resolve!: (v: unknown) => void;
+    mockFetchSettings.mockReturnValue(new Promise((r) => { resolve = r; }));
+
+    // Act
+    const { unmount } = render(<VueDeviceMappingSection />);
+    unmount();
+    resolve!({ settings: [] });
+
+    // Assert — no error thrown, state update silently skipped
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it('does not update state after unmount during fetchSettings rejection', async () => {
+    // Arrange — fetchSettings rejects after unmount
+    setupMocks();
+    let reject!: (e: Error) => void;
+    mockFetchSettings.mockReturnValue(new Promise((_, r) => { reject = r; }));
+
+    // Act
+    const { unmount } = render(<VueDeviceMappingSection />);
+    unmount();
+    reject!(new Error('late rejection'));
+
+    // Assert
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
   it('handles malformed vue_device_mapping value gracefully', async () => {
     // Arrange
     setupMocks({

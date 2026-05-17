@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getGroupName, groupDevicesByAlias, getDisplayName, getBaseDeviceId, getDisplayNameFromMeta } from '../../src/utils/devices';
+import { getGroupName, groupDevicesByAlias, getDisplayName, getBaseDeviceId, getDisplayNameFromMeta, resolveVueDeviceAlias } from '../../src/utils/devices';
 import type { Device } from '../../src/types';
 
 function makeDevice(overrides: Partial<Device> & { device: string }): Device {
@@ -155,5 +155,31 @@ describe('getDisplayNameFromMeta', () => {
     const oldName = getDisplayNameFromMeta('EP Cube (devType=0)', 'Same Alias');
     const newName = getDisplayNameFromMeta('EP Cube (devType=2)', 'Same Alias');
     expect(oldName).not.toBe(newName);
+  });
+});
+
+describe('resolveVueDeviceAlias', () => {
+  it('returns display_name when device found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 100)).toBe('Main Panel');
+  });
+
+  it('returns gid string when device not found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 999)).toBe('999');
+  });
+
+  it('returns gid string when display_name is empty (falsy fallback)', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: '' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 100)).toBe('100');
   });
 });

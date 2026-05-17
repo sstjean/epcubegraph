@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy } from '../../api';
 import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../../types';
-import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../../utils/devices';
+import { groupDevicesByAlias, getDisplayName, getBaseDeviceId, resolveVueDeviceAlias } from '../../utils/devices';
 import { errorMessage, toTrackedError } from '../../utils/errors';
 import { isValidVueDeviceMapping } from '../../hooks/useVueData';
 
@@ -43,10 +43,6 @@ export function initializeMapping(
     }
   }
   return mapping;
-}
-
-function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
-  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
 }
 
 type Message = { type: 'success' | 'error'; text: string } | null;
@@ -106,7 +102,7 @@ export function VueDeviceMappingSection() {
       setMessage(null);
       return;
     }
-    const alias = resolveDeviceAlias(vueDevices, gid);
+    const alias = resolveVueDeviceAlias(vueDevices, gid);
     setMapping((prev) => ({
       ...prev,
       [deviceId]: { gid, alias },

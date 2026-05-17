@@ -197,14 +197,17 @@ export function CurrentReadings() {
   // Disambiguate duplicate display names across all visible groups (active + removed)
   // by appending the device ID. Necessary because devices can share product_code
   // (e.g. two "EP Cube v2" units) and the same alias.
-  const nameCounts = new Map<string, number>();
-  for (const g of annotatedGroups) nameCounts.set(g.name, (nameCounts.get(g.name) ?? 0) + 1);
-  for (const g of visibleRemovedGroups) nameCounts.set(g.name, (nameCounts.get(g.name) ?? 0) + 1);
-  const disambiguate = (g: DeviceGroup): DeviceGroup => {
-    if ((nameCounts.get(g.name) ?? 0) <= 1) return g;
-    const id = g.baseDeviceId.replace(/^epcube/, '');
-    return { ...g, name: `${g.name} (${id})` };
-  };
+  const allNames = [
+    ...annotatedGroups.map((g) => g.name),
+    ...visibleRemovedGroups.map((g) => g.name),
+  ];
+  const duplicateNames = new Set(
+    allNames.filter((n, _i, arr) => arr.indexOf(n) !== arr.lastIndexOf(n)),
+  );
+  const disambiguate = (g: DeviceGroup): DeviceGroup =>
+    duplicateNames.has(g.name)
+      ? { ...g, name: `${g.name} (${g.baseDeviceId.replace(/^epcube/, '')})` }
+      : g;
   const displayedActiveGroups = annotatedGroups.map(disambiguate);
   const displayedRemovedGroups = visibleRemovedGroups.map(disambiguate);
 

@@ -6126,5 +6126,117 @@ class TestFindRemovedPredecessor(unittest.TestCase):
         self.assertIsNone(writer.find_removed_predecessor("5840"))
 
 
+# ---------------------------------------------------------------------------
+# Coverage gap: PostgresWriter.read_setting_int (instance method)
+# ---------------------------------------------------------------------------
+
+class TestPostgresWriterReadSettingInt(unittest.TestCase):
+    """Cover PostgresWriter.read_setting_int — the instance-method variant
+    used by collector code via `self._pg.read_setting_int(...)`."""
+
+    def _make_writer(self, mock_pg, fetch_results):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone.side_effect = list(fetch_results)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test"), mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_returns_value_when_in_range(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("3600",)])
+
+        # Act
+        result = writer.read_setting_int("discovery_interval_seconds", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 3600)
+
+    @patch.object(db, "psycopg2")
+    def test_strips_double_quotes_from_jsonb_value(self, mock_pg):
+        # Arrange — settings values are stored as JSONB strings ("3600")
+        writer, _ = self._make_writer(mock_pg, [('"3600"',)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 3600)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_value_below_min(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("30",)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_value_above_max(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("99999",)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_row_missing(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [None])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_db_raises(self, mock_pg):
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("DB down")
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: EpCubeCollector._discover_devices non-200 cloud response
+# ---------------------------------------------------------------------------
+
+class TestDiscoverDevicesCloudError(unittest.TestCase):
+    """Cover the early-return when the cloud /home/deviceList call returns
+    a non-200 status."""
+
+    def test_discover_returns_early_on_non_200_cloud_status(self):
+        # Arrange
+        c = _make_collector()
+        c._token = "valid-token"
+
+        with patch.object(c, "_ensure_auth"), \
+             patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 500, "message": "cloud down"}):
+
+            # Act — should not raise and should not mutate device state
+            c._discover_devices()
+
+        # Assert
+        self.assertEqual(len(c._devices), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

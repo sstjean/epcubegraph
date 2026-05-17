@@ -35,10 +35,12 @@ function buildGroups(devices: Device[]): RemovedGroup[] {
 }
 
 function disambiguate(groups: RemovedGroup[]): RemovedGroup[] {
-  const counts = new Map<string, number>();
-  for (const g of groups) counts.set(g.displayName, (counts.get(g.displayName) ?? 0) + 1);
+  const allNames = groups.map((g) => g.displayName);
+  const duplicates = new Set(
+    allNames.filter((n, _i, arr) => arr.indexOf(n) !== arr.lastIndexOf(n)),
+  );
   return groups.map((g) =>
-    (counts.get(g.displayName) ?? 0) > 1
+    duplicates.has(g.displayName)
       ? { ...g, displayName: `${g.displayName} (${g.cloudId})` }
       : g,
   );
@@ -173,11 +175,10 @@ export function RemovedDevicesSection() {
                       <TrashIcon />
                     </button>
                   )}
-                  {feedback && feedback.cloudId === g.cloudId && (
-                    <p
-                      role={feedback.type === 'error' ? 'alert' : 'status'}
-                      class={feedback.type === 'error' ? 'settings-error' : 'settings-success'}
-                    >
+                  {/* Errors keep the row visible so the user can retry; success removes the row
+                      and renders a top-level confirmation below the table. */}
+                  {feedback && feedback.cloudId === g.cloudId && feedback.type === 'error' && (
+                    <p role="alert" class="settings-error">
                       {feedback.text}
                     </p>
                   )}
@@ -188,7 +189,7 @@ export function RemovedDevicesSection() {
         </table>
       )}
       {/* Success feedback for already-deleted rows (no row to attach to) */}
-      {feedback && feedback.type === 'success' && !groups.some((g) => g.cloudId === feedback.cloudId) && (
+      {feedback && feedback.type === 'success' && (
         <p role="status" class="settings-success">{feedback.text}</p>
       )}
     </div>

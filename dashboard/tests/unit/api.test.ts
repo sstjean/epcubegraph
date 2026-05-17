@@ -872,4 +872,92 @@ describe('Settings API', () => {
     expect(calledUrl).toContain('/devices/5488');
     expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
   });
+
+  it('deleteDevice attaches Bearer token from getAccessToken when auth is enabled', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    globalThis.fetch = vi.fn();
+    await setupAuth('bearer-xyz');
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve({ device_id: '5488', readings_deleted: 0 }),
+    });
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act
+    await deleteDevice('5488');
+
+    // Assert
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
+    expect(headers.Authorization).toBe('Bearer bearer-xyz');
+  });
+
+  it('deleteDevice throws when getAccessToken returns no token (auth in progress)', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'false');
+    globalThis.fetch = vi.fn();
+    await setupAuth(null);
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act + Assert
+    await expect(deleteDevice('5488')).rejects.toThrow(/Authentication in progress/);
+  });
+
+  it('deleteDevice throws ApiError with error body message when response is not OK', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    globalThis.fetch = vi.fn();
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve({ error: 'Cannot delete an active device' }),
+    });
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act + Assert
+    await expect(deleteDevice('5488')).rejects.toThrow(/Cannot delete an active device/);
+  });
+
+  it('deleteDevice throws ApiError with HTTP status fallback when error body has no `error` field', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    globalThis.fetch = vi.fn();
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: () => Promise.resolve({ detail: 'something' }), // no `error` key
+    });
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act + Assert — falls through to HTTP status message
+    await expect(deleteDevice('5488')).rejects.toThrow(/HTTP 422/);
+  });
+
+  it('deleteDevice throws ApiError with HTTP status fallback when error body is not JSON', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    globalThis.fetch = vi.fn();
+    await setupAuth();
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: () => Promise.reject(new Error('not json')),
+    });
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act + Assert
+    await expect(deleteDevice('5488')).rejects.toThrow(/HTTP 500/);
+  });
 });

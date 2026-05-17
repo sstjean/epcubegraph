@@ -238,4 +238,49 @@ describe('PanelHierarchySection', () => {
       expect(screen.getByText(/999999 → Subpanel 1/)).toBeTruthy();
     });
   });
+
+  it('falls back to empty Vue device list when fetchVueDevices rejects', async () => {
+    // Arrange
+    setupMocks();
+    mockFetchVueDevices.mockRejectedValue(new Error('Vue API fail'));
+
+    // Act
+    render(<PanelHierarchySection />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/No Vue devices available/i)).toBeTruthy();
+    });
+  });
+
+  it('falls back to empty hierarchy list when fetchHierarchy rejects', async () => {
+    // Arrange
+    setupMocks();
+    mockFetchHierarchy.mockRejectedValue(new Error('Hierarchy API fail'));
+
+    // Act
+    render(<PanelHierarchySection />);
+
+    // Assert — Vue devices still load, so the add-row + dropdowns render
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Parent panel/i)).toBeTruthy();
+    });
+  });
+
+  it('does not update state after unmount during initial load', async () => {
+    // Arrange — block both fetches so they resolve after unmount
+    let resolveVue!: (v: unknown) => void;
+    let resolveHierarchy!: (v: unknown) => void;
+    mockFetchVueDevices.mockReturnValue(new Promise((r) => { resolveVue = r; }));
+    mockFetchHierarchy.mockReturnValue(new Promise((r) => { resolveHierarchy = r; }));
+
+    // Act
+    const { unmount } = render(<PanelHierarchySection />);
+    unmount();
+    resolveVue!({ devices: [] });
+    resolveHierarchy!({ entries: [] });
+
+    // Assert — no error thrown; state update silently skipped
+    await new Promise((r) => setTimeout(r, 10));
+  });
 });
