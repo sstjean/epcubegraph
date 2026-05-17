@@ -8,25 +8,31 @@
 # Example (mirror prod → staging):
 #   scripts/mirror-db.sh epcubegraph epcubegraph-b124-dev
 #
-# What it does (all reversible, all cleaned up by trap EXIT):
-#   1. terraform apply infra/runner-pg-access for SOURCE  → peers runner VNet
-#      into source-env VNet, links source's Postgres private DNS zone.
-#   2. terraform apply infra/runner-pg-access for TARGET  → same for target.
-#   3. Grants the runner's system-assigned managed identity 'get' on both
-#      Key Vaults (access-policy mode) so it can fetch DSNs.
-#   4. Invokes the runner VM via 'az vm run-command' to run
-#      `pg_dump <source> | psql <target>` and prints a verification summary.
-#   5. trap EXIT — ALWAYS — revokes the KV policies and `terraform destroy`s
-#      both per-env stacks, removing all peerings and DNS links.
+# Design (sequential — only one env peered at a time):
+#   Source and target env VNets share the same CIDR (10.0.0.0/16) by branch
+#   pattern, so they cannot both be peered to the runner VNet simultaneously
+#   (Azure: VnetAddressSpaceOverlapsWithAlreadyPeeredVnet).
+#
+#     Phase A — SOURCE:
+#       apply TF (peer + DNS) → grant KV → pg_dump to /tmp/<dump> on runner
+#                              → revoke KV → destroy TF
+#     Phase B — TARGET:
+#       apply TF (peer + DNS) → grant KV → psql restore from /tmp/<dump>
+#                              → remove /tmp/<dump> → revoke KV → destroy TF
 #
 # Safety:
 #   - When NOT running, the runner has zero network path to either Postgres.
-#   - Destroys data in the TARGET environment. Refuses to run if target == prod.
-#   - On crash (SIGKILL etc.) trap won't fire; recover manually with
+#   - Refuses to target production.
+#   - Confirmation prompt requires typing the target env name.
+#   - trap EXIT/INT/TERM revokes any KV policies, removes the runner dump,
+#     destroys any TF state that exists; preserves state under /tmp on
+#     failure for manual recovery.
+#   - On SIGKILL (no trap), recover with:
 #       az network vnet peering delete --name runner-to-<env> --vnet-name github-runner-vnet --resource-group tfstate-rg
 #       az network vnet peering delete --name <env>-to-runner --vnet-name <env>-vnet --resource-group <env>-rg
 #       az network private-dns link vnet delete --zone-name <env>.postgres.database.azure.com --name runner-mirror-<env> --resource-group <env>-rg
 #       az keyvault delete-policy --name <env>-kv --object-id <runner-mi-object-id>
+#       az vm run-command invoke -g tfstate-rg -n github-runner-01 --command-id RunShellScript --scripts "rm -f /tmp/epcubegraph-mirror-*.sql.gz"
 
 set -euo pipefail
 
@@ -36,6 +42,10 @@ RUNNER_MI_OBJECT_ID="eca6ef16-443a-44c8-a74d-e381e0e5e87f"
 RUNNER_RG="tfstate-rg"
 RUNNER_VM="github-runner-01"
 PROD_ENV_NAME="epcubegraph"
+
+# Unique dump file path on the runner, scoped to this script invocation
+RUN_ID="$$-$(date +%s)"
+RUNNER_DUMP_PATH="/tmp/epcubegraph-mirror-${RUN_ID}.sql.gz"
 
 # ── Input validation ─────────────────────────────────────────────────────────
 
@@ -67,11 +77,14 @@ About to mirror PostgreSQL data:
   SOURCE: $SOURCE_ENV   (READ-ONLY)
   TARGET: $TARGET_ENV   (will be WIPED and REPLACED)
 
-This will:
-  • Temporarily peer the runner VNet with both environments
-  • Grant the runner MI 'get' on both Key Vaults
-  • Run pg_dump | psql to copy ALL DB content from source to target
-  • Revoke KV access and unpeer when done (or if interrupted)
+This runs in two phases (env VNets share CIDRs, only one can be peered
+to the runner at a time):
+
+  Phase A: peer runner→source, pg_dump to /tmp on runner, unpeer source.
+  Phase B: peer runner→target, psql restore from /tmp on runner, unpeer.
+
+The dump file lives only on the runner's local /tmp and is removed at the
+end of phase B (or by trap cleanup on failure).
 
 EOF
 
@@ -99,6 +112,16 @@ cp "$TF_MODULE"/*.tf "$SRC_WORK/"
 cp "$TF_MODULE"/*.tf "$TGT_WORK/"
 
 echo "Working state directory: $WORK_ROOT"
+echo "Dump file on runner: $RUNNER_DUMP_PATH"
+
+# ── Helper: returns 0 if the tfstate has at least one resource ───────────────
+
+state_has_resources() {
+    local state="$1"
+    [[ -s "$state" ]] || return 1
+    # tf state has "resources": [] (empty) when destroyed; non-empty list means leftover
+    python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('resources') else 1)" "$state" 2>/dev/null
+}
 
 # ── Cleanup (always runs) ────────────────────────────────────────────────────
 
@@ -108,29 +131,36 @@ cleanup() {
     echo
     echo "=== CLEANUP (script exit code=$rc) ==="
 
-    if az keyvault show --name "${SOURCE_ENV}-kv" -o none 2>/dev/null; then
-        echo "→ Revoking KV policy on ${SOURCE_ENV}-kv..."
-        az keyvault delete-policy --name "${SOURCE_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" -o none 2>/dev/null || true
-    fi
-    if az keyvault show --name "${TARGET_ENV}-kv" -o none 2>/dev/null; then
-        echo "→ Revoking KV policy on ${TARGET_ENV}-kv..."
-        az keyvault delete-policy --name "${TARGET_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" -o none 2>/dev/null || true
-    fi
+    # Revoke KV policies (idempotent — delete-policy is harmless if not present)
+    for kv_env in "$SOURCE_ENV" "$TARGET_ENV"; do
+        if az keyvault show --name "${kv_env}-kv" -o none 2>/dev/null; then
+            echo "→ Revoking KV policy on ${kv_env}-kv..."
+            az keyvault delete-policy --name "${kv_env}-kv" --object-id "$RUNNER_MI_OBJECT_ID" -o none 2>/dev/null || true
+        fi
+    done
 
-    if [[ -f "$SRC_WORK/terraform.tfstate" ]]; then
+    # Best-effort removal of any leftover dump file on the runner
+    echo "→ Removing leftover dump on runner..."
+    az vm run-command invoke \
+        -g "$RUNNER_RG" -n "$RUNNER_VM" \
+        --command-id RunShellScript \
+        --scripts "rm -f '$RUNNER_DUMP_PATH'" \
+        --query "value[0].message" -o tsv >/dev/null 2>&1 || true
+
+    # Destroy any leftover TF state
+    if state_has_resources "$SRC_WORK/terraform.tfstate"; then
         echo "→ Destroying source network access ($SOURCE_ENV)..."
         (cd "$SRC_WORK" && terraform destroy -auto-approve -var "environment_name=$SOURCE_ENV") || \
             echo "WARN: terraform destroy for source returned non-zero — inspect $SRC_WORK"
     fi
-    if [[ -f "$TGT_WORK/terraform.tfstate" ]]; then
+    if state_has_resources "$TGT_WORK/terraform.tfstate"; then
         echo "→ Destroying target network access ($TARGET_ENV)..."
         (cd "$TGT_WORK" && terraform destroy -auto-approve -var "environment_name=$TARGET_ENV") || \
             echo "WARN: terraform destroy for target returned non-zero — inspect $TGT_WORK"
     fi
 
-    # Only remove WORK_ROOT if both destroys succeeded (no leftover state to recover)
-    if [[ ! -f "$SRC_WORK/terraform.tfstate" || ! -s "$SRC_WORK/terraform.tfstate" ]] && \
-       [[ ! -f "$TGT_WORK/terraform.tfstate" || ! -s "$TGT_WORK/terraform.tfstate" ]]; then
+    # Remove WORK_ROOT only if no destroy left resources behind
+    if ! state_has_resources "$SRC_WORK/terraform.tfstate" && ! state_has_resources "$TGT_WORK/terraform.tfstate"; then
         rm -rf "$WORK_ROOT"
         echo "→ Removed $WORK_ROOT"
     else
@@ -142,74 +172,126 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# ── Apply ephemeral network access ───────────────────────────────────────────
+# ── Helper: install pg client 17 on runner (idempotent) ──────────────────────
 
-echo
-echo "=== APPLY: SOURCE network access ($SOURCE_ENV) ==="
-(cd "$SRC_WORK" && terraform init -input=false && terraform apply -auto-approve -var "environment_name=$SOURCE_ENV")
-
-echo
-echo "=== APPLY: TARGET network access ($TARGET_ENV) ==="
-(cd "$TGT_WORK" && terraform init -input=false && terraform apply -auto-approve -var "environment_name=$TARGET_ENV")
-
-# ── Grant runner MI access to both KVs ───────────────────────────────────────
-
-echo
-echo "=== GRANT: KV secret 'get' for runner MI ==="
-az keyvault set-policy --name "${SOURCE_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" --secret-permissions get -o none
-az keyvault set-policy --name "${TARGET_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" --secret-permissions get -o none
-
-# ── Build the runner-side script ─────────────────────────────────────────────
-
-RUNNER_SCRIPT=$(mktemp -t mirror-runner-XXXXXX.sh)
-cat > "$RUNNER_SCRIPT" <<EOF
+ensure_runner_pg_client() {
+    local tmp; tmp=$(mktemp -t mirror-install-XXXXXX.sh)
+    cat > "$tmp" <<'EOF'
 #!/bin/bash
 set -euo pipefail
-
-az login --identity --output none
-
-# Install pg client 17 (idempotent)
 if ! command -v /usr/lib/postgresql/17/bin/pg_dump >/dev/null 2>&1; then
-    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \\
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
         | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
-    echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt \$(lsb_release -cs)-pgdg main" \\
+    echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
         | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
     sudo apt-get update -qq
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql-client-17 >/dev/null
 fi
+/usr/lib/postgresql/17/bin/pg_dump --version
+EOF
+    az vm run-command invoke \
+        -g "$RUNNER_RG" -n "$RUNNER_VM" \
+        --command-id RunShellScript --scripts "@$tmp" \
+        --query "value[0].message" -o tsv
+    rm -f "$tmp"
+}
 
+# ─── PHASE A: SOURCE ─────────────────────────────────────────────────────────
+
+echo
+echo "════════════════════════════════════════════════════════════════════════"
+echo "  PHASE A: dump from SOURCE ($SOURCE_ENV)"
+echo "════════════════════════════════════════════════════════════════════════"
+
+echo
+echo "→ Apply ephemeral peering to $SOURCE_ENV..."
+(cd "$SRC_WORK" && terraform init -input=false && terraform apply -auto-approve -var "environment_name=$SOURCE_ENV")
+
+echo
+echo "→ Grant runner MI 'get' on ${SOURCE_ENV}-kv..."
+az keyvault set-policy --name "${SOURCE_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" --secret-permissions get -o none
+
+echo
+echo "→ Ensure pg client 17 on runner..."
+ensure_runner_pg_client
+
+echo
+echo "→ pg_dump $SOURCE_ENV → $RUNNER_DUMP_PATH (on runner)..."
+DUMP_SCRIPT=$(mktemp -t mirror-dump-XXXXXX.sh)
+cat > "$DUMP_SCRIPT" <<EOF
+#!/bin/bash
+set -euo pipefail
+az login --identity --output none
 PG=/usr/lib/postgresql/17/bin
-echo "Using \$("\$PG/pg_dump" --version)"
+DSN=\$(az keyvault secret show --vault-name "${SOURCE_ENV}-kv" --name exporter-postgres-dsn --query value -o tsv)
+"\$PG/pg_dump" --no-owner --no-acl --clean --if-exists --format=plain -d "\$DSN" | gzip > "${RUNNER_DUMP_PATH}"
+ls -lh "${RUNNER_DUMP_PATH}"
+EOF
+az vm run-command invoke \
+    -g "$RUNNER_RG" -n "$RUNNER_VM" \
+    --command-id RunShellScript --scripts "@$DUMP_SCRIPT" \
+    --query "value[0].message" -o tsv
+rm -f "$DUMP_SCRIPT"
 
-# Fetch DSNs (never echoed)
-SRC_DSN=\$(az keyvault secret show --vault-name "${SOURCE_ENV}-kv" --name exporter-postgres-dsn --query value -o tsv)
-TGT_DSN=\$(az keyvault secret show --vault-name "${TARGET_ENV}-kv" --name exporter-postgres-dsn --query value -o tsv)
+echo
+echo "→ Revoke runner KV policy on ${SOURCE_ENV}-kv..."
+az keyvault delete-policy --name "${SOURCE_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" -o none
 
-echo "Mirror: $SOURCE_ENV → $TARGET_ENV"
-"\$PG/pg_dump" --no-owner --no-acl --clean --if-exists --format=plain -d "\$SRC_DSN" \\
-    | "\$PG/psql" --quiet --set ON_ERROR_STOP=on --dbname="\$TGT_DSN" 2>&1 \\
-    | tail -20
+echo
+echo "→ Destroy ephemeral peering to $SOURCE_ENV..."
+(cd "$SRC_WORK" && terraform destroy -auto-approve -var "environment_name=$SOURCE_ENV")
+
+# ─── PHASE B: TARGET ─────────────────────────────────────────────────────────
+
+echo
+echo "════════════════════════════════════════════════════════════════════════"
+echo "  PHASE B: restore to TARGET ($TARGET_ENV)"
+echo "════════════════════════════════════════════════════════════════════════"
+
+echo
+echo "→ Apply ephemeral peering to $TARGET_ENV..."
+(cd "$TGT_WORK" && terraform init -input=false && terraform apply -auto-approve -var "environment_name=$TARGET_ENV")
+
+echo
+echo "→ Grant runner MI 'get' on ${TARGET_ENV}-kv..."
+az keyvault set-policy --name "${TARGET_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" --secret-permissions get -o none
+
+echo
+echo "→ psql restore $RUNNER_DUMP_PATH → $TARGET_ENV (on runner)..."
+RESTORE_SCRIPT=$(mktemp -t mirror-restore-XXXXXX.sh)
+cat > "$RESTORE_SCRIPT" <<EOF
+#!/bin/bash
+set -euo pipefail
+az login --identity --output none
+PG=/usr/lib/postgresql/17/bin
+DSN=\$(az keyvault secret show --vault-name "${TARGET_ENV}-kv" --name exporter-postgres-dsn --query value -o tsv)
+gunzip -c "${RUNNER_DUMP_PATH}" | "\$PG/psql" --quiet --set ON_ERROR_STOP=on --dbname="\$DSN" 2>&1 | tail -20
 
 echo
 echo "=== TARGET devices ==="
-"\$PG/psql" -d "\$TGT_DSN" -c "SELECT device_id, device_class, status, updated_at FROM devices ORDER BY device_id;"
+"\$PG/psql" -d "\$DSN" -c "SELECT device_id, device_class, status, updated_at FROM devices ORDER BY device_id;"
 echo
 echo "=== TARGET pending_replacements ==="
-"\$PG/psql" -d "\$TGT_DSN" -c "SELECT * FROM pending_replacements;"
+"\$PG/psql" -d "\$DSN" -c "SELECT * FROM pending_replacements;"
+
+rm -f "${RUNNER_DUMP_PATH}"
+echo "Removed ${RUNNER_DUMP_PATH}"
 EOF
-
-# ── Invoke on the runner ─────────────────────────────────────────────────────
-
-echo
-echo "=== MIRROR: running pg_dump | psql on $RUNNER_VM ==="
 az vm run-command invoke \
     -g "$RUNNER_RG" -n "$RUNNER_VM" \
-    --command-id RunShellScript \
-    --scripts "@$RUNNER_SCRIPT" \
+    --command-id RunShellScript --scripts "@$RESTORE_SCRIPT" \
     --query "value[0].message" -o tsv
-
-rm -f "$RUNNER_SCRIPT"
+rm -f "$RESTORE_SCRIPT"
 
 echo
-echo "=== MIRROR COMPLETE ==="
-echo "Trap will now revoke KV access and tear down VNet peerings."
+echo "→ Revoke runner KV policy on ${TARGET_ENV}-kv..."
+az keyvault delete-policy --name "${TARGET_ENV}-kv" --object-id "$RUNNER_MI_OBJECT_ID" -o none
+
+echo
+echo "→ Destroy ephemeral peering to $TARGET_ENV..."
+(cd "$TGT_WORK" && terraform destroy -auto-approve -var "environment_name=$TARGET_ENV")
+
+echo
+echo "════════════════════════════════════════════════════════════════════════"
+echo "  MIRROR COMPLETE: $SOURCE_ENV → $TARGET_ENV"
+echo "════════════════════════════════════════════════════════════════════════"
