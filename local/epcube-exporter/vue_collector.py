@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timezone
 
 from config import POSTGRES_DSN, log, psycopg2
-from epcube_collector import _read_setting_int_from_db
+from db import read_setting_int_from_db
 
 # Import PyEmVue (optional — only needed when Vue credentials are set)
 PyEmVue = None
@@ -27,17 +27,17 @@ _SCALE_WATTS_MULTIPLIER = {
 
 def _read_vue_poll_interval_from_db():
     """Read vue_poll_interval_seconds from settings table. Returns default on any error."""
-    return _read_setting_int_from_db("vue_poll_interval_seconds", DEFAULT_VUE_POLL_INTERVAL, 1, 3600)
+    return read_setting_int_from_db("vue_poll_interval_seconds", DEFAULT_VUE_POLL_INTERVAL, 1, 3600)
 
 
 def _read_vue_device_refresh_interval_from_db():
     """Read vue_device_refresh_interval_seconds from settings table. Returns default on any error."""
-    return _read_setting_int_from_db("vue_device_refresh_interval_seconds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL, 60, 86400)
+    return read_setting_int_from_db("vue_device_refresh_interval_seconds", DEFAULT_VUE_DEVICE_REFRESH_INTERVAL, 60, 86400)
 
 
 def _read_vue_daily_poll_interval_from_db():
     """Read vue_daily_poll_interval_seconds from settings table. Returns default on any error."""
-    return _read_setting_int_from_db("vue_daily_poll_interval_seconds", DEFAULT_VUE_DAILY_POLL_INTERVAL, 1, 3600)
+    return read_setting_int_from_db("vue_daily_poll_interval_seconds", DEFAULT_VUE_DAILY_POLL_INTERVAL, 1, 3600)
 
 
 class VueCollector:

@@ -1,7 +1,32 @@
 """PostgreSQL writers for EP Cube and Vue telemetry data."""
 import time
 
-from config import psycopg2, log
+from config import psycopg2, log, POSTGRES_DSN
+
+
+def read_setting_int_from_db(key, default, min_val, max_val):
+    """Read an integer setting from the settings table.
+
+    Standalone function for use outside a writer context (e.g., Vue poll loops).
+    Returns *default* on any error or when the value is outside [min_val, max_val].
+    """
+    if not POSTGRES_DSN:
+        return default
+    try:
+        conn = psycopg2.connect(POSTGRES_DSN)
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+            row = cur.fetchone()
+            if row:
+                val = int(str(row[0]).strip('"'))
+                if min_val <= val <= max_val:
+                    return val
+        finally:
+            conn.close()
+    except Exception:
+        log.debug("Could not read %s from DB, using default %d", key, default)
+    return default
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +108,7 @@ class PostgresWriter:
                        manufacturer = EXCLUDED.manufacturer,
                        product_code = EXCLUDED.product_code,
                        uid = EXCLUDED.uid,
+                       status = 'active',
                        updated_at = NOW()""",
                 (device_id, device_class, alias, manufacturer, product_code, uid),
             )
@@ -158,6 +184,47 @@ class PostgresWriter:
             return None
         return cand_dev_id[len("epcube"):-len("_battery")]
 
+    def find_removed_predecessor(self, new_raw_cloud_id):
+        """Find the raw cloud id of a removed device that appears to be the
+        predecessor of ``new_raw_cloud_id``.
+
+        A predecessor is a device with ``status='removed'`` whose ``alias``
+        matches the new device's alias and whose ``created_at`` is strictly
+        earlier than the new device's ``created_at``.  If multiple candidates
+        exist, the most recently created one is returned.  Returns ``None`` if
+        no match is found or if the new device has no alias.
+        """
+        conn = self._get_conn()
+        new_battery_id = f"epcube{new_raw_cloud_id}_battery"
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT alias, created_at FROM devices WHERE device_id = %s""",
+                (new_battery_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            alias, new_created = row
+            if not alias:
+                return None
+            cur.execute(
+                """SELECT device_id FROM devices
+                   WHERE alias = %s
+                     AND status = 'removed'
+                     AND device_id LIKE 'epcube%%_battery'
+                     AND created_at < %s
+                   ORDER BY created_at DESC
+                   LIMIT 1""",
+                (alias, new_created),
+            )
+            cand = cur.fetchone()
+        if not cand:
+            return None
+        cand_dev_id = cand[0]
+        if not cand_dev_id.startswith("epcube") or not cand_dev_id.endswith("_battery"):
+            return None
+        return cand_dev_id[len("epcube"):-len("_battery")]
+
     def write_readings(self, readings):
         """Batch-insert readings. Each reading is (device_id, metric_name, timestamp, value).
 
@@ -182,6 +249,42 @@ class PostgresWriter:
         """Close the database connection."""
         if self._conn and not self._conn.closed:
             self._conn.close()
+
+    def read_active_epcube_ids(self):
+        """Read active EP Cube device IDs from the database.
+
+        Returns set of raw cloud device IDs (extracted from epcube{id}_* pattern).
+        """
+        try:
+            conn = self._get_conn()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT device_id FROM devices WHERE status = 'active' AND device_id LIKE 'epcube%'"
+                )
+                rows = cur.fetchall()
+                ids = set()
+                for (device_id,) in rows:
+                    raw = device_id.replace("epcube", "").rsplit("_", 1)[0]
+                    ids.add(raw)
+                return ids
+        except Exception:
+            log.debug("Could not read device IDs from DB")
+            return set()
+
+    def read_setting_int(self, key, default, min_val, max_val):
+        """Read an integer setting from the settings table. Returns default on any error."""
+        try:
+            conn = self._get_conn()
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+                row = cur.fetchone()
+                if row:
+                    val = int(str(row[0]).strip('"'))
+                    if min_val <= val <= max_val:
+                        return val
+        except Exception:
+            log.debug("Could not read %s from DB, using default %d", key, default)
+        return default
 
 
 # ---------------------------------------------------------------------------
