@@ -1,5 +1,6 @@
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -20,7 +21,7 @@ public class MergeStoreCutoffTests
         // Arrange — old=5488 active 09:00, 10:00, 11:00; new=5840 starts 10:00
         await using var container = await TestSchema.CreateContainerAsync();
         var connStr = container.GetConnectionString();
-        var store = new PostgresMetricsStore(connStr);
+        var store = new PostgresMetricsStore(connStr, NullLogger<PostgresMetricsStore>.Instance);
         await SeedDevice(connStr, "epcube5488_battery", "storage_battery");
         await SeedDevice(connStr, "epcube5488_solar", "home_solar");
         await SeedDevice(connStr, "epcube5840_battery", "storage_battery");
@@ -76,7 +77,7 @@ public class MergeStoreCutoffTests
         // Arrange — new device exists but has zero readings → cutoff is NULL → transfer all
         await using var container = await TestSchema.CreateContainerAsync();
         var connStr = container.GetConnectionString();
-        var store = new PostgresMetricsStore(connStr);
+        var store = new PostgresMetricsStore(connStr, NullLogger<PostgresMetricsStore>.Instance);
         await SeedDevice(connStr, "epcube100_battery", "storage_battery");
         await SeedDevice(connStr, "epcube100_solar", "home_solar");
         await SeedDevice(connStr, "epcube200_battery", "storage_battery");
@@ -104,7 +105,7 @@ public class MergeStoreCutoffTests
         // Arrange
         await using var container = await TestSchema.CreateContainerAsync();
         var connStr = container.GetConnectionString();
-        var store = new PostgresMetricsStore(connStr);
+        var store = new PostgresMetricsStore(connStr, NullLogger<PostgresMetricsStore>.Instance);
         await SeedDevice(connStr, "epcube300_battery", "storage_battery");
         await SeedDevice(connStr, "epcube300_solar", "home_solar");
         await SeedDevice(connStr, "epcube400_battery", "storage_battery");

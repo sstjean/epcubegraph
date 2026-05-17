@@ -1,4 +1,5 @@
 using EpCubeGraph.Api.Models;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EpCubeGraph.Api.Services;
@@ -6,10 +7,12 @@ namespace EpCubeGraph.Api.Services;
 public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 {
     private readonly NpgsqlDataSource _dataSource;
+    private readonly ILogger<PostgresMetricsStore> _logger;
 
-    public PostgresMetricsStore(string connectionString)
+    public PostgresMetricsStore(string connectionString, ILogger<PostgresMetricsStore> logger)
     {
         _dataSource = NpgsqlDataSource.Create(connectionString);
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
@@ -27,10 +30,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             sql = """
                 SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
                        CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
-                       d.created_at
+                       d.created_at, d.updated_at
                 FROM devices d
                 LEFT JOIN readings r ON d.device_id = r.device_id
-                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at
+                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at
                 ORDER BY d.device_id
                 """;
             await using var cmdAll = _dataSource.CreateCommand(sql);
@@ -41,11 +44,11 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         sql = """
             SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
                    CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
-                   d.created_at
+                   d.created_at, d.updated_at
             FROM devices d
             LEFT JOIN readings r ON d.device_id = r.device_id
             WHERE d.status = $1
-            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at
+            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at
             ORDER BY d.device_id
             """;
         await using var cmd = _dataSource.CreateCommand(sql);
@@ -67,7 +70,8 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
                 Uid: reader.IsDBNull(5) ? null : reader.GetString(5),
                 Online: reader.GetBoolean(6),
                 Alias: reader.IsDBNull(2) ? null : reader.GetString(2),
-                CreatedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)));
+                CreatedAt: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                UpdatedAt: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8)));
         }
         return devices;
     }
@@ -183,9 +187,21 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
     public async Task<IReadOnlyList<PendingReplacement>> GetPendingReplacementsAsync(CancellationToken ct = default)
     {
         const string sql = """
-            SELECT id, old_device_id, new_device_id, detected_at
-            FROM pending_replacements
-            ORDER BY detected_at, id
+            SELECT pr.id, pr.old_device_id, pr.new_device_id, pr.detected_at,
+                   old_d.product_code, old_d.alias, old_d.updated_at,
+                   new_d.product_code, new_d.alias, new_d.updated_at
+            FROM pending_replacements pr
+            LEFT JOIN LATERAL (
+                SELECT product_code, alias, updated_at FROM devices
+                WHERE device_id LIKE 'epcube' || pr.old_device_id || '_%'
+                LIMIT 1
+            ) old_d ON true
+            LEFT JOIN LATERAL (
+                SELECT product_code, alias, updated_at FROM devices
+                WHERE device_id LIKE 'epcube' || pr.new_device_id || '_%'
+                LIMIT 1
+            ) new_d ON true
+            ORDER BY pr.detected_at, pr.id
             """;
 
         await using var cmd = _dataSource.CreateCommand(sql);
@@ -198,7 +214,13 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
                 Id: reader.GetInt32(0),
                 OldDeviceId: reader.GetString(1),
                 NewDeviceId: reader.GetString(2),
-                DetectedAt: reader.GetFieldValue<DateTimeOffset>(3)));
+                DetectedAt: reader.GetFieldValue<DateTimeOffset>(3),
+                OldProductCode: reader.IsDBNull(4) ? null : reader.GetString(4),
+                OldAlias: reader.IsDBNull(5) ? null : reader.GetString(5),
+                OldLastSeen: reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
+                NewProductCode: reader.IsDBNull(7) ? null : reader.GetString(7),
+                NewAlias: reader.IsDBNull(8) ? null : reader.GetString(8),
+                NewLastSeen: reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9)));
         }
         return results;
     }
@@ -220,6 +242,7 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         {
             if (!await reader.ReadAsync(ct))
             {
+                await reader.CloseAsync();
                 await tx.RollbackAsync(ct);
                 return null;
             }
@@ -408,7 +431,9 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         markMerged.Parameters.AddWithValue(oldSolar);
         await markMerged.ExecuteNonQueryAsync(ct);
 
-        // Update vue_device_mapping JSON key (rename oldDeviceId → newDeviceId)
+        // Update vue_device_mapping JSON key (rename epcube{old} → epcube{new})
+        var oldMappingKey = $"epcube{oldDeviceId}";
+        var newMappingKey = $"epcube{newDeviceId}";
         await using var mappingCmd = new NpgsqlCommand("""
             UPDATE settings
             SET value = (
@@ -422,9 +447,15 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             WHERE key = 'vue_device_mapping'
               AND value ? $1
             """, conn, tx);
-        mappingCmd.Parameters.AddWithValue(oldDeviceId);
-        mappingCmd.Parameters.AddWithValue(newDeviceId);
-        await mappingCmd.ExecuteNonQueryAsync(ct);
+        mappingCmd.Parameters.AddWithValue(oldMappingKey);
+        mappingCmd.Parameters.AddWithValue(newMappingKey);
+        var mappingUpdated = await mappingCmd.ExecuteNonQueryAsync(ct);
+        if (mappingUpdated > 0)
+            _logger.LogInformation("Merge {Old}→{New}: vue_device_mapping key renamed {OldKey}→{NewKey}",
+                oldDeviceId, newDeviceId, oldMappingKey, newMappingKey);
+        else
+            _logger.LogWarning("Merge {Old}→{New}: vue_device_mapping key '{OldKey}' not found — mapping not updated",
+                oldDeviceId, newDeviceId, oldMappingKey);
 
         // Delete any pending replacement record matching this pair
         await using var pendingCmd = new NpgsqlCommand(
@@ -467,5 +498,85 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
         return seriesMap
             .Select(kvp => new TimeSeries(kvp.Key, kvp.Value))
             .ToList();
+    }
+
+    public async Task<DeleteDeviceResponse?> DeleteDeviceAsync(string cloudDeviceId, CancellationToken ct = default)
+    {
+        var battery = $"epcube{cloudDeviceId}_battery";
+        var solar = $"epcube{cloudDeviceId}_solar";
+
+        await using var conn = await _dataSource.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        // Lock and validate device statuses (returns 0 rows if the device doesn't exist)
+        await using var statusCmd = new NpgsqlCommand(
+            "SELECT device_id, status FROM devices WHERE device_id IN ($1, $2) FOR UPDATE",
+            conn, tx);
+        statusCmd.Parameters.AddWithValue(battery);
+        statusCmd.Parameters.AddWithValue(solar);
+
+        var statuses = new Dictionary<string, string>();
+        await using (var reader = await statusCmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                statuses[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        if (statuses.Count == 0)
+        {
+            await tx.RollbackAsync(ct);
+            return null;
+        }
+
+        // Refuse to delete active devices — they could still be receiving live readings.
+        if (statuses.Values.Any(s => s == "active"))
+        {
+            await tx.RollbackAsync(ct);
+            throw new MergeValidationException(
+                $"Cannot delete an active device. Device '{cloudDeviceId}' must be 'removed' or 'merged' status to delete.");
+        }
+
+        // Delete all readings for either subdevice
+        await using var deleteReadings = new NpgsqlCommand(
+            "DELETE FROM readings WHERE device_id IN ($1, $2)", conn, tx);
+        deleteReadings.Parameters.AddWithValue(battery);
+        deleteReadings.Parameters.AddWithValue(solar);
+        var readingsDeleted = await deleteReadings.ExecuteNonQueryAsync(ct);
+
+        // Delete pending replacements that reference this device on either side
+        await using var deletePending = new NpgsqlCommand(
+            "DELETE FROM pending_replacements WHERE old_device_id = $1 OR new_device_id = $1",
+            conn, tx);
+        deletePending.Parameters.AddWithValue(cloudDeviceId);
+        await deletePending.ExecuteNonQueryAsync(ct);
+
+        // Remove vue_device_mapping key if present
+        var mappingKey = $"epcube{cloudDeviceId}";
+        await using var mappingCmd = new NpgsqlCommand("""
+            UPDATE settings
+            SET value = value - $1,
+                last_modified = NOW()
+            WHERE key = 'vue_device_mapping' AND value ? $1
+            """, conn, tx);
+        mappingCmd.Parameters.AddWithValue(mappingKey);
+        var mappingRemoved = await mappingCmd.ExecuteNonQueryAsync(ct);
+        if (mappingRemoved > 0)
+            _logger.LogInformation("Delete {Cloud}: vue_device_mapping key '{Key}' removed", cloudDeviceId, mappingKey);
+
+        // Delete the device rows themselves
+        await using var deleteDevices = new NpgsqlCommand(
+            "DELETE FROM devices WHERE device_id IN ($1, $2)", conn, tx);
+        deleteDevices.Parameters.AddWithValue(battery);
+        deleteDevices.Parameters.AddWithValue(solar);
+        await deleteDevices.ExecuteNonQueryAsync(ct);
+
+        await tx.CommitAsync(ct);
+
+        _logger.LogInformation("Deleted device {Cloud}: {ReadingsDeleted} readings removed",
+            cloudDeviceId, readingsDeleted);
+
+        return new DeleteDeviceResponse(cloudDeviceId, readingsDeleted);
     }
 }

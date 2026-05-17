@@ -55,6 +55,20 @@ public static partial class Validate
     }
 
     /// <summary>
+    /// Validates a numeric cloud device id (e.g. "5488"). Digits only, 1-32 chars.
+    /// </summary>
+    public static string? NumericId(string? value, string paramName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return $"'{paramName}' is required";
+        if (value.Length > 32)
+            return $"'{paramName}' must be 32 characters or fewer";
+        if (NumericIdRegex().IsMatch(value))
+            return null;
+        return $"'{paramName}' must be a numeric id (digits only)";
+    }
+
+    /// <summary>
     /// Validates that start is strictly before end. Both must be valid epoch strings.
     /// Call after Required + Timestamp validation — null inputs are skipped.
     /// </summary>
@@ -68,4 +82,7 @@ public static partial class Validate
 
     [GeneratedRegex(@"^[a-zA-Z_][a-zA-Z0-9_]*$")]
     private static partial Regex SafeNameRegex();
+
+    [GeneratedRegex(@"^[0-9]+$")]
+    private static partial Regex NumericIdRegex();
 }

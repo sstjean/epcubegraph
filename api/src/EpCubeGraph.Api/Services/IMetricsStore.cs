@@ -26,6 +26,15 @@ public interface IMetricsStore
 
     Task<MergeResponse?> ExecuteMergeAsync(string oldDeviceId, string newDeviceId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Permanently deletes a device, all its readings, and any related
+    /// pending_replacements rows or vue_device_mapping entry. The device
+    /// MUST be in 'removed' or 'merged' status — active devices cannot be deleted.
+    /// </summary>
+    /// <param name="cloudDeviceId">Numeric cloud ID (without "epcube" prefix, without "_battery"/"_solar" suffix).</param>
+    /// <returns>Response with device id and readings_deleted count, or null if the device does not exist.</returns>
+    Task<DeleteDeviceResponse?> DeleteDeviceAsync(string cloudDeviceId, CancellationToken ct = default);
+
     Task<bool> PingAsync(CancellationToken ct = default);
 }
 

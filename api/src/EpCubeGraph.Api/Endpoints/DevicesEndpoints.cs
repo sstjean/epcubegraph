@@ -17,6 +17,7 @@ public static class DevicesEndpoints
         group.MapPost("/devices/pending-replacements/{id:int}/dismiss", HandleDismissPendingReplacement);
         group.MapGet("/devices/merge-preview", HandleGetMergePreview);
         group.MapPost("/devices/merge", HandlePostMerge);
+        group.MapDelete("/devices/{cloudId}", HandleDeleteDevice);
 
         return group;
     }
@@ -188,6 +189,42 @@ public static class DevicesEndpoints
             loggerFactory.CreateLogger(LogCategory).LogError(ex,
                 "POST /devices/merge failed (old={OldId}, new={NewId})",
                 request.OldDeviceId, request.NewDeviceId);
+            return Results.Json(
+                new ErrorResponse("error", "execution", "An unexpected error occurred while processing the request"),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+    }
+
+    private static async Task<IResult> HandleDeleteDevice(
+        string cloudId,
+        IMetricsStore store,
+        ILoggerFactory loggerFactory,
+        CancellationToken ct)
+    {
+        var error = Validate.NumericId(cloudId, "cloudId");
+        if (error is not null)
+            return Results.BadRequest(new ErrorResponse("error", "bad_data", error));
+
+        try
+        {
+            var result = await store.DeleteDeviceAsync(cloudId, ct);
+            if (result is null)
+            {
+                return Results.NotFound(new ErrorResponse("error", "not_found",
+                    $"Device '{cloudId}' not found"));
+            }
+            return Results.Ok(result);
+        }
+        catch (MergeValidationException ex)
+        {
+            return Results.Json(
+                new ErrorResponse("error", "invalid_state", ex.Message),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            loggerFactory.CreateLogger(LogCategory).LogError(ex,
+                "DELETE /devices/{CloudId} failed", cloudId);
             return Results.Json(
                 new ErrorResponse("error", "execution", "An unexpected error occurred while processing the request"),
                 statusCode: StatusCodes.Status422UnprocessableEntity);

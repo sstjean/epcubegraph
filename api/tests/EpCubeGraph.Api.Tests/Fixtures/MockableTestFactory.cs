@@ -142,6 +142,8 @@ public sealed class ConfigurableMockStore : IMetricsStore
     public MergeResponse? MergeResult { get; set; }
     public string? ThrowMergeValidation { get; set; }
     public (string Old, string New)? LastMergeArgs { get; private set; }
+    public DeleteDeviceResponse? DeleteResult { get; set; }
+    public string? LastDeletedCloudId { get; private set; }
     public bool PingResult { get; set; } = true;
 
     public void Reset()
@@ -161,6 +163,8 @@ public sealed class ConfigurableMockStore : IMetricsStore
         MergeResult = null;
         ThrowMergeValidation = null;
         LastMergeArgs = null;
+        DeleteResult = null;
+        LastDeletedCloudId = null;
         PingResult = true;
     }
 
@@ -236,6 +240,15 @@ public sealed class ConfigurableMockStore : IMetricsStore
         if (ShouldThrow) throw new Exception(ThrowMessage);
         LastMergeArgs = (oldDeviceId, newDeviceId);
         return Task.FromResult(MergeResult);
+    }
+
+    public Task<DeleteDeviceResponse?> DeleteDeviceAsync(string cloudDeviceId, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ThrowMergeValidation is not null) throw new MergeValidationException(ThrowMergeValidation);
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        LastDeletedCloudId = cloudDeviceId;
+        return Task.FromResult(DeleteResult);
     }
 
     public Task<bool> PingAsync(CancellationToken ct = default)

@@ -10,7 +10,8 @@ public record DeviceInfo(
     [property: JsonPropertyName("uid")] string? Uid = null,
     [property: JsonPropertyName("online")] bool Online = false,
     [property: JsonPropertyName("alias")] string? Alias = null,
-    [property: JsonPropertyName("created_at")] DateTimeOffset? CreatedAt = null);
+    [property: JsonPropertyName("created_at")] DateTimeOffset? CreatedAt = null,
+    [property: JsonPropertyName("updated_at")] DateTimeOffset? UpdatedAt = null);
 
 public record DeviceListResponse(
     [property: JsonPropertyName("devices")] IReadOnlyList<DeviceInfo> Devices);
@@ -55,7 +56,13 @@ public record PendingReplacement(
     [property: JsonPropertyName("id")] int Id,
     [property: JsonPropertyName("old_device_id")] string OldDeviceId,
     [property: JsonPropertyName("new_device_id")] string NewDeviceId,
-    [property: JsonPropertyName("detected_at")] DateTimeOffset DetectedAt);
+    [property: JsonPropertyName("detected_at")] DateTimeOffset DetectedAt,
+    [property: JsonPropertyName("old_product_code")] string? OldProductCode = null,
+    [property: JsonPropertyName("old_alias")] string? OldAlias = null,
+    [property: JsonPropertyName("new_product_code")] string? NewProductCode = null,
+    [property: JsonPropertyName("new_alias")] string? NewAlias = null,
+    [property: JsonPropertyName("old_last_seen")] DateTimeOffset? OldLastSeen = null,
+    [property: JsonPropertyName("new_last_seen")] DateTimeOffset? NewLastSeen = null);
 
 public record MergeRequest(
     [property: JsonPropertyName("old_device_id")] string OldDeviceId,
@@ -77,3 +84,7 @@ public record DismissResponse(
     [property: JsonPropertyName("dismissed")] bool Dismissed,
     [property: JsonPropertyName("old_device_id")] string OldDeviceId,
     [property: JsonPropertyName("new_device_id")] string NewDeviceId);
+
+public record DeleteDeviceResponse(
+    [property: JsonPropertyName("device_id")] string DeviceId,
+    [property: JsonPropertyName("readings_deleted")] long ReadingsDeleted);
