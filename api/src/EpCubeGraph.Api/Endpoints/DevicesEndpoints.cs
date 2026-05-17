@@ -28,6 +28,10 @@ public static class DevicesEndpoints
         [FromQuery] string? status,
         CancellationToken ct)
     {
+        var statusError = Validate.DeviceStatus(status, "status");
+        if (statusError is not null)
+            return Results.BadRequest(new ErrorResponse("error", "bad_data", statusError));
+
         try
         {
             var devices = await store.GetDevicesAsync(status, ct);

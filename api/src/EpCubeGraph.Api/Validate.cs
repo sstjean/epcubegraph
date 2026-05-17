@@ -69,6 +69,24 @@ public static partial class Validate
     }
 
     /// <summary>
+    /// Validates the device-status filter query parameter.
+    /// null or empty are accepted (the store treats them as the default, "active").
+    /// Otherwise the value must be one of the case-sensitive tokens:
+    /// active, removed, merged, all. Anything else is rejected so unknown
+    /// values surface as 400 bad_data instead of an empty 200 OK that
+    /// callers can't distinguish from a legitimate empty result.
+    /// </summary>
+    public static string? DeviceStatus(string? value, string paramName)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return value switch
+        {
+            "active" or "removed" or "merged" or "all" => null,
+            _ => $"'{paramName}' must be one of: active, removed, merged, all",
+        };
+    }
+
+    /// <summary>
     /// Validates that start is strictly before end. Both must be valid epoch strings.
     /// Call after Required + Timestamp validation — null inputs are skipped.
     /// </summary>

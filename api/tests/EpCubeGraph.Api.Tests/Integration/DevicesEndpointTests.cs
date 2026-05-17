@@ -80,6 +80,42 @@ public class DevicesEndpointTests
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("Active")]   // wrong case
+    [InlineData("Removed")]
+    [InlineData("xyz")]
+    [InlineData("inactive")] // not in allowed set
+    public async Task Devices_Returns400_OnInvalidStatus(string status)
+    {
+        // Regression for PR #137 review: previously, unknown/case-mismatched
+        // status values silently returned 200 with an empty list. Surface them
+        // as 400 bad_data so API consumers can detect the typo.
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/v1/devices?status={status}");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("bad_data", body);
+        Assert.Contains("active, removed, merged, all", body);
+    }
+
+    [Theory]
+    [InlineData("active")]
+    [InlineData("removed")]
+    [InlineData("merged")]
+    [InlineData("all")]
+    public async Task Devices_ReturnsOk_OnValidStatus(string status)
+    {
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync($"/api/v1/devices?status={status}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     [Fact]
     public async Task DeviceMetrics_ReturnsOk_WithMetrics()
     {
