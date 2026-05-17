@@ -6319,14 +6319,16 @@ class TestReadActiveEpcubeIdsRecoverConnection(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Coverage gap: EpCubeCollector._discover_devices non-200 cloud response
+# _discover_devices non-200 cloud response — must raise so retry_with_backoff
+# actually retries (PR #137 review: previously returned silently, causing the
+# next discovery to be delayed by a full interval after a transient failure).
 # ---------------------------------------------------------------------------
 
 class TestDiscoverDevicesCloudError(unittest.TestCase):
-    """Cover the early-return when the cloud /home/deviceList call returns
+    """Cover the failure path when the cloud /home/deviceList call returns
     a non-200 status."""
 
-    def test_discover_returns_early_on_non_200_cloud_status(self):
+    def test_discover_raises_runtime_error_on_non_200_cloud_status(self):
         # Arrange
         c = _make_collector()
         c._token = "valid-token"
@@ -6335,11 +6337,32 @@ class TestDiscoverDevicesCloudError(unittest.TestCase):
              patch.object(epcube_collector, "_api_request",
                           return_value={"status": 500, "message": "cloud down"}):
 
-            # Act — should not raise and should not mutate device state
-            c._discover_devices()
+            # Act + Assert — must raise so retry_with_backoff triggers a retry
+            with self.assertRaises(RuntimeError):
+                c._discover_devices()
 
-        # Assert
+        # Device state must not have been mutated by the failed call
         self.assertEqual(len(c._devices), 0)
+
+    def test_retry_with_backoff_retries_on_non_200_cloud_status(self):
+        """End-to-end: retry_with_backoff sees the raised RuntimeError and
+        retries up to max_retries times before giving up."""
+        c = _make_collector()
+        c._token = "valid-token"
+        call_count = {"n": 0}
+
+        def fake_api(method, path, **kwargs):
+            call_count["n"] += 1
+            return {"status": 500, "message": "cloud down"}
+
+        with patch.object(c, "_ensure_auth"), \
+             patch.object(epcube_collector, "_api_request", side_effect=fake_api), \
+             patch.object(epcube_collector.time, "sleep"):  # skip backoff sleeps
+            with self.assertRaises(RuntimeError):
+                epcube_collector.retry_with_backoff(c._discover_devices, max_retries=3)
+
+        # Three discovery attempts (max_retries=3)
+        self.assertEqual(call_count["n"], 3)
 
 
 # ---------------------------------------------------------------------------

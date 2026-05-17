@@ -143,7 +143,15 @@ class EpCubeCollector:
         self._ensure_auth()
         result = _api_request("GET", "/home/deviceList", token=self._token)
         if result.get("status") != 200:
-            return
+            # Raise so retry_with_backoff actually retries on transient cloud
+            # failures (e.g., 5xx, auth expiry). Silently returning here caused
+            # the caller to treat the failure as success and advance
+            # last_discovery_time, delaying the next discovery by a full
+            # interval. (PR #137 review)
+            raise RuntimeError(
+                f"Cloud /home/deviceList returned status={result.get('status')}: "
+                f"{result.get('message', 'no message')}"
+            )
 
         cloud_devices = result["data"]
 
