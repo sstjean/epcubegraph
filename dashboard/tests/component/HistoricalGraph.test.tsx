@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 import { HistoricalGraph, buildDeviceChartData, getAggregationLabel, shouldUseBars, formatTooltipTimestamp, formatAxisDates, computeAxisSize, powerAxisSize } from '../../src/components/HistoricalGraph';
 import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
@@ -139,6 +139,7 @@ const defaultTimeRange: TimeRangeValue = { start: 1711152000, end: 1711238400, s
 const defaultTimestamps = [1711152000, 1711152060];
 
 function setupTwoDeviceMocks(ts: number[] = defaultTimestamps) {
+  capturedUPlotOpts.length = 0;
   mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
   mockFetchDevices.mockResolvedValue(twoDeviceList);
   mockFetchRangeReadings
@@ -149,13 +150,6 @@ function setupTwoDeviceMocks(ts: number[] = defaultTimestamps) {
 }
 
 describe('HistoricalGraph', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    capturedUPlotOpts.length = 0;
-  });
-
-  afterEach(cleanup);
-
   it('renders one chart per device, stacked vertically (FR-021)', async () => {
     // Arrange
     setupTwoDeviceMocks();
@@ -885,13 +879,6 @@ describe('formatAxisDates', () => {
 });
 
 describe('FR-026 bar chart rendering', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    capturedUPlotOpts.length = 0;
-  });
-
-  afterEach(cleanup);
-
   it('uses bar paths for Solar, Home Load, Grid when step >= 86400', async () => {
     // Arrange
     setupTwoDeviceMocks([1711152000, 1711238400]);

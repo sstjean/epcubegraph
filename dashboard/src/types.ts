@@ -9,6 +9,14 @@ export interface Device {
   uid?: string;
   online: boolean;
   alias?: string;
+  created_at?: string;
+  updated_at?: string;
+  /**
+   * Lifecycle state of the device. Populated by GET /devices for all
+   * variants of the `status` query (active|removed|merged|all). Optional
+   * for backwards compatibility with older API builds.
+   */
+  status?: "active" | "removed" | "merged";
 }
 
 export interface DeviceListResponse {
@@ -142,4 +150,44 @@ export interface PanelHierarchyInputEntry {
 
 export interface PanelHierarchyResponse {
   entries: PanelHierarchyEntry[];
+}
+
+// Device discovery types (Feature 124)
+
+export interface PendingReplacement {
+  id: number;
+  old_device_id: string;
+  new_device_id: string;
+  detected_at: string;
+  old_product_code?: string | null;
+  old_alias?: string | null;
+  new_product_code?: string | null;
+  new_alias?: string | null;
+  old_last_seen?: string | null;
+  new_last_seen?: string | null;
+}
+
+export interface DismissResponse {
+  dismissed: boolean;
+  old_device_id: string;
+  new_device_id: string;
+}
+
+export interface DeleteDeviceResponse {
+  device_id: string;
+  readings_deleted: number;
+}
+
+export interface MergePreviewResponse {
+  old_device_id: string;
+  new_device_id: string;
+  readings_to_transfer: number;
+  conflicts_to_skip: number;
+}
+
+export interface MergeResponse {
+  old_device_id: string;
+  new_device_id: string;
+  readings_transferred: number;
+  conflicts_skipped: number;
 }

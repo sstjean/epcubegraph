@@ -1,23 +1,17 @@
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class SettingsStoreConcurrencyTests : IClassFixture<PostgresFixture>
+public class SettingsStoreConcurrencyTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public SettingsStoreConcurrencyTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
     [Fact]
     public async Task ConcurrentEnsureTables_DoesNotThrow()
     {
         // Arrange
-        await _fixture.ClearDataAsync();
-        var store = new PostgresSettingsStore(_fixture.ConnectionString);
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var tasks = Enumerable.Range(0, 10)

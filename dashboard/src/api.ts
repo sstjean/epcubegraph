@@ -11,6 +11,11 @@ import type {
   VueDevicesResponse,
   PanelHierarchyResponse,
   PanelHierarchyInputEntry,
+  PendingReplacement,
+  DismissResponse,
+  DeleteDeviceResponse,
+  MergePreviewResponse,
+  MergeResponse,
 } from './types';
 
 const getBaseUrl = (): string => import.meta.env.VITE_API_BASE_URL;
@@ -58,6 +63,12 @@ async function authFetch(url: string, isRetry = false): Promise<Response> {
 
 export async function fetchDevices(): Promise<DeviceListResponse> {
   const response = await authFetch(`${getBaseUrl()}/devices`);
+  return response.json();
+}
+
+export async function fetchDevicesByStatus(status: string): Promise<DeviceListResponse> {
+  const params = new URLSearchParams({ status });
+  const response = await authFetch(`${getBaseUrl()}/devices?${params}`);
   return response.json();
 }
 
@@ -167,4 +178,75 @@ export async function fetchHierarchy(): Promise<PanelHierarchyResponse> {
 export async function updateHierarchy(entries: PanelHierarchyInputEntry[]): Promise<PanelHierarchyResponse> {
   const response = await authFetchWrite(`${getBaseUrl()}/settings/hierarchy`, 'PUT', { entries });
   return response.json();
+}
+// ── Device discovery API (Feature 124) ──
+
+export async function fetchPendingReplacements(): Promise<PendingReplacement[]> {
+  const response = await authFetch(`${getBaseUrl()}/devices/pending-replacements`);
+  return response.json();
+}
+
+export async function dismissPendingReplacement(id: number): Promise<DismissResponse> {
+  const response = await authFetchWrite(
+    `${getBaseUrl()}/devices/pending-replacements/${id}/dismiss`,
+    'POST',
+    {},
+  );
+  return response.json();
+}
+
+export async function fetchMergePreview(
+  oldDeviceId: string,
+  newDeviceId: string,
+): Promise<MergePreviewResponse> {
+  const params = new URLSearchParams({
+    old_device_id: oldDeviceId,
+    new_device_id: newDeviceId,
+  });
+  const response = await authFetch(`${getBaseUrl()}/devices/merge-preview?${params}`);
+  return response.json();
+}
+
+export async function mergeDevices(
+  oldDeviceId: string,
+  newDeviceId: string,
+): Promise<MergeResponse> {
+  const response = await authFetchWrite(
+    `${getBaseUrl()}/devices/merge`,
+    'POST',
+    { old_device_id: oldDeviceId, new_device_id: newDeviceId },
+  );
+  return response.json();
+}
+
+export async function deleteDevice(cloudId: string): Promise<DeleteDeviceResponse> {
+  const response = await authFetchDelete(`${getBaseUrl()}/devices/${encodeURIComponent(cloudId)}`);
+  return response.json();
+}
+
+async function authFetchDelete(url: string): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (!authDisabled) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication in progress');
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { method: 'DELETE', headers });
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody.error || errorMessage;
+    } catch {
+      // Empty or non-JSON response body
+    }
+    trackApiError(url, response.status);
+    throw new ApiError(errorMessage, response.status);
+  }
+
+  return response;
 }

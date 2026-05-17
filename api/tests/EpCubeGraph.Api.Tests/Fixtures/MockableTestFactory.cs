@@ -135,6 +135,15 @@ public sealed class ConfigurableMockStore : IMetricsStore
     public IReadOnlyList<Reading> CurrentReadingsResult { get; set; } = Array.Empty<Reading>();
     public IReadOnlyList<TimeSeries> RangeResult { get; set; } = Array.Empty<TimeSeries>();
     public IReadOnlyList<TimeSeries> GridResult { get; set; } = Array.Empty<TimeSeries>();
+    public IReadOnlyList<PendingReplacement> PendingReplacementsResult { get; set; } = Array.Empty<PendingReplacement>();
+    public DismissResponse? DismissResult { get; set; }
+    public int? LastDismissedId { get; private set; }
+    public MergePreviewResponse? MergePreviewResult { get; set; }
+    public MergeResponse? MergeResult { get; set; }
+    public string? ThrowMergeValidation { get; set; }
+    public (string Old, string New)? LastMergeArgs { get; private set; }
+    public DeleteDeviceResponse? DeleteResult { get; set; }
+    public string? LastDeletedCloudId { get; private set; }
     public bool PingResult { get; set; } = true;
 
     public void Reset()
@@ -147,10 +156,26 @@ public sealed class ConfigurableMockStore : IMetricsStore
         CurrentReadingsResult = Array.Empty<Reading>();
         RangeResult = Array.Empty<TimeSeries>();
         GridResult = Array.Empty<TimeSeries>();
+        PendingReplacementsResult = Array.Empty<PendingReplacement>();
+        DismissResult = null;
+        LastDismissedId = null;
+        MergePreviewResult = null;
+        MergeResult = null;
+        ThrowMergeValidation = null;
+        LastMergeArgs = null;
+        DeleteResult = null;
+        LastDeletedCloudId = null;
         PingResult = true;
     }
 
     public Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(DevicesResult);
+    }
+
+    public Task<IReadOnlyList<DeviceInfo>> GetDevicesAsync(string? status, CancellationToken ct = default)
     {
         if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
         if (ShouldThrow) throw new Exception(ThrowMessage);
@@ -183,6 +208,47 @@ public sealed class ConfigurableMockStore : IMetricsStore
     {
         if (ShouldThrow) throw new Exception(ThrowMessage);
         return Task.FromResult(GridResult);
+    }
+
+    public Task<IReadOnlyList<PendingReplacement>> GetPendingReplacementsAsync(CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(PendingReplacementsResult);
+    }
+
+    public Task<DismissResponse?> DismissPendingReplacementAsync(int id, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        LastDismissedId = id;
+        return Task.FromResult(DismissResult);
+    }
+
+    public Task<MergePreviewResponse?> GetMergePreviewAsync(string oldDeviceId, string newDeviceId, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ThrowMergeValidation is not null) throw new MergeValidationException(ThrowMergeValidation);
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        return Task.FromResult(MergePreviewResult);
+    }
+
+    public Task<MergeResponse?> ExecuteMergeAsync(string oldDeviceId, string newDeviceId, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ThrowMergeValidation is not null) throw new MergeValidationException(ThrowMergeValidation);
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        LastMergeArgs = (oldDeviceId, newDeviceId);
+        return Task.FromResult(MergeResult);
+    }
+
+    public Task<DeleteDeviceResponse?> DeleteDeviceAsync(string cloudDeviceId, CancellationToken ct = default)
+    {
+        if (ThrowUnhandled) throw new InvalidOperationException("Simulated unhandled error");
+        if (ThrowMergeValidation is not null) throw new MergeValidationException(ThrowMergeValidation);
+        if (ShouldThrow) throw new Exception(ThrowMessage);
+        LastDeletedCloudId = cloudDeviceId;
+        return Task.FromResult(DeleteResult);
     }
 
     public Task<bool> PingAsync(CancellationToken ct = default)

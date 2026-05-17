@@ -23,21 +23,27 @@ interface DeviceCardProps {
   name: string;
   online: boolean;
   metrics: DeviceCardMetrics;
+  pendingMergeNote?: string;
 }
 
-export function DeviceCard({ name, online, metrics }: DeviceCardProps) {
+export function DeviceCard({ name, online, metrics, pendingMergeNote }: DeviceCardProps) {
   const gridDirection = metrics.gridWatts === 0 ? 'Idle' : metrics.gridWatts > 0 ? 'Import' : 'Export';
 
   return (
     <article class="device-card" aria-label={`Device ${name}`}>
       <header class="device-card-header">
-        <h3>{name}</h3>
-        <span
-          aria-label={online ? 'Online' : 'Offline'}
-          class={`badge ${online ? 'badge-online' : 'badge-offline'}`}
-        >
-          {online ? 'Online' : 'Offline'}
-        </span>
+        <div class="device-card-title-row">
+          <h3>{name}</h3>
+          <span
+            aria-label={online ? 'Online' : 'Offline'}
+            class={`badge ${online ? 'badge-online' : 'badge-offline'}`}
+          >
+            {online ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        {pendingMergeNote && (
+          <p class="device-card-pending-note">{pendingMergeNote}</p>
+        )}
       </header>
       <div class="gauge-grid">
         <GaugeDial

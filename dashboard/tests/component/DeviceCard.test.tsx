@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/preact';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/preact';
 import { h } from 'preact';
 import { DeviceCard } from '../../src/components/DeviceCard';
 
@@ -13,7 +13,6 @@ const baseMetrics = {
 };
 
 describe('DeviceCard', () => {
-  afterEach(cleanup);
   it('renders as <article> with aria-label including group name (FR-015)', () => {
     // Arrange & Act
     render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
@@ -153,5 +152,36 @@ describe('DeviceCard', () => {
     const meters = screen.getAllByRole('meter');
     const batteryPowerMeter = meters.find((m) => m.getAttribute('aria-label')?.includes('Battery Power'));
     expect(batteryPowerMeter?.getAttribute('aria-label')).toContain('discharging');
+  });
+
+  it('renders pendingMergeNote on a separate line below the title row', () => {
+    // Arrange & Act
+    render(
+      <DeviceCard
+        name="EP Cube v2"
+        online={true}
+        metrics={baseMetrics}
+        pendingMergeNote="These are the new device readings.  The old device is offline."
+      />,
+    );
+
+    // Assert — note appears in its own element inside the header
+    const note = document.querySelector('.device-card-pending-note');
+    expect(note).toBeTruthy();
+    expect(note?.textContent).toContain('These are the new device readings');
+    expect(note?.textContent).toContain('The old device is offline');
+    // Title and badge live in title-row, note is a sibling below it
+    const header = document.querySelector('.device-card-header');
+    const titleRow = header?.querySelector('.device-card-title-row');
+    expect(titleRow).toBeTruthy();
+    expect(titleRow?.contains(note)).toBe(false);
+  });
+
+  it('does not render pending note element when pendingMergeNote prop is not provided', () => {
+    // Arrange & Act
+    render(<DeviceCard name="EP Cube v2" online={true} metrics={baseMetrics} />);
+
+    // Assert
+    expect(document.querySelector('.device-card-pending-note')).toBeNull();
   });
 });

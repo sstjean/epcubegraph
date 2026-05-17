@@ -6,6 +6,13 @@ export default defineConfig({
   test: {
     environment: 'happy-dom',
     include: ['tests/**/*.test.{ts,tsx}'],
+    // Test isolation guarantees: every test starts with a clean mock call
+    // history, no leftover env stubs, and no leftover global stubs.
+    // This makes every test self-contained — copy/pasting any single test
+    // into a fresh file produces the same result.
+    clearMocks: true,
+    unstubEnvs: true,
+    unstubGlobals: true,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

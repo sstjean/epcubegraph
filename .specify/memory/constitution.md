@@ -99,6 +99,17 @@ mock complexity, and tests that break for unrelated reasons.
   external service availability. Live-data local stacks
   (e.g., docker-compose.prod-local.yml) are for manual
   verification only and MUST NOT be invoked by CI pipelines.
+- **Bug Fix Regression Tests (NON-NEGOTIABLE)**: Every bug fix
+  MUST start with the creation of one or more failing tests
+  (unit and integration). This builds our regression suite.
+- **5-Minute Debug Limit (NON-NEGOTIABLE)**: When debugging an
+  issue (production incident, failing test, broken deploy,
+  unexplained behaviour), the agent MUST stop after 5 minutes
+  of unsuccessful investigation and brief the user with: (a)
+  what was checked, (b) what is known vs. unknown, and (c) the
+  candidate hypotheses. No "one more search", no "let me just
+  check", no follow-up rabbit holes. Brief and wait for
+  guidance.
 
 **Rationale**: TDD produces verifiable, regression-resistant
 code and ensures every feature is exercised by automated tests.

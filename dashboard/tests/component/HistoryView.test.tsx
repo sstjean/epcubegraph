@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 import { HistoryView } from '../../src/components/HistoryView';
 import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
@@ -52,12 +52,6 @@ function setupDefaultMocks() {
 }
 
 describe('HistoryView', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('renders as <section> with h2 heading (FR-015)', () => {
     // Arrange
     setupDefaultMocks();

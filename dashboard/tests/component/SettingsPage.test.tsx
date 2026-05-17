@@ -1,1132 +1,192 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, fireEvent, act } from '@testing-library/preact';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
 
-const mockFetchSettings = vi.fn();
-const mockUpdateSetting = vi.fn();
-const mockFetchDevices = vi.fn();
-const mockFetchVueDevices = vi.fn();
-const mockFetchHierarchy = vi.fn();
-const mockUpdateHierarchy = vi.fn();
-
-vi.mock('../../src/api', () => ({
-  fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
-  updateSetting: (...args: unknown[]) => mockUpdateSetting(...args),
-  fetchDevices: (...args: unknown[]) => mockFetchDevices(...args),
-  fetchVueDevices: (...args: unknown[]) => mockFetchVueDevices(...args),
-  fetchHierarchy: (...args: unknown[]) => mockFetchHierarchy(...args),
-  updateHierarchy: (...args: unknown[]) => mockUpdateHierarchy(...args),
-  fetchCurrentReadings: vi.fn(),
-  fetchRangeReadings: vi.fn(),
-  fetchGridPower: vi.fn(),
+// Mock each section to isolate SettingsPage's responsibility: tab navigation.
+// Tests here MUST NOT touch fetchSettings, fetchDevices, etc. — those belong to
+// the section-level test files.
+vi.mock('../../src/components/settings/PollingIntervalsSection', () => ({
+  PollingIntervalsSection: () => <div data-testid="section-polling">PollingSection</div>,
+}));
+vi.mock('../../src/components/settings/VueDeviceMappingSection', () => ({
+  VueDeviceMappingSection: () => <div data-testid="section-mapping">MappingSection</div>,
+}));
+vi.mock('../../src/components/settings/PanelHierarchySection', () => ({
+  PanelHierarchySection: () => <div data-testid="section-hierarchy">HierarchySection</div>,
+}));
+vi.mock('../../src/components/DeviceMerge', () => ({
+  DeviceMerge: () => <div data-testid="section-merge">MergeSection</div>,
+}));
+vi.mock('../../src/components/settings/RemovedDevicesSection', () => ({
+  RemovedDevicesSection: () => <div data-testid="section-removed">RemovedSection</div>,
 }));
 
-import { SettingsPage, resolveDeviceAlias } from '../../src/components/SettingsPage';
+import { SettingsPage } from '../../src/components/SettingsPage';
 
-describe('resolveDeviceAlias', () => {
-  it('returns display_name when device found', () => {
-    // Arrange
-    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
-
-    // Act
-    const result = resolveDeviceAlias(devices as any, 100);
-
-    // Assert
-    expect(result).toBe('Main Panel');
-  });
-
-  it('returns GID string when device not found', () => {
-    // Arrange
-    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
-
-    // Act
-    const result = resolveDeviceAlias(devices as any, 999);
-
-    // Assert
-    expect(result).toBe('999');
-  });
-
-  it('returns GID string when display_name is empty', () => {
-    // Arrange
-    const devices = [{ device_gid: 100, device_name: 'V1', display_name: '' }];
-
-    // Act
-    const result = resolveDeviceAlias(devices as any, 100);
-
-    // Assert
-    expect(result).toBe('100');
-  });
-});
-
-describe('SettingsPage — Polling Intervals', () => {
+describe('SettingsPage tab navigation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockFetchDevices.mockResolvedValue({ devices: [] });
-    mockFetchVueDevices.mockResolvedValue({ devices: [] });
-    mockFetchHierarchy.mockResolvedValue({ entries: [] });
+    localStorage.removeItem('settingsActiveTab');
   });
 
-  afterEach(cleanup);
+  it('renders all four tab buttons', () => {
+    // Arrange & Act
+    render(<SettingsPage />);
 
-  it('renders polling interval inputs with current values from API', async () => {
+    // Assert
+    expect(screen.getByRole('tab', { name: 'Polling' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Vue Mapping' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Hierarchy' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Merge' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Removed' })).toBeTruthy();
+  });
+
+  it('renders Polling section by default', () => {
+    // Arrange & Act
+    render(<SettingsPage />);
+
+    // Assert
+    expect(screen.getByTestId('section-polling')).toBeTruthy();
+    expect(screen.queryByTestId('section-mapping')).toBeNull();
+    expect(screen.queryByTestId('section-hierarchy')).toBeNull();
+    expect(screen.queryByTestId('section-merge')).toBeNull();
+  });
+
+  it('marks the active tab with aria-selected="true" and others with false', () => {
+    // Arrange & Act
+    render(<SettingsPage />);
+
+    // Assert
+    expect(screen.getByRole('tab', { name: 'Polling' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Vue Mapping' }).getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByRole('tab', { name: 'Hierarchy' }).getAttribute('aria-selected')).toBe('false');
+    expect(screen.getByRole('tab', { name: 'Merge' }).getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('clicking a tab switches the visible section', () => {
     // Arrange
-    mockFetchSettings.mockResolvedValue({
-      settings: [
-        { key: 'epcube_poll_interval_seconds', value: '45', last_modified: '2026-04-05T00:00:00Z' },
-      ],
-    });
+    render(<SettingsPage />);
+
+    // Act
+    fireEvent.click(screen.getByRole('tab', { name: 'Vue Mapping' }));
+
+    // Assert
+    expect(screen.getByTestId('section-mapping')).toBeTruthy();
+    expect(screen.queryByTestId('section-polling')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Vue Mapping' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Polling' }).getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('clicking Hierarchy tab renders only the hierarchy section', () => {
+    // Arrange
+    render(<SettingsPage />);
+
+    // Act
+    fireEvent.click(screen.getByRole('tab', { name: 'Hierarchy' }));
+
+    // Assert
+    expect(screen.getByTestId('section-hierarchy')).toBeTruthy();
+    expect(screen.queryByTestId('section-polling')).toBeNull();
+    expect(screen.queryByTestId('section-mapping')).toBeNull();
+    expect(screen.queryByTestId('section-merge')).toBeNull();
+  });
+
+  it('clicking Merge tab renders only the merge section', () => {
+    // Arrange
+    render(<SettingsPage />);
+
+    // Act
+    fireEvent.click(screen.getByRole('tab', { name: 'Merge' }));
+
+    // Assert
+    expect(screen.getByTestId('section-merge')).toBeTruthy();
+    expect(screen.queryByTestId('section-polling')).toBeNull();
+  });
+
+  it('clicking Removed tab renders only the removed devices section', () => {
+    // Arrange
+    render(<SettingsPage />);
+
+    // Act
+    fireEvent.click(screen.getByRole('tab', { name: 'Removed' }));
+
+    // Assert
+    expect(screen.getByTestId('section-removed')).toBeTruthy();
+    expect(screen.queryByTestId('section-polling')).toBeNull();
+    expect(screen.queryByTestId('section-merge')).toBeNull();
+  });
+
+  it('persists active tab to localStorage on change', () => {
+    // Arrange
+    render(<SettingsPage />);
+
+    // Act
+    fireEvent.click(screen.getByRole('tab', { name: 'Hierarchy' }));
+
+    // Assert
+    expect(localStorage.getItem('settingsActiveTab')).toBe('hierarchy');
+  });
+
+  it('restores the active tab from localStorage on mount', () => {
+    // Arrange
+    localStorage.setItem('settingsActiveTab', 'mapping');
 
     // Act
     render(<SettingsPage />);
 
     // Assert
-    await waitFor(() => {
-      const input = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-      expect(input.value).toBe('45');
-    });
+    expect(screen.getByTestId('section-mapping')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Vue Mapping' }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('shows fallback defaults when no settings exist', async () => {
+  it('falls back to Polling when localStorage value is invalid', () => {
     // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
+    localStorage.setItem('settingsActiveTab', 'not-a-real-tab');
 
     // Act
     render(<SettingsPage />);
 
     // Assert
-    await waitFor(() => {
-      const epcubeInput = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-      expect(epcubeInput.value).toBe('30');
-    });
+    expect(screen.getByTestId('section-polling')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Polling' }).getAttribute('aria-selected')).toBe('true');
   });
 
-  it('Vue polling inputs are enabled and editable', async () => {
+  it('initialTab prop overrides localStorage', () => {
     // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
+    localStorage.setItem('settingsActiveTab', 'polling');
 
     // Act
+    render(<SettingsPage initialTab="hierarchy" />);
+
+    // Assert
+    expect(screen.getByTestId('section-hierarchy')).toBeTruthy();
+  });
+
+  it('uses tablist role with vertical orientation for accessibility', () => {
+    // Arrange & Act
     render(<SettingsPage />);
 
     // Assert
-    await waitFor(() => {
-      const vueInput = screen.getByLabelText(/Emporia Vue Current Polling/i) as HTMLInputElement;
-      expect(vueInput.disabled).toBe(false);
-      const dailyInput = screen.getByLabelText(/Emporia Vue Daily Polling/i) as HTMLInputElement;
-      expect(dailyInput.disabled).toBe(false);
-    });
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.getAttribute('aria-orientation')).toBe('vertical');
   });
 
-  it('shows validation error for value below minimum', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-
-    const input = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-    fireEvent.input(input, { target: { value: '0' } });
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('alert').textContent).toMatch(/Minimum is 1 second/i);
-    });
-    expect(mockUpdateSetting).not.toHaveBeenCalled();
-  });
-
-  it('shows validation error for value above maximum', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-
-    const input = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-    fireEvent.input(input, { target: { value: '5000' } });
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('alert').textContent).toMatch(/Maximum is 3600 seconds/i);
-    });
-    expect(mockUpdateSetting).not.toHaveBeenCalled();
-  });
-
-  it('saves successfully and shows success message', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-
-    const input = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-    fireEvent.input(input, { target: { value: '60' } });
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('status')).toBeTruthy();
-      expect(screen.getByRole('status').textContent).toMatch(/saved/i);
-    });
-    expect(mockUpdateSetting).toHaveBeenCalledWith('epcube_poll_interval_seconds', '60');
-  });
-
-  it('shows error when save fails', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-    mockUpdateSetting.mockRejectedValue(new Error('Network error'));
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('alert').textContent).toMatch(/Network error/i);
-    });
-  });
-
-  it('shows loading state while fetching', () => {
-    // Arrange
-    mockFetchSettings.mockReturnValue(new Promise(() => {})); // never resolves
-
-    // Act
+  it('active tab has tabIndex=0, inactive tabs have tabIndex=-1 (roving tabindex)', () => {
+    // Arrange & Act
     render(<SettingsPage />);
 
     // Assert
-    expect(screen.getByText('Loading...')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Polling' }).getAttribute('tabindex')).toBe('0');
+    expect(screen.getByRole('tab', { name: 'Vue Mapping' }).getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('tab', { name: 'Hierarchy' }).getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('tab', { name: 'Merge' }).getAttribute('tabindex')).toBe('-1');
+    expect(screen.getByRole('tab', { name: 'Removed' }).getAttribute('tabindex')).toBe('-1');
   });
 
-  it('shows error when fetch fails', async () => {
-    // Arrange
-    mockFetchSettings.mockRejectedValue(new Error('API down'));
-
-    // Act
+  it('renders Settings heading', () => {
+    // Arrange & Act
     render(<SettingsPage />);
 
     // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-      expect(screen.getByRole('alert').textContent).toMatch(/API down/i);
-    });
-  });
-
-  it('does not update state after unmount during load', async () => {
-    // Arrange — resolve after unmount to exercise cancelled guard
-    let resolve: (v: unknown) => void;
-    mockFetchSettings.mockReturnValue(new Promise((r) => { resolve = r; }));
-
-    // Act
-    const { unmount } = render(<SettingsPage />);
-    unmount();
-    resolve!({ settings: [{ key: 'epcube_poll_interval_seconds', value: '30', last_modified: '' }] });
-
-    // Assert — no error thrown, state update silently skipped
-    await new Promise((r) => setTimeout(r, 10));
-  });
-
-  it('does not update state after unmount during load error', async () => {
-    // Arrange — reject after unmount to exercise cancelled guard in catch
-    let reject: (e: Error) => void;
-    mockFetchSettings.mockReturnValue(new Promise((_, r) => { reject = r; }));
-
-    // Act
-    const { unmount } = render(<SettingsPage />);
-    unmount();
-    reject!(new Error('late error'));
-
-    // Assert — no error thrown
-    await new Promise((r) => setTimeout(r, 10));
-  });
-
-  it('shows validation error for non-integer value', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-
-    const input = screen.getByLabelText(/EP Cube Polling Interval/i) as HTMLInputElement;
-    fireEvent.input(input, { target: { value: '2.5' } });
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/whole number/i);
-    });
-  });
-
-  it('handles non-Error rejection during save', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-    mockUpdateSetting.mockRejectedValue('string error');
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/EP Cube Polling Interval/i));
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/Failed to save/i);
-    });
-  });
-
-  it('handles non-Error rejection during fetch', async () => {
-    // Arrange
-    mockFetchSettings.mockRejectedValue('string error');
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/Failed to load settings/i);
-    });
-  });
-
-  it('renders panel hierarchy section with heading', async () => {
-    // Arrange
-    mockFetchSettings.mockResolvedValue({ settings: [] });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByText('Panel Hierarchy')).toBeTruthy();
-      expect(screen.queryByText('Display Names')).toBeNull();
-    });
-  });
-
-  it('saves with defaults when fetch failed and values are empty', async () => {
-    // Arrange — fetch fails, values stays empty, but save uses defaults
-    mockFetchSettings.mockRejectedValue(new Error('API down'));
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByRole('alert')); // wait for error
-    fireEvent.click(screen.getByText('Save Polling Intervals'));
-
-    // Assert — saves the default value, not undefined
-    await waitFor(() => {
-      expect(mockUpdateSetting).toHaveBeenCalledWith('epcube_poll_interval_seconds', '30');
-    });
-  });
-});
-
-describe('SettingsPage — Vue Device Mapping', () => {
-  // Raw devices — two per EP Cube to test grouping
-  const EP_CUBE_DEVICES = [
-    { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-    { device: 'epcube3483_solar', class: 'home_solar', online: true },
-    { device: 'epcube7891_battery', class: 'storage_battery', online: true },
-    { device: 'epcube7891_solar', class: 'home_solar', online: true },
-  ];
-
-  const VUE_DEVICES = [
-    { device_gid: 480380, device_name: 'Vue 1', display_name: 'Main Panel' },
-    { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
-    { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
-  ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
-  function setupMocks(overrides?: {
-    settings?: object[];
-    epcubeDevices?: object[];
-    vueDevices?: object[];
-    hierarchy?: object[];
-  }) {
-    mockFetchSettings.mockResolvedValue({
-      settings: overrides?.settings ?? [],
-    });
-    mockFetchDevices.mockResolvedValue({
-      devices: overrides?.epcubeDevices ?? EP_CUBE_DEVICES,
-    });
-    mockFetchVueDevices.mockResolvedValue({
-      devices: overrides?.vueDevices ?? VUE_DEVICES,
-    });
-    mockFetchHierarchy.mockResolvedValue({
-      entries: overrides?.hierarchy ?? [],
-    });
-  }
-
-  it('auto-discovers EP Cube and Vue devices from API on mount', async () => {
-    // Arrange
-    setupMocks();
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(mockFetchDevices).toHaveBeenCalledTimes(1);
-      expect(mockFetchVueDevices).toHaveBeenCalledTimes(1);
-      expect(mockFetchHierarchy).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('renders EP Cube devices grouped with friendly display name and assigned Vue panels', async () => {
-    // Arrange
-    setupMocks({
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — groups shown by display name, not raw device ID
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText('EP Cube 3483')).toBeTruthy();
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(select.value).toBe('480380');
-    });
-  });
-
-  it('renders unassigned Vue panels as options in add dropdown', async () => {
-    // Arrange — one panel mapped to epcube3483, two unassigned
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-        { device: 'epcube3483_solar', class: 'home_solar', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — dropdown includes all eligible devices; currently selected appears as selected value
-    await waitFor(() => {
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      const options = Array.from(select.options).map((o) => o.text);
-      expect(options).toContain('Main Panel');
-      expect(options).toContain('Subpanel 1');
-      expect(options).toContain('Garage');
-      expect(select.value).toBe('480380');
-    });
-  });
-
-  it('assigns panel to device when selected from dropdown', async () => {
-    // Arrange — no existing mapping
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-        { device: 'epcube3483_solar', class: 'home_solar', online: true },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '480380' } });
-
-    // Assert — panel now shows as assigned
-    await waitFor(() => {
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(select.value).toBe('480380');
-    });
-  });
-
-  it('unassigns panel and returns to dropdown when removed', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-        { device: 'epcube3483_solar', class: 'home_solar', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => {
-      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(s.value).toBe('480380');
-    });
-
-    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '' } });
-
-    // Assert — dropdown reset to None
-    await waitFor(() => {
-      expect(select.value).toBe('');
-    });
-  });
-
-  it('saves mapping with correct JSON via PUT settings API', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-        { device: 'epcube3483_solar', class: 'home_solar', online: true },
-      ],
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => {
-      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(s.value).toBe('480380');
-    });
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(mockUpdateSetting).toHaveBeenCalledWith(
-        'vue_device_mapping',
-        JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-      );
-    });
-  });
-
-  it('shows success message after saving mapping', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('status').textContent).toMatch(/mapping saved/i);
-    });
-  });
-
-  it('shows error when mapping save fails', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-    mockUpdateSetting.mockRejectedValue(new Error('Validation failed'));
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/Validation failed/i);
-    });
-  });
-
-  it('shows error when mapping save fails with non-Error rejection', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-    mockUpdateSetting.mockRejectedValue('string error');
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toMatch(/Failed to save/i);
-    });
-  });
-
-  it('handles empty EP Cube device list', async () => {
-    // Arrange
-    setupMocks({ epcubeDevices: [] });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No EP Cube devices found/i)).toBeTruthy();
-    });
-  });
-
-  it('handles empty Vue device list', async () => {
-    // Arrange
-    setupMocks({ vueDevices: [] });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  it('handles fetchDevices error gracefully', async () => {
-    // Arrange
-    setupMocks();
-    mockFetchDevices.mockRejectedValue(new Error('Device API fail'));
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — section renders without crash, shows no devices
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getByText(/No EP Cube devices found/i)).toBeTruthy();
-    });
-  });
-
-  it('handles fetchVueDevices error gracefully', async () => {
-    // Arrange
-    setupMocks();
-    mockFetchVueDevices.mockRejectedValue(new Error('Vue API fail'));
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — section renders without crash, shows no vue devices
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      expect(screen.getAllByText(/No Vue devices available/i).length).toBeGreaterThanOrEqual(1);
-    });
-  });
-
-  it('handles malformed vue_device_mapping value gracefully', async () => {
-    // Arrange
-    setupMocks({
-      settings: [{
-        key: 'vue_device_mapping',
-        value: 'not valid json{{{',
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — renders without crash, treats as empty mapping
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-    });
-  });
-
-  it('treats old array format as invalid and shows empty mapping', async () => {
-    // Arrange — old array format should be detected and rejected
-    setupMocks({
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({ epcube3483: [{ gid: 480380, alias: 'Main Panel' }] }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — renders mapping section with no assigned panel (old format ignored)
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(select.value).toBe('');
-    });
-  });
-
-  it('ignores saved mapping keys that do not match any EP Cube group', async () => {
-    // Arrange — mapping has an extra key "unknown_device" not in EP Cube groups
-    setupMocks({
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-          unknown_device: { gid: 999, alias: 'Ghost' },
-        }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — epcube3483 mapping loaded (dropdown selected), unknown_device silently ignored
-    await waitFor(() => {
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(select.value).toBe('480380');
-    });
-  });
-
-  it('assigned panel not shown in other device dropdowns', async () => {
-    // Arrange — one panel mapped to epcube3483
-    setupMocks({
-      settings: [{
-        key: 'vue_device_mapping',
-        value: JSON.stringify({
-          epcube3483: { gid: 480380, alias: 'Main Panel' },
-        }),
-        last_modified: '',
-      }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — epcube7891 dropdown should not contain Main Panel
-    await waitFor(() => {
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 7891/i) as HTMLSelectElement;
-      const options = Array.from(select.options).map((o) => o.text);
-      expect(options).not.toContain('Main Panel');
-      expect(options).toContain('Subpanel 1');
-      expect(options).toContain('Garage');
-    });
-  });
-
-  it('omits devices with no assigned panels from saved JSON', async () => {
-    // Arrange — no mapping, two EP Cube groups
-    setupMocks();
-    mockUpdateSetting.mockResolvedValue(undefined);
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    // Assign one panel to epcube3483 only
-    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '480380' } });
-
-    await waitFor(() => {
-      const s = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      expect(s.value).toBe('480380');
-    });
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert — only epcube3483 in saved JSON, not epcube7891
-    await waitFor(() => {
-      const savedValue = (mockUpdateSetting as ReturnType<typeof vi.fn>).mock.calls[0][1] as string;
-      const parsed = JSON.parse(savedValue);
-      expect(parsed).toHaveProperty('epcube3483');
-      expect(parsed).not.toHaveProperty('epcube7891');
-    });
-  });
-
-  it('disables save button while saving', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-    mockUpdateSetting.mockReturnValue(new Promise(() => {})); // never resolves
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    fireEvent.click(screen.getByText('Save Mapping'));
-
-    // Assert
-    await waitFor(() => {
-      const saveBtn = screen.getByText('Saving...') as HTMLButtonElement;
-      expect(saveBtn.disabled).toBe(true);
-    });
-  });
-
-  it('ignores assign when empty value selected', async () => {
-    // Arrange
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '' } });
-
-    // Assert — no panel assigned (dropdown value is empty)
-    const selectAfter = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    expect(selectAfter.value).toBe('');
-  });
-
-  it('removes panel from device with no prior mapping entry', async () => {
-    // Arrange — assign then remove a panel (exercises ?? [] fallback in remove)
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByText('Vue Device Mapping'));
-
-    // Assign a panel
-    const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: '480380' } });
-    await waitFor(() => {
-      expect(select.value).toBe('480380');
-    });
-
-    // Deselect by choosing None
-    fireEvent.change(select, { target: { value: '' } });
-
-    // Assert — panel removed, dropdown reset to None
-    await waitFor(() => {
-      expect(select.value).toBe('');
-    });
-  });
-
-  it('filters child Vue panels from dropdown based on hierarchy', async () => {
-    // Arrange — Subpanel 1 (480544) is a child of Main Panel (480380)
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-      ],
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — dropdown should show Main Panel and Garage, but NOT Subpanel 1 (it's a child)
-    await waitFor(() => {
-      const select = screen.getByLabelText(/Select Vue device for EP Cube 3483/i) as HTMLSelectElement;
-      const options = Array.from(select.options).map((o) => o.text);
-      expect(options).toContain('Main Panel');
-      expect(options).toContain('Garage');
-      expect(options).not.toContain('Subpanel 1');
-    });
-  });
-
-  it('groups multiple raw EP Cube devices into one mapping card', async () => {
-    // Arrange — two raw devices that should group into one EP Cube
-    setupMocks({
-      epcubeDevices: [
-        { device: 'epcube3483_battery', class: 'storage_battery', online: true, alias: 'EP Cube v2 Battery' },
-        { device: 'epcube3483_solar', class: 'home_solar', online: true, alias: 'EP Cube v2 Solar' },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — one group shown, not two separate devices
-    await waitFor(() => {
-      const headings = screen.getAllByRole('heading', { level: 4 });
-      const mappingLabels = headings.map((h) => h.textContent);
-      expect(mappingLabels.filter((l) => l?.includes('EP Cube v2'))).toHaveLength(1);
-    });
-  });
-
-  it('handles fetchHierarchy error gracefully', async () => {
-    // Arrange
-    setupMocks();
-    mockFetchHierarchy.mockRejectedValue(new Error('Hierarchy API fail'));
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — renders normally without hierarchy filtering
-    await waitFor(() => {
-      expect(screen.getByText('Vue Device Mapping')).toBeTruthy();
-    });
-  });
-});
-
-describe('SettingsPage — Panel Hierarchy Editor', () => {
-  const EP_CUBE_DEVICES = [
-    { device: 'epcube3483_battery', class: 'storage_battery', online: true },
-  ];
-
-  const VUE_DEVICES = [
-    { device_gid: 480380, device_name: 'Vue 1', display_name: 'Main Panel' },
-    { device_gid: 480544, device_name: 'Vue 2', display_name: 'Subpanel 1' },
-    { device_gid: 480600, device_name: 'Vue 3', display_name: 'Garage' },
-  ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
-  function setupMocks(overrides?: {
-    settings?: object[];
-    epcubeDevices?: object[];
-    vueDevices?: object[];
-    hierarchy?: object[];
-  }) {
-    mockFetchSettings.mockResolvedValue({
-      settings: overrides?.settings ?? [],
-    });
-    mockFetchDevices.mockResolvedValue({
-      devices: overrides?.epcubeDevices ?? EP_CUBE_DEVICES,
-    });
-    mockFetchVueDevices.mockResolvedValue({
-      devices: overrides?.vueDevices ?? VUE_DEVICES,
-    });
-    mockFetchHierarchy.mockResolvedValue({
-      entries: overrides?.hierarchy ?? [],
-    });
-  }
-
-  it('shows "No Vue devices" when no Vue devices exist', async () => {
-    // Arrange
-    setupMocks({ vueDevices: [] });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      const section = screen.getByText('Panel Hierarchy').closest('.settings-section')!;
-      expect(section.textContent).toContain('No Vue devices available');
-    });
-  });
-
-  it('renders existing hierarchy entries with device display names', async () => {
-    // Arrange
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
-      expect(screen.getByLabelText(/Remove hierarchy entry.*480544/i)).toBeTruthy();
-    });
-  });
-
-  it('renders parent and child dropdowns for adding entries', async () => {
-    // Arrange
-    setupMocks();
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByLabelText(/Parent panel/i)).toBeTruthy();
-      expect(screen.getByLabelText(/Child panel/i)).toBeTruthy();
-      expect(screen.getByRole('button', { name: /Add/i })).toBeTruthy();
-    });
-  });
-
-  it('adds a hierarchy entry via dropdowns and Add button', async () => {
-    // Arrange
-    setupMocks();
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Parent panel/i));
-    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
-    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
-    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
-
-    // Assert — new entry appears in the list
-    await waitFor(() => {
-      expect(screen.getByText(/Main Panel → Subpanel 1/)).toBeTruthy();
-    });
-  });
-
-  it('does not add entry when dropdowns are empty', async () => {
-    // Arrange
-    setupMocks();
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Parent panel/i));
-    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
-
-    // Assert — no entry added, no error
-    await waitFor(() => {
-      expect(screen.queryByLabelText(/Remove hierarchy entry/i)).toBeNull();
-    });
-  });
-
-  it('removes a hierarchy entry via Remove button', async () => {
-    // Arrange
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Remove hierarchy entry.*480544/i));
-    fireEvent.click(screen.getByLabelText(/Remove hierarchy entry.*480544/i));
-
-    // Assert — entry removed
-    await waitFor(() => {
-      expect(screen.queryByLabelText(/Remove hierarchy entry.*480544/i)).toBeNull();
-    });
-  });
-
-  it('prevents adding self-reference (same parent and child)', async () => {
-    // Arrange
-    setupMocks();
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Parent panel/i));
-    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
-    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480380' } });
-    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
-
-    // Assert — no entry added, error shown
-    await waitFor(() => {
-      expect(screen.getByText(/cannot be its own child/i)).toBeTruthy();
-    });
-  });
-
-  it('prevents adding duplicate edge', async () => {
-    // Arrange
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByLabelText(/Parent panel/i));
-    fireEvent.change(screen.getByLabelText(/Parent panel/i), { target: { value: '480380' } });
-    fireEvent.change(screen.getByLabelText(/Child panel/i), { target: { value: '480544' } });
-    fireEvent.click(screen.getByRole('button', { name: /Add/i }));
-
-    // Assert — error shown
-    await waitFor(() => {
-      expect(screen.getByText(/already exists/i)).toBeTruthy();
-    });
-  });
-
-  it('saves hierarchy via PUT on Save button click', async () => {
-    // Arrange
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-      ],
-    });
-    mockUpdateHierarchy.mockResolvedValue({
-      entries: [{ id: 1, parent_device_gid: 480380, child_device_gid: 480544 }],
-    });
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
-
-    // Assert
-    await waitFor(() => {
-      expect(mockUpdateHierarchy).toHaveBeenCalledWith([
-        { parent_device_gid: 480380, child_device_gid: 480544 },
-      ]);
-      expect(screen.getByText(/Hierarchy saved/i)).toBeTruthy();
-    });
-  });
-
-  it('shows API error message on save failure', async () => {
-    // Arrange
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 480380, child_device_gid: 480544 },
-        { id: 2, parent_device_gid: 480544, child_device_gid: 480380 },
-      ],
-    });
-    mockUpdateHierarchy.mockRejectedValue(new Error('Panel hierarchy contains a circular reference'));
-
-    // Act
-    render(<SettingsPage />);
-    await waitFor(() => screen.getByRole('button', { name: /Save Hierarchy/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Save Hierarchy/i }));
-
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByText(/circular reference/i)).toBeTruthy();
-    });
-  });
-
-  it('shows device_gid as fallback when device not found in vueDevices', async () => {
-    // Arrange — hierarchy references a gid not in vueDevices list
-    setupMocks({
-      hierarchy: [
-        { id: 1, parent_device_gid: 999999, child_device_gid: 480544 },
-      ],
-    });
-
-    // Act
-    render(<SettingsPage />);
-
-    // Assert — shows gid as fallback
-    await waitFor(() => {
-      expect(screen.getByText(/999999 → Subpanel 1/)).toBeTruthy();
-    });
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeTruthy();
   });
 });

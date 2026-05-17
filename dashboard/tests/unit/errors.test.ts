@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { trackException } from '../../src/telemetry';
 
 vi.mock('../../src/telemetry', () => ({
@@ -11,7 +11,6 @@ vi.mock('../../src/telemetry', () => ({
 const mockTrackException = trackException as ReturnType<typeof vi.fn>;
 
 describe('toTrackedError', () => {
-  beforeEach(function resetMocks() { vi.clearAllMocks(); });
 
   it('returns the original Error and tracks it', async () => {
     // Arrange

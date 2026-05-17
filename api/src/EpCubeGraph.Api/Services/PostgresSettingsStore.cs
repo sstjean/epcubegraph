@@ -53,6 +53,14 @@ public class PostgresSettingsStore : ISettingsStore, IDisposable
                     display_name TEXT NOT NULL,
                     UNIQUE (device_gid, channel_number)
                 );
+
+                CREATE TABLE IF NOT EXISTS pending_replacements (
+                    id SERIAL PRIMARY KEY,
+                    old_device_id TEXT NOT NULL,
+                    new_device_id TEXT NOT NULL,
+                    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    UNIQUE (old_device_id, new_device_id)
+                );
                 """;
 
             await using var cmd = new NpgsqlCommand(sql, conn);

@@ -1,4 +1,4 @@
-import type { Device } from '../types';
+import type { Device, VueDeviceInfo } from '../types';
 
 /** Extract the base device ID (e.g., "epcube3483") from a raw device name. */
 export function getBaseDeviceId(device: Device): string {
@@ -48,4 +48,28 @@ export function getDisplayName(devices: Device[]): string {
     }
   }
   return getGroupName(devices[0]);
+}
+
+/**
+ * Derive the same display name as getDisplayName, but from raw metadata fields
+ * (used when only product_code + alias are known, e.g. for pending replacement
+ * records where the underlying Device rows may no longer exist).
+ */
+export function getDisplayNameFromMeta(
+  productCode: string | null | undefined,
+  alias: string | null | undefined,
+): string {
+  if (productCode) {
+    const match = productCode.match(/devType=(\d+)/);
+    if (match && DEV_TYPE_LABELS[match[1]]) {
+      return DEV_TYPE_LABELS[match[1]];
+    }
+  }
+  if (alias) return alias.replace(/\s*(Battery|Solar)$/i, '').trim();
+  return '';
+}
+
+/** Look up a Vue device's display name by gid, falling back to the gid as a string. */
+export function resolveVueDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
+  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
 }

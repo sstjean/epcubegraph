@@ -2,7 +2,6 @@
 import logging
 import math
 import os
-import threading
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -33,6 +32,7 @@ CLOUD_API_BASE = "https://monitoring-us.epcube.com/v1/api"
 HTTP_PORT = int(os.environ.get("EPCUBE_PORT", "9250"))
 POLL_INTERVAL = int(os.environ.get("EPCUBE_INTERVAL", "60"))
 DEFAULT_POLL_INTERVAL = POLL_INTERVAL  # Fallback when DB has no setting
+DEFAULT_DISCOVERY_INTERVAL = 3600  # Seconds between device list re-queries
 DISABLE_AUTH = os.environ.get("EPCUBE_DISABLE_AUTH", "").lower() == "true"
 POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 
@@ -42,12 +42,6 @@ AZURE_CLIENT_ID = os.environ.get("AZURE_CLIENT_ID", "")
 AZURE_AUDIENCE = os.environ.get("AZURE_AUDIENCE", "")
 AZURE_CLIENT_SECRET = os.environ.get("AZURE_CLIENT_SECRET", "")
 AZURE_REDIRECT_URI = os.environ.get("AZURE_REDIRECT_URI", "")
-
-# OAuth session management
-_SESSION_MAX_AGE = 3600  # 1 hour
-_pending_auth = {}  # state -> {code_verifier, timestamp}
-_sessions = {}  # session_id -> {expires, user}
-_auth_lock = threading.Lock()
 
 log = logging.getLogger("epcube-exporter")
 logging.basicConfig(

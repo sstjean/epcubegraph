@@ -1,28 +1,17 @@
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
+public class VueStoreCurrentReadingsTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public VueStoreCurrentReadingsTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
-    private async Task<PostgresVueStore> ArrangeStoreAsync()
-    {
-        await _fixture.ClearDataAsync();
-        return new PostgresVueStore(_fixture.ConnectionString);
-    }
-
     [Fact]
     public async Task GetCurrentReadings_ReturnsNullWhenNoReadings()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresVueStore(container.GetConnectionString());
 
         // Act
         var result = await store.GetCurrentReadingsAsync(999999);
@@ -35,15 +24,17 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetCurrentReadings_ReturnsLatestPerChannel()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(100010, "Panel");
-        await _fixture.SeedVueChannelAsync(100010, "1,2,3", "Main");
-        await _fixture.SeedVueChannelAsync(100010, "1", "Kitchen");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 100010, "Panel");
+        await SeedVueChannel(connStr, 100010, "1,2,3", "Main");
+        await SeedVueChannel(connStr, 100010, "1", "Kitchen");
 
         var now = DateTimeOffset.UtcNow;
-        await _fixture.SeedVueReadingAsync(100010, "1,2,3", now.AddSeconds(-10), 5000.0);
-        await _fixture.SeedVueReadingAsync(100010, "1,2,3", now.AddSeconds(-5), 5500.0);
-        await _fixture.SeedVueReadingAsync(100010, "1", now.AddSeconds(-3), 1200.0);
+        await SeedVueReading(connStr, 100010, "1,2,3", now.AddSeconds(-10), 5000.0);
+        await SeedVueReading(connStr, 100010, "1,2,3", now.AddSeconds(-5), 5500.0);
+        await SeedVueReading(connStr, 100010, "1", now.AddSeconds(-3), 1200.0);
 
         // Act
         var result = await store.GetCurrentReadingsAsync(100010);
@@ -61,17 +52,19 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetBulkCurrentReadings_ReturnsAllDevicesWithLatestReadings()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(200001, "Panel A");
-        await _fixture.SeedVueDeviceAsync(200002, "Panel B");
-        await _fixture.SeedVueChannelAsync(200001, "1,2,3", "Main");
-        await _fixture.SeedVueChannelAsync(200001, "4", "Kitchen");
-        await _fixture.SeedVueChannelAsync(200002, "1,2,3", "Main");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 200001, "Panel A");
+        await SeedVueDevice(connStr, 200002, "Panel B");
+        await SeedVueChannel(connStr, 200001, "1,2,3", "Main");
+        await SeedVueChannel(connStr, 200001, "4", "Kitchen");
+        await SeedVueChannel(connStr, 200002, "1,2,3", "Main");
 
         var now = DateTimeOffset.UtcNow;
-        await _fixture.SeedVueReadingAsync(200001, "1,2,3", now.AddSeconds(-5), 8000.0);
-        await _fixture.SeedVueReadingAsync(200001, "4", now.AddSeconds(-3), 1200.0);
-        await _fixture.SeedVueReadingAsync(200002, "1,2,3", now.AddSeconds(-2), 3000.0);
+        await SeedVueReading(connStr, 200001, "1,2,3", now.AddSeconds(-5), 8000.0);
+        await SeedVueReading(connStr, 200001, "4", now.AddSeconds(-3), 1200.0);
+        await SeedVueReading(connStr, 200002, "1,2,3", now.AddSeconds(-2), 3000.0);
 
         // Act
         var result = await store.GetBulkCurrentReadingsAsync();
@@ -89,7 +82,8 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetBulkCurrentReadings_ReturnsEmptyWhenNoDevices()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresVueStore(container.GetConnectionString());
 
         // Act
         var result = await store.GetBulkCurrentReadingsAsync();
@@ -102,11 +96,13 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetBulkCurrentReadings_ResolvesDisplayNameOverrides()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(200003, "Panel");
-        await _fixture.SeedVueChannelAsync(200003, "4", "Raw Name");
-        await _fixture.SeedDisplayNameOverrideAsync(200003, "4", "Custom Name");
-        await _fixture.SeedVueReadingAsync(200003, "4", DateTimeOffset.UtcNow, 500.0);
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 200003, "Panel");
+        await SeedVueChannel(connStr, 200003, "4", "Raw Name");
+        await SeedDisplayNameOverride(connStr, 200003, "4", "Custom Name");
+        await SeedVueReading(connStr, 200003, "4", DateTimeOffset.UtcNow, 500.0);
 
         // Act
         var result = await store.GetBulkCurrentReadingsAsync();
@@ -120,8 +116,10 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetBulkCurrentReadings_DeviceWithNoReadingsIncludedWithEmptyChannels()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(200004, "Empty Panel");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 200004, "Empty Panel");
 
         // Act
         var result = await store.GetBulkCurrentReadingsAsync();
@@ -136,14 +134,16 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
     public async Task GetBulkCurrentReadings_ExcludesReadingsOlderThan30Seconds()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
-        await _fixture.SeedVueDeviceAsync(200005, "Panel C");
-        await _fixture.SeedVueChannelAsync(200005, "1,2,3", "Main");
-        await _fixture.SeedVueChannelAsync(200005, "4", "Kitchen");
+        await using var container = await TestSchema.CreateContainerAsync();
+        var connStr = container.GetConnectionString();
+        var store = new PostgresVueStore(connStr);
+        await SeedVueDevice(connStr, 200005, "Panel C");
+        await SeedVueChannel(connStr, 200005, "1,2,3", "Main");
+        await SeedVueChannel(connStr, 200005, "4", "Kitchen");
 
         var now = DateTimeOffset.UtcNow;
-        await _fixture.SeedVueReadingAsync(200005, "1,2,3", now.AddSeconds(-2), 5000.0);
-        await _fixture.SeedVueReadingAsync(200005, "4", now.AddSeconds(-60), 800.0);
+        await SeedVueReading(connStr, 200005, "1,2,3", now.AddSeconds(-2), 5000.0);
+        await SeedVueReading(connStr, 200005, "4", now.AddSeconds(-60), 800.0);
 
         // Act
         var result = await store.GetBulkCurrentReadingsAsync();
@@ -153,5 +153,56 @@ public class VueStoreCurrentReadingsTests : IClassFixture<PostgresFixture>
         Assert.Single(dev.Channels);
         Assert.Equal("1,2,3", dev.Channels[0].ChannelNum);
         Assert.Equal(5000.0, dev.Channels[0].Value);
+    }
+
+    private static async Task SeedVueDevice(string connStr, long gid, string name, bool connected = true, string? model = null)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO vue_devices (device_gid, device_name, model, connected) VALUES ($1, $2, $3, $4) ON CONFLICT (device_gid) DO UPDATE SET device_name = $2, model = $3, connected = $4", conn);
+        cmd.Parameters.AddWithValue(gid);
+        cmd.Parameters.AddWithValue(name);
+        cmd.Parameters.AddWithValue((object?)model ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(connected);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedVueChannel(string connStr, long gid, string channelNum, string? name = null, string? channelType = null)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO vue_channels (device_gid, channel_num, name, channel_type) VALUES ($1, $2, $3, $4) ON CONFLICT (device_gid, channel_num) DO UPDATE SET name = $3, channel_type = $4", conn);
+        cmd.Parameters.AddWithValue(gid);
+        cmd.Parameters.AddWithValue(channelNum);
+        cmd.Parameters.AddWithValue((object?)name ?? DBNull.Value);
+        cmd.Parameters.AddWithValue((object?)channelType ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedVueReading(string connStr, long gid, string channelNum, DateTimeOffset timestamp, double value)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO vue_readings (device_gid, channel_num, timestamp, value) VALUES ($1, $2, $3, $4) ON CONFLICT (device_gid, channel_num, timestamp) DO NOTHING", conn);
+        cmd.Parameters.AddWithValue(gid);
+        cmd.Parameters.AddWithValue(channelNum);
+        cmd.Parameters.AddWithValue(timestamp);
+        cmd.Parameters.AddWithValue(value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SeedDisplayNameOverride(string connStr, long deviceGid, string? channelNumber, string displayName)
+    {
+        using var conn = new Npgsql.NpgsqlConnection(connStr);
+        await conn.OpenAsync();
+        using var cmd = new Npgsql.NpgsqlCommand(
+            "INSERT INTO display_name_overrides (device_gid, channel_number, display_name) VALUES ($1, $2, $3) ON CONFLICT (device_gid, channel_number) DO UPDATE SET display_name = $3", conn);
+        cmd.Parameters.AddWithValue(deviceGid);
+        cmd.Parameters.AddWithValue((object?)channelNumber ?? DBNull.Value);
+        cmd.Parameters.AddWithValue(displayName);
+        await cmd.ExecuteNonQueryAsync();
     }
 }

@@ -38,7 +38,8 @@ else
 
 // PostgreSQL data store
 var connectionString = Startup.GetRequiredConnectionString(builder.Configuration);
-builder.Services.AddSingleton<IMetricsStore>(new PostgresMetricsStore(connectionString));
+builder.Services.AddSingleton<IMetricsStore>(sp =>
+    new PostgresMetricsStore(connectionString, sp.GetRequiredService<ILogger<PostgresMetricsStore>>()));
 builder.Services.AddSingleton<ISettingsStore>(new PostgresSettingsStore(connectionString));
 builder.Services.AddSingleton<IVueStore>(new PostgresVueStore(connectionString));
 

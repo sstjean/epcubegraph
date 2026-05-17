@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock MSAL browser module
 vi.mock('@azure/msal-browser', () => {
@@ -29,15 +29,12 @@ vi.mock('@azure/msal-browser', () => {
 });
 
 describe('auth', () => {
-  beforeEach(() => {
+  it('initializes MSAL PublicClientApplication', async () => {
+    // Arrange
     vi.resetModules();
     vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
     vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
     vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
-  });
-
-  it('initializes MSAL PublicClientApplication', async () => {
-    // Arrange
     const { initializeMsal } = await import('../../src/auth');
 
     // Act
@@ -161,6 +158,10 @@ describe('auth', () => {
 
   it('getAccessToken throws when MSAL not initialized', async () => {
     // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
+    vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
+    vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
     const { getAccessToken } = await import('../../src/auth');
 
     // Act & Assert
@@ -169,6 +170,10 @@ describe('auth', () => {
 
   it('isAuthenticated returns false when MSAL not initialized', async () => {
     // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
+    vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
+    vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
     const { isAuthenticated } = await import('../../src/auth');
 
     // Act & Assert

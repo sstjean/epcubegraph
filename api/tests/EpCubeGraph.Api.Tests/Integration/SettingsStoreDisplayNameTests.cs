@@ -1,29 +1,18 @@
 using EpCubeGraph.Api.Models;
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class SettingsStoreDisplayNameTests : IClassFixture<PostgresFixture>
+public class SettingsStoreDisplayNameTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public SettingsStoreDisplayNameTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
-    private async Task<PostgresSettingsStore> ArrangeStoreAsync()
-    {
-        await _fixture.ClearDataAsync();
-        return new PostgresSettingsStore(_fixture.ConnectionString);
-    }
-
     [Fact]
     public async Task GetDisplayNames_ReturnsNotNull()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var result = await store.GetDisplayNamesAsync();
@@ -36,7 +25,8 @@ public class SettingsStoreDisplayNameTests : IClassFixture<PostgresFixture>
     public async Task UpdateDisplayNames_InsertsOverrides()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         var overrides = new List<DisplayNameInputEntry>
         {
             new(null, "Main Panel"),
@@ -56,7 +46,8 @@ public class SettingsStoreDisplayNameTests : IClassFixture<PostgresFixture>
     public async Task UpdateDisplayNames_ReplacesForDevice()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateDisplayNamesForDeviceAsync(88881, new List<DisplayNameInputEntry>
         {
             new("1", "Old Name"),
@@ -77,7 +68,8 @@ public class SettingsStoreDisplayNameTests : IClassFixture<PostgresFixture>
     public async Task DeleteDisplayName_ReturnsTrueWhenDeleted()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateDisplayNamesForDeviceAsync(77771, new List<DisplayNameInputEntry>
         {
             new("5", "To Delete"),
@@ -94,7 +86,8 @@ public class SettingsStoreDisplayNameTests : IClassFixture<PostgresFixture>
     public async Task DeleteDisplayName_ReturnsFalseWhenNotFound()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var deleted = await store.DeleteDisplayNameAsync(66661, "nonexistent");

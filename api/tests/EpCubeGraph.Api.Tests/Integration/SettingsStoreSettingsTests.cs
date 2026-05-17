@@ -1,28 +1,17 @@
 using EpCubeGraph.Api.Services;
 using EpCubeGraph.Api.Tests.Fixtures;
+using Testcontainers.PostgreSql;
 
 namespace EpCubeGraph.Api.Tests.Integration;
 
-public class SettingsStoreSettingsTests : IClassFixture<PostgresFixture>
+public class SettingsStoreSettingsTests
 {
-    private readonly PostgresFixture _fixture;
-
-    public SettingsStoreSettingsTests(PostgresFixture fixture)
-    {
-        _fixture = fixture;
-    }
-
-    private async Task<PostgresSettingsStore> ArrangeStoreAsync()
-    {
-        await _fixture.ClearDataAsync();
-        return new PostgresSettingsStore(_fixture.ConnectionString);
-    }
-
     [Fact]
     public async Task GetAllSettings_ReturnsListIncludingInsertedKeys()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateSettingAsync("get_all_test_key", "1");
 
         // Act
@@ -37,7 +26,8 @@ public class SettingsStoreSettingsTests : IClassFixture<PostgresFixture>
     public async Task UpdateSetting_CreatesAndReturnsEntry()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var entry = await store.UpdateSettingAsync("create_test_key", "42");
@@ -51,7 +41,8 @@ public class SettingsStoreSettingsTests : IClassFixture<PostgresFixture>
     public async Task GetSetting_ReturnsUpdatedValue()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateSettingAsync("get_test_key", "100");
 
         // Act
@@ -66,7 +57,8 @@ public class SettingsStoreSettingsTests : IClassFixture<PostgresFixture>
     public async Task GetSetting_ReturnsNullForMissing()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
 
         // Act
         var entry = await store.GetSettingAsync("definitely_nonexistent_key_abc123");
@@ -79,7 +71,8 @@ public class SettingsStoreSettingsTests : IClassFixture<PostgresFixture>
     public async Task UpdateSetting_OverwritesExistingValue()
     {
         // Arrange
-        var store = await ArrangeStoreAsync();
+        await using var container = await TestSchema.CreateContainerAsync();
+        var store = new PostgresSettingsStore(container.GetConnectionString());
         await store.UpdateSettingAsync("overwrite_test_key", "10");
 
         // Act

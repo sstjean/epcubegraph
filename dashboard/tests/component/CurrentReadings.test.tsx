@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent, act } from '@testing-library/preact';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/preact';
 import { h } from 'preact';
-import { fetchDevices, fetchCurrentReadings } from '../../src/api';
+import { fetchDevices, fetchDevicesByStatus, fetchCurrentReadings } from '../../src/api';
+import { useDeviceDiscoveryContext } from '../../src/hooks/useDeviceDiscovery';
 import { createPollingInterval, clearPollingInterval } from '../../src/utils/polling';
 import { withRetry } from '../../src/utils/retry';
 import { CurrentReadings } from '../../src/components/CurrentReadings';
@@ -10,7 +11,17 @@ import { useVueData } from '../../src/hooks/useVueData';
 // Mock external dependencies
 vi.mock('../../src/api', () => ({
   fetchDevices: vi.fn(),
+  fetchDevicesByStatus: vi.fn(),
   fetchCurrentReadings: vi.fn(),
+}));
+
+vi.mock('../../src/hooks/useDeviceDiscovery', () => ({
+  useDeviceDiscoveryContext: vi.fn().mockReturnValue({
+    pending: [],
+    dismiss: vi.fn(),
+    merge: vi.fn(),
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock('../../src/hooks/useVueData', () => ({
@@ -50,7 +61,9 @@ vi.mock('../../src/telemetry', () => ({
 
 const mockUseVueData = useVueData as ReturnType<typeof vi.fn>;
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
+const mockFetchDevicesByStatus = fetchDevicesByStatus as ReturnType<typeof vi.fn>;
 const mockFetchCurrentReadings = fetchCurrentReadings as ReturnType<typeof vi.fn>;
+const mockUseDeviceDiscoveryContext = useDeviceDiscoveryContext as ReturnType<typeof vi.fn>;
 const mockCreatePolling = createPollingInterval as ReturnType<typeof vi.fn>;
 const mockWithRetry = withRetry as ReturnType<typeof vi.fn>;
 
@@ -62,15 +75,16 @@ const emptyMetricResponse = {
 function setupCommonMocks() {
   mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
   mockCreatePolling.mockReturnValue(1);
+  mockFetchDevicesByStatus.mockResolvedValue({ devices: [] });
+  mockUseDeviceDiscoveryContext.mockReturnValue({
+    pending: [],
+    dismiss: vi.fn(),
+    merge: vi.fn(),
+    refresh: vi.fn(),
+  });
 }
 
 describe('CurrentReadings', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(cleanup);
-
   it('renders as <section> with heading (FR-015)', async () => {
     // Arrange
     setupCommonMocks();
@@ -651,5 +665,555 @@ describe('CurrentReadings', () => {
     expect(screen.getByText(/Last updated:/)).toBeTruthy();
 
     vi.useRealTimers();
+  });
+
+  // ---------------------------------------------------------------------------
+  // T054: Removed-device visibility toggle
+  // ---------------------------------------------------------------------------
+
+  it('does not show removed-device toggle when no removed devices exist', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({ devices: [] });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.queryByRole('checkbox', { name: /show removed devices/i })).toBeNull();
+    });
+  });
+
+  it('shows removed-device toggle when removed devices exist', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'EP Cube v1 Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'EP Cube v1 Solar' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'EP Cube v2 Battery' },
+        { device: 'epcube2_solar', class: 'home_solar', online: false, alias: 'EP Cube v2 Solar' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /show removed devices/i })).toBeTruthy();
+    });
+  });
+
+  it('removed-device toggle defaults to checked (show removed)', async () => {
+    // Arrange
+    setupCommonMocks();
+    localStorage.removeItem('showRemovedDevices');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active Battery' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Removed Battery' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      const toggle = screen.getByRole('checkbox', { name: /show removed devices/i }) as HTMLInputElement;
+      expect(toggle.checked).toBe(true);
+    });
+  });
+
+  it('removed devices shown with grayed-out styling when toggle is on', async () => {
+    // Arrange
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'true');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'Active Solar' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Old Battery' },
+        { device: 'epcube2_solar', class: 'home_solar', online: false, alias: 'Old Solar' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — removed device group rendered with device-removed class
+    await waitFor(() => {
+      const removedEl = document.querySelector('.device-removed');
+      expect(removedEl).toBeTruthy();
+    });
+  });
+
+  it('removed devices hidden when toggle is off', async () => {
+    // Arrange
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'false');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active Battery' },
+        { device: 'epcube1_solar', class: 'home_solar', online: true, alias: 'Active Solar' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Old Battery' },
+        { device: 'epcube2_solar', class: 'home_solar', online: false, alias: 'Old Solar' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — no removed device elements rendered
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed')).toBeNull();
+    });
+  });
+
+  it('toggling off persists to localStorage and hides removed devices', async () => {
+    // Arrange
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'true');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active Battery' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Old Battery' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /show removed devices/i })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /show removed devices/i }));
+
+    // Assert
+    expect(localStorage.getItem('showRemovedDevices')).toBe('false');
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed')).toBeNull();
+    });
+  });
+
+  it('toggling on persists to localStorage and shows removed devices', async () => {
+    // Arrange
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'false');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active Battery' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Old Battery' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+    await waitFor(() => {
+      expect(screen.getByRole('checkbox', { name: /show removed devices/i })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('checkbox', { name: /show removed devices/i }));
+
+    // Assert
+    expect(localStorage.getItem('showRemovedDevices')).toBe('true');
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed')).toBeTruthy();
+    });
+  });
+
+  it('annotates device card with pending merge note when old and new devices share a display name', async () => {
+    // Arrange — old and new both devType=2 → both resolve to "EP Cube v2"
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+        { device: 'epcube5840_solar', class: 'home_solar', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [
+        {
+          id: 1,
+          old_device_id: '5488',
+          new_device_id: '5840',
+          detected_at: '2026-05-16T12:00:00Z',
+          old_product_code: 'EP Cube (devType=2)',
+          new_product_code: 'EP Cube (devType=2)',
+        },
+      ],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/These are the new device readings/)).toBeTruthy();
+      expect(screen.getByText(/The old device is offline/)).toBeTruthy();
+    });
+    // Title remains clean — no inline annotation
+    expect(screen.queryByText(/pending merge/)).toBeNull();
+  });
+
+  it('does not annotate device card when no pending replacement matches', async () => {
+    // Arrange
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+        { device: 'epcube5840_solar', class: 'home_solar', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    // setupCommonMocks already sets pending=[]
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+    expect(screen.queryByText(/new device readings/)).toBeNull();
+  });
+
+  it('does not annotate device card when old and new devices resolve to different titles', async () => {
+    // Arrange — old=devType=0 ("EP Cube v1") vs new=devType=2 ("EP Cube v2"): different titles
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+        { device: 'epcube5840_solar', class: 'home_solar', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [
+        {
+          id: 1,
+          old_device_id: '5488',
+          new_device_id: '5840',
+          detected_at: '2026-05-16T12:00:00Z',
+          old_product_code: 'EP Cube (devType=0)',
+          new_product_code: 'EP Cube (devType=2)',
+        },
+      ],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — note NOT shown because cards have distinct titles ("EP Cube v1" vs "EP Cube v2")
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+    expect(screen.queryByText(/new device readings/)).toBeNull();
+  });
+
+  it('disambiguates duplicate display names across active groups by appending device ID', async () => {
+    // Arrange — two separate active devices both resolving to "EP Cube v2"
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'Cube A' },
+        { device: 'epcube5840_solar', class: 'home_solar', online: true, product_code: 'EP Cube (devType=2)', alias: 'Cube A' },
+        { device: 'epcube7777_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'Cube B' },
+        { device: 'epcube7777_solar', class: 'home_solar', online: true, product_code: 'EP Cube (devType=2)', alias: 'Cube B' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — both rendered titles include their device ID
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2 (5840)')).toBeTruthy();
+      expect(screen.getByText('EP Cube v2 (7777)')).toBeTruthy();
+    });
+    // Original undisambiguated "EP Cube v2" should NOT appear
+    expect(screen.queryByText('EP Cube v2')).toBeNull();
+  });
+
+  it('disambiguates duplicate display names across active and removed groups', async () => {
+    // Arrange — active 5840 + removed 5488; both resolve to "EP Cube v2"
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'New' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube5488_battery', class: 'storage_battery', online: false, product_code: 'EP Cube (devType=2)', alias: 'Old' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    // No pending replacement so the removed device card is visible
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — both titles disambiguated with device IDs
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v2 (5840)')).toBeTruthy();
+      expect(screen.getByText('EP Cube v2 (5488)')).toBeTruthy();
+    });
+  });
+
+  it('does not disambiguate when display names are already unique', async () => {
+    // Arrange — one v1, one v2 (distinct titles already)
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube3483_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=0)', alias: 'Cube A' },
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'Cube B' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — titles remain clean (no device-id suffix)
+    await waitFor(() => {
+      expect(screen.getByText('EP Cube v1')).toBeTruthy();
+      expect(screen.getByText('EP Cube v2')).toBeTruthy();
+    });
+    expect(screen.queryByText(/EP Cube v\d+ \(\d+\)/)).toBeNull();
+  });
+
+  it('hides removed-device card while it has a pending replacement (avoids duplicate-title clutter)', async () => {
+    // Arrange — old=5488 is removed, new=5840 is active, pending replacement exists.
+    // Both share product_code → both resolve to "EP Cube v2".
+    // Without this fix, the page shows two "EP Cube v2" cards (one normal, one faded).
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube5488_battery', class: 'storage_battery', online: false, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [
+        {
+          id: 1,
+          old_device_id: '5488',
+          new_device_id: '5840',
+          detected_at: '2026-05-16T12:00:00Z',
+          old_product_code: 'EP Cube (devType=2)',
+          new_product_code: 'EP Cube (devType=2)',
+        },
+      ],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — the removed-device card is hidden while the pending replacement exists
+    await waitFor(() => {
+      expect(screen.getByText(/These are the new device readings/)).toBeTruthy();
+    });
+    expect(document.querySelector('.device-removed')).toBeNull();
+    // The "Show removed devices" toggle is also hidden since no visible removed devices exist
+    expect(screen.queryByRole('checkbox', { name: /show removed devices/i })).toBeNull();
+  });
+
+  it('shows removed-device card again once the pending replacement is cleared', async () => {
+    // Arrange — initial render: pending exists; rerender after dismiss: pending cleared
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube5488_battery', class: 'storage_battery', online: false, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [
+        {
+          id: 1,
+          old_device_id: '5488',
+          new_device_id: '5840',
+          detected_at: '2026-05-16T12:00:00Z',
+          old_product_code: 'EP Cube (devType=2)',
+          new_product_code: 'EP Cube (devType=2)',
+        },
+      ],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    // Act — first render: removed card hidden
+    const { rerender } = render(<CurrentReadings />);
+    await waitFor(() => {
+      expect(screen.getByText(/These are the new device readings/)).toBeTruthy();
+    });
+    expect(document.querySelector('.device-removed')).toBeNull();
+
+    // Pending is cleared (dismiss completed)
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+    rerender(<CurrentReadings />);
+
+    // Assert — removed card now visible
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed')).toBeTruthy();
+    });
+  });
+
+  it('removes annotation when pending replacement is dismissed (state-driven)', async () => {
+    // Arrange — start with one pending, then re-render with empty pending
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube5840_battery', class: 'storage_battery', online: true, product_code: 'EP Cube (devType=2)', alias: 'My EP Cube' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [
+        {
+          id: 1,
+          old_device_id: '5488',
+          new_device_id: '5840',
+          detected_at: '2026-05-16T12:00:00Z',
+          old_product_code: 'EP Cube (devType=2)',
+          new_product_code: 'EP Cube (devType=2)',
+        },
+      ],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+
+    // Act — first render shows the note
+    const { rerender } = render(<CurrentReadings />);
+    await waitFor(() => {
+      expect(screen.getByText(/These are the new device readings/)).toBeTruthy();
+    });
+
+    // Now context returns empty pending (simulating successful dismiss/merge)
+    mockUseDeviceDiscoveryContext.mockReturnValue({
+      pending: [],
+      dismiss: vi.fn(),
+      merge: vi.fn(),
+      refresh: vi.fn(),
+    });
+    rerender(<CurrentReadings />);
+
+    // Assert — note disappears immediately
+    await waitFor(() => {
+      expect(screen.queryByText(/These are the new device readings/)).toBeNull();
+    });
+  });
+
+  it('renders removed device cards in Gauges view when toggle is on', async () => {
+    // Arrange — exercises the gauges-view branch of the removed-device render
+    setupCommonMocks();
+    localStorage.setItem('showRemovedDevices', 'true');
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockResolvedValue({
+      devices: [
+        { device: 'epcube2_battery', class: 'storage_battery', online: false, alias: 'Removed One' },
+      ],
+    });
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+    await waitFor(() => screen.getByText('Gauges'));
+    fireEvent.click(screen.getByText('Gauges'));
+
+    // Assert — removed-device card visible in gauges view
+    await waitFor(() => {
+      expect(document.querySelector('.device-removed .device-card')).toBeTruthy();
+    });
+  });
+
+  it('treats fetchDevicesByStatus rejection as empty removed list (no crash)', async () => {
+    // Arrange — exercises the catch branch that resets removedGroups to []
+    setupCommonMocks();
+    mockFetchDevices.mockResolvedValue({
+      devices: [
+        { device: 'epcube1_battery', class: 'storage_battery', online: true, alias: 'Active' },
+      ],
+    });
+    mockFetchDevicesByStatus.mockRejectedValue(new Error('Removed API fail'));
+    mockFetchCurrentReadings.mockResolvedValue(emptyMetricResponse);
+
+    // Act
+    render(<CurrentReadings />);
+
+    // Assert — main view still renders; no removed devices and no toggle
+    await waitFor(() => {
+      expect(document.querySelector('.device-card')).toBeTruthy();
+    });
+    expect(screen.queryByRole('checkbox', { name: /show removed devices/i })).toBeNull();
   });
 });

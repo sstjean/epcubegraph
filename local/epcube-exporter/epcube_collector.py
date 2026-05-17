@@ -4,7 +4,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from config import _safe_float, _nz, _TZ, DEFAULT_POLL_INTERVAL, POSTGRES_DSN, __version__, log
+from config import _safe_float, _nz, _TZ, DEFAULT_POLL_INTERVAL, DEFAULT_DISCOVERY_INTERVAL, POSTGRES_DSN, __version__, log
 from auth import _api_request, authenticate, AuthExpiredError, _jwt_exp
 
 
@@ -105,7 +105,6 @@ class EpCubeCollector:
             if self._token_exp:
                 remaining = self._token_exp - time.time()
                 log.info("Token expires in %.0f min", remaining / 60)
-            self._discover_devices()
 
     def _token_expiring_soon(self):
         """Return True if token expires within 5 minutes."""
@@ -117,7 +116,6 @@ class EpCubeCollector:
         log.info("Re-authenticating...")
         self._token = authenticate(self._username, self._password)
         self._token_exp = _jwt_exp(self._token)
-        self._discover_devices()
 
     @staticmethod
     def _data_looks_stale(data):
@@ -142,12 +140,82 @@ class EpCubeCollector:
             return _api_request("GET", path, token=self._token)
 
     def _discover_devices(self):
+        self._ensure_auth()
         result = _api_request("GET", "/home/deviceList", token=self._token)
-        if result.get("status") == 200:
-            self._devices = result["data"]
-            for d in self._devices:
-                log.info("  Device: %s (id=%s, sn=%s, online=%s)",
-                         d.get("name", "?"), d["id"], d.get("sgSn", "?"), d.get("isOnline", "?"))
+        if result.get("status") != 200:
+            # Raise so retry_with_backoff actually retries on transient cloud
+            # failures (e.g., 5xx, auth expiry). Silently returning here caused
+            # the caller to treat the failure as success and advance
+            # last_discovery_time, delaying the next discovery by a full
+            # interval. (PR #137 review)
+            raise RuntimeError(
+                f"Cloud /home/deviceList returned status={result.get('status')}: "
+                f"{result.get('message', 'no message')}"
+            )
+
+        cloud_devices = result["data"]
+
+        # FR-007: Empty list guard
+        if not cloud_devices:
+            log.warning("Cloud returned empty device list — retaining current devices")
+            return
+
+        # Compare cloud list against known DB devices
+        known_ids = self._pg.read_active_epcube_ids()
+        cloud_ids = {str(d["id"]) for d in cloud_devices}
+        added, removed, unchanged = compare_device_lists(known_ids, cloud_ids)
+
+        # Register new devices in DB
+        for dev_id in added:
+            dev = next(d for d in cloud_devices if str(d["id"]) == dev_id)
+            dev_name = dev.get("name", "unknown")
+            sg_sn = dev.get("sgSn", "")
+            dev_type = dev.get("devType", 0)
+            base_id = f"epcube{dev_id}"
+            self._pg.upsert_device(f"{base_id}_battery", "storage_battery", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn)
+            self._pg.upsert_device(f"{base_id}_solar", "home_solar", dev_name,
+                                   "Canadian Solar", f"EP Cube (devType={dev_type})", sg_sn)
+            log.info("New device discovered: %s (id=%s, sn=%s)", dev_name, dev_id, sg_sn)
+
+        # Mark removed devices in DB and log (FR-003, FR-004, FR-005)
+        for dev_id in removed:
+            self._pg.update_device_status(dev_id, "removed")
+            log.warning("Device removed from cloud account: id=%s", dev_id)
+
+        self._detect_replacements(added, removed)
+
+        # Update device list for polling
+        self._devices = cloud_devices
+        log.info("Device discovery complete: %d device(s) (%d new, %d removed, %d unchanged)",
+                 len(cloud_devices), len(added), len(removed), len(unchanged))
+
+    def _detect_replacements(self, added, removed):
+        """FR-010: Record pending replacement prompts.
+
+        For each newly added device, look for any removed device with the same
+        alias (covers both same-cycle and cross-cycle replacements).  For each
+        removed device not already paired, look for an existing active device
+        with the same alias.
+        """
+        paired_old = set()
+
+        # Added devices: look for a removed predecessor by alias
+        for new_id in added:
+            old_id = self._pg.find_removed_predecessor(new_id)
+            if old_id:
+                self._pg.insert_pending_replacement(old_id, new_id)
+                paired_old.add(old_id)
+                log.info("Pending replacement recorded: old=%s new=%s", old_id, new_id)
+
+        # Removed devices not already paired: look for an active replacement by alias
+        for old_id in removed:
+            if old_id in paired_old:
+                continue
+            new_id = self._pg.find_replacement_candidate(old_id)
+            if new_id:
+                self._pg.insert_pending_replacement(old_id, new_id)
+                log.info("Cross-cycle pending replacement recorded: old=%s new=%s", old_id, new_id)
 
     def poll(self):
         """Fetch data from all devices and write to PostgreSQL."""
@@ -341,46 +409,64 @@ class EpCubeCollector:
                 "history": list(self._history),
             }
 
+    def run_poll_loop(self):
+        """Background thread: polls API on schedule. Reads interval from DB each cycle."""
+        log.info("EP Cube poll thread started")
+        last_discovery_time = 0.0
+        while True:
+            try:
+                current_interval = self._pg.read_setting_int(
+                    "epcube_poll_interval_seconds", DEFAULT_POLL_INTERVAL, 1, 3600)
+                discovery_interval = self._pg.read_setting_int(
+                    "discovery_interval_seconds", DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+                with self._lock:
+                    self._poll_interval = current_interval
+                    self._next_poll_at = time.time() + current_interval
 
-# ---------------------------------------------------------------------------
-# Polling loop
-# ---------------------------------------------------------------------------
+                # Check if discovery is due (FR-008: fixed schedule, checked each poll cycle)
+                now = time.time()
+                if now - last_discovery_time >= discovery_interval:
+                    try:
+                        retry_with_backoff(self._discover_devices)
+                        last_discovery_time = time.time()
+                    except Exception:
+                        log.exception("Device discovery failed after retries")
 
-def _read_poll_interval_from_db():
-    """Read epcube_poll_interval_seconds from settings table. Returns default on any error."""
-    if not POSTGRES_DSN:
-        return DEFAULT_POLL_INTERVAL
-    try:
-        import psycopg2
-        conn = psycopg2.connect(POSTGRES_DSN)
+                # Poll BEFORE sleeping so newly-discovered devices begin emitting
+                # telemetry on this cycle instead of after a full interval delay.
+                self.poll()
+                time.sleep(current_interval)
+            except Exception:
+                log.exception("EP Cube poll loop error")
+                with self._lock:
+                    self._poll_errors += 1
+                    self._consecutive_errors += 1
+
+
+def compare_device_lists(known_ids, cloud_devices):
+    """Compare known device IDs with cloud device list.
+
+    Returns (added, removed, unchanged) where each is a set of device IDs.
+    """
+    cloud_ids = set(cloud_devices)
+    known_set = set(known_ids)
+    added = cloud_ids - known_set
+    removed = known_set - cloud_ids
+    unchanged = known_set & cloud_ids
+    return added, removed, unchanged
+
+
+def retry_with_backoff(fn, max_retries=5, base_delay=30):
+    """Retry a function with exponential backoff. Raises the last exception on failure."""
+    last_exc = None
+    for attempt in range(max_retries):
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT value FROM settings WHERE key = 'epcube_poll_interval_seconds'")
-            row = cur.fetchone()
-            if row:
-                val = int(str(row[0]).strip('"'))
-                if 1 <= val <= 3600:
-                    return val
-        finally:
-            conn.close()
-    except Exception:
-        log.debug("Could not read poll interval from DB, using default %ds", DEFAULT_POLL_INTERVAL)
-    return DEFAULT_POLL_INTERVAL
-
-
-def poll_loop(collector):
-    """Background thread: polls API on schedule. Reads interval from DB each cycle."""
-    log.info("EP Cube poll thread started")
-    while True:
-        try:
-            current_interval = _read_poll_interval_from_db()
-            with collector._lock:
-                collector._poll_interval = current_interval
-                collector._next_poll_at = time.time() + current_interval
-            time.sleep(current_interval)
-            collector.poll()
-        except Exception:
-            log.exception("EP Cube poll loop error")
-            with collector._lock:
-                collector._poll_errors += 1
-                collector._consecutive_errors += 1
+            return fn()
+        except Exception as e:
+            last_exc = e
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                log.warning("Attempt %d/%d failed: %s — retrying in %ds",
+                            attempt + 1, max_retries, e, delay)
+                time.sleep(delay)
+    raise last_exc

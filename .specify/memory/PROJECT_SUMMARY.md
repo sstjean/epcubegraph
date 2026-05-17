@@ -1,70 +1,148 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-03
+**Last Updated**: 2026-05-16
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `main`
-**Last merged**: PR #132 — Defense-in-depth: NaN/HTML/concurrency + _tablesCreated race + SWA config fix
-**Unpushed commits**: none
+**Branch**: `124-device-discovery` (complete — ready for PR)
+**Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
+**Open PR**: #137 — Test isolation refactor: every test self-contained (Phases 0–5)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-03)
+## ⚡ Current State (2026-05-15)
 
-### PR #132 — Defense-in-Depth (MERGED ✅)
-- **Issue #123 closed** — NaN/HTML/concurrency hardening across exporter and API
-- Exporter: `_safe_float()` rejects NaN/Infinity → 0; used in metric parsing + stale detection
-- Exporter: HTML-escapes device names in status page (XSS prevention)
-- Exporter: lock-guarded `_polling` flag prevents overlapping polls (both EpCube and Vue collectors)
-- API: `SemaphoreSlim` + double-check locking on `EnsureTablesAsync` prevents concurrent DDL
-- API: `PostgresSettingsStore` implements `IDisposable` to dispose the `SemaphoreSlim`
-- API: integration tests split into self-contained per-concern files (no shared state between test classes)
-- Dashboard: moved `staticwebapp.config.json` to `public/` so Vite includes it in `dist/` — fixes 404 on SPA route refresh
-- TDD: 17 new exporter tests (185 total), 1 new API integration test (392 total)
-- Net: 19 files changed, 1462 insertions, 967 deletions
+### Test Isolation Refactor (COMPLETE ✅)
+Full history in Copilot repo memory: `test-isolation-refactor.md`
+
+All 1,340 tests across C#, TypeScript, and Python are fully self-contained.
+Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
+
+- **Phase 0** — Preflight (commit `f76a96a`)
+- **Phase 1** — Split 4 large C# test files into 20 (commits `cfffac8`→`1a6b0f4`)
+- **Phase 2** — Schema extraction (commit `81dd556`)
+- **Phase 3** — All 28 C# tests self-contained (commit `b3a7ceb`)
+- **Phase 4** — All 30 dashboard tests self-contained (commits `f1c3b3a`, `cf868d8`)
+  - Global `afterEach(cleanup)` added to `tests/setup.ts`
+  - `setupMocks()` helpers in DeviceMerge, HistoricalGraph, SettingsPage
+- **Phase 5** — All 115 Python tests self-contained (commit `c82fd57`)
+
+### Feature 124: Device Discovery (COMPLETE ✅)
+- **Issue #134** — Automatic device discovery with hourly re-scan and device merge
+- **Branch**: `124-device-discovery` (9 commits ahead of origin — push pending)
+- **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
+- **All 60 tasks done across 7 phases.**
+- Quickstart end-to-end verified locally (banner appears → telemetry collected on same cycle → Yes flow merges history → No flow keeps both devices → Remove flow hard-deletes).
+
+**Beyond original spec, also delivered on this branch:**
+- Cross-cycle replacement detection (alias matching between newly-added and previously-removed devices, not just same-cycle)
+- Poll-before-sleep exporter fix (new devices begin emitting telemetry on the same poll cycle as discovery; was previously delayed by a full poll interval)
+- `DELETE /api/v1/devices/{cloudId}` endpoint + `RemovedDevicesSection` UI for hard-deleting devices the user does not want to merge (option C management view)
+- `SettingsPage` SRP refactor — god component split into `PollingIntervalsSection`, `VueDeviceMappingSection`, `PanelHierarchySection` plus a tab orchestrator. Per-section tests only mock what each section uses.
+- Banner UX redesign: two-column table (Last Seen / Device ID / Device Name / Readings / Duplicates) with Yes/No buttons. `DeviceDiscoveryProvider` lifts pending state so the banner and the device card share it (merge/dismiss updates both instantly without polling lag).
+- Card-level "These are the new device readings. The old device is offline." indicator on the active device card during a pending replacement (only when both devices would resolve to the same display title).
+- Disambiguation of duplicate-titled cards (`EP Cube v2 (5488)` / `EP Cube v2 (5840)` when both share product_code).
+- Offline-zero fix: offline cards no longer render stale last-known values.
+- `updated_at` field on `DeviceInfo` (exposes when a device was marked removed, shown in the Removed tab as "Removed Date").
+- Bug fix: `vue_device_mapping` rename in merge now uses proper `epcube{id}` prefix (was previously a silent no-op on key mismatch; now logged via new `ILogger<PostgresMetricsStore>`).
+- Bug fix: `DismissPendingReplacementAsync` closes the lookup reader before rollback (was raising `NpgsqlOperationInProgressException` when the pending row didn't exist).
+- Constitution Section IV: new "Bug Fix Regression Tests (NON-NEGOTIABLE)" rule — every bug fix must start with one or more failing tests.
+
+### Session 2026-05-16 — Feature 124 wrap + branch ready for PR
+**Work completed (9 new commits on `124-device-discovery`, not yet pushed):**
+1. `6385888` chore: constitution + .gitignore (`*.lscache`)
+2. `d1fab4c` test(local): `scripts/simulate-device-replacement.sh`
+3. `129127a` fix(exporter): cross-cycle detection + poll-before-sleep + helper consolidation
+4. `f423049` feat(api): merge fixes, `DELETE /devices`, `updated_at`, regression coverage (`MergeStoreFullTests`, `DeleteDeviceStoreTests`, `DeleteDeviceEndpointTests`, `DevicesUpdatedAtTests`)
+5. `7afd0a2` feat(dashboard): redesign replacement banner + shared `useDeviceDiscoveryContext`
+6. `5a2d951` feat(dashboard): card-level pending-merge note, offline-zero, disambiguation
+7. `67b17af` refactor(dashboard): split `SettingsPage` into per-tab sections (SRP)
+8. `fbf944d` feat(dashboard): `RemovedDevicesSection` — manage and hard-delete removed devices
+9. (PROJECT_SUMMARY update — this commit)
+
+**Tests:**
+- Exporter: 331/331 pass
+- API: 452/452 pass
+- Dashboard: 664/664 pass
+- **Total: 1447 tests**
+
+**Working tree at session end:** clean. Push pending user approval.
+
+### Session 2026-05-15 — Feature 124 audit + removed-device toggle progress
+**Work completed:**
+- Performed startup procedure and full status audit against specs/tasks/code.
+- Verified test state end-to-end:
+  - Exporter: 323/323 pass, `epcube_collector.py` 100% coverage
+  - API: 422/422 pass (after starting Docker Desktop)
+  - Dashboard: 595/595 pass, 100% coverage
+- Audited `specs/124-device-discovery/tasks.md` against implementation and updated stale checkboxes:
+  - Marked T015–T053 and T055–T057 complete
+  - Left T054, T058, T059, T060 open
+- Implemented removed-device visibility feature work in dashboard:
+  - Added removed-device toggle and persistence via localStorage (`showRemovedDevices`)
+  - Added removed-device rendering/styling (`device-removed`, `removed-toggle`)
+  - Fetched removed devices via `fetchDevicesByStatus('removed')`
+- Added/updated component tests for removed-device toggle behavior and hardened selectors to avoid ambiguous label matches.
+- Verified `CurrentReadings` component suite: 34/34 passing.
+
+**Working tree at shutdown (uncommitted):**
+- `dashboard/src/app.css`
+- `dashboard/src/components/CurrentReadings.tsx`
+- `dashboard/tests/component/CurrentReadings.test.tsx`
+- `specs/124-device-discovery/tasks.md`
+
+### Session 2026-05-12 — Test isolation refactor complete + push + PR
+**Commits made (3 new, all on `124-device-discovery`):**
+1. `f1c3b3a` — Commit 5 previously-done dashboard unit test files
+2. `cf868d8` — Phase 4 complete: remove all beforeEach/afterEach from 18 dashboard files
+3. `c82fd57` — Phase 5 complete: inline setUp into 115 Python test methods
+
+**Key decisions:**
+- `@testing-library/preact` does NOT auto-cleanup — added global `afterEach(cleanup)` in `tests/setup.ts`
+- Complex mock setup extracted to `setupMocks()` helpers (DeviceMerge, HistoricalGraph, SettingsPage)
+- Python setUp inlined via script for 115 methods across 2 classes
+
+**Branch pushed + PR opened:**
+- PR #137 — Test isolation refactor: every test self-contained (Phases 0–5)
+- 15 commits total on `124-device-discovery`, all pushed
+
+### PR #136 — Exporter Refactor (MERGED ✅)
+- Issue #135 closed — see prior session entry below.
 
 ### Production Outage — PostgreSQL Auto-Stop (UNRESOLVED)
-- **2026-04-15 05:11 UTC**: `MCAPSGov-AutomationApp` stopped PostgreSQL while exporter was actively writing
-- See Copilot repo memory `postgres-auto-stop-runbook.md` for debugging steps
-- **Open**: recurrence unknown, no exemption mechanism identified yet
+- See Copilot repo memory `postgres-auto-stop-runbook.md`
+
+### Staging Environments
+- `b123-def`: Destroy workflow triggered (run #25572637307) — verify completion
+- `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
 
 ### Tests
-- Dashboard: 544 tests, 100% all metrics (stmts/branches/funcs/lines)
-- API: 392 tests, 100% line + 100% branch
-- Exporter: 185 tests
-- **Total: 1121 tests**
+- Dashboard: 664 tests, 100% all metrics
+- API: 452 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
+- Exporter: 331 tests, 100% coverage
+- **Total: 1447 tests**
 
 ### Open Issues
-| # | Title | Label |
-|---|-------|-------|
-| 115 | Separate Application Insights per environment | enhancement |
-| 74 | Custom domains on devsbx.xyz | — |
-| 66 | Calendar-aware time range selector | enhancement |
-| 52 | Port exporter Python→C# | enhancement |
-| 6 | iPad App | feature (spec only) |
-| 5 | iPhone App | feature (spec only) |
-
-### Closed This Session
-| # | Title | Reason |
-|---|-------|--------|
-| 123 | Defense-in-depth: exporter NaN/HTML/concurrency + _tablesCreated race | completed (PR #132 merged) |
+| # | Title | Label | Status |
+|---|-------|-------|--------|
+| 134 | Automatic device discovery | feature | Implementation complete on `124-device-discovery` (push pending) |
+| 115 | Separate Application Insights per environment | enhancement | Open |
+| 66 | Calendar-aware time range selector | enhancement | Open |
+| 52 | Port exporter Python→C# | enhancement | Open |
+| 6 | iPad App | feature | Spec only |
+| 5 | iPhone App | feature | Spec only |
 
 ### What's Next
-1. Check CD deploy to main succeeded — verify production is healthy
-2. Destroy staging using the GitHub Actions workflow (resources from PR #132)
-3. Delete `123-defense-in-depth` branch (remote + local)
-4. #115 Separate Application Insights per environment
-5. #113 Panel Hierarchy UI editor
-6. Monitor coverlet-coverage/coverlet#1904 — upgrade coverlet to 10.x when fix ships
-7. Monitor Terraform 1.15.x — verify empty-string partial backend config continues to work
+1. **Push `124-device-discovery` to origin** (9 new commits, user approval required)
+2. **Open / update PR for Feature 124** (or fold into PR #137 — see Pending)
+3. **Merge PR after CI passes** → close Issue #134
+4. **Next feature**
 
 ### Pending
-- CD deploy to main running — check status next session
-
-### Decisions Made This Session
-- `staticwebapp.config.json` must live in `dashboard/public/` (not `dashboard/`) so Vite copies it to `dist/` during build — without this, SWA navigation fallback is not deployed and SPA route refreshes return 404
-- Integration test classes must be fully self-contained — no shared state between test classes
+- 9 commits on `124-device-discovery` awaiting push approval
+- Decide: extend PR #137 to cover the full Feature 124 scope, or open a fresh PR (#137 currently scoped as "Test isolation refactor"; this branch now also delivers 124 implementation)
+- Staging destroy for b123-def (run #25572637307) — check completion
+- Staging destroy for b093-exp (run #25588799137) — check completion
 
 ### Production Services
 | Service | URL |
@@ -111,8 +189,13 @@
 | `GET /health` | No | Datastore health check |
 | `GET /readings/current?metric={name}` | Yes | Latest reading per device |
 | `GET /readings/range?metric={name}&start=&end=&step=` | Yes | Bucketed time-series |
-| `GET /devices` | Yes | Device inventory |
+| `GET /devices` | Yes | Device inventory (`?status=active|removed|merged|all`, default `active`) |
 | `GET /devices/{device}/metrics` | Yes | Metrics for one device |
+| `GET /devices/pending-replacements` | Yes | List pending replacement prompts |
+| `POST /devices/pending-replacements/{id}/dismiss` | Yes | Dismiss a pending replacement |
+| `GET /devices/merge-preview?old_device_id=X&new_device_id=Y` | Yes | Preview reading counts before merge |
+| `POST /devices/merge` | Yes | Execute device merge (transfer readings, mark old merged) |
+| `DELETE /devices/{cloudId}` | Yes | Hard-delete a removed/merged device + its readings (refuses active) |
 | `GET /grid?start=&end=&step=` | Yes | Grid power time-series |
 | `GET /settings` | Yes | All settings key-value pairs |
 | `PUT /settings/{key}` | Yes | Update setting (allowlisted keys only) |
@@ -132,6 +215,8 @@
 ### Feature 006: Dashboard Settings Page (COMPLETE ✅, PR #90)
 ### Feature 007: Dashboard Vue Circuits (COMPLETE ✅, PR #108)
 ### Feature 010: Simplify Vue Mapping (COMPLETE ✅, PR #124)
+### Feature 093: Remove Vestigial Metrics (COMPLETE ✅)
+### Feature 124: Automatic Device Discovery (COMPLETE ✅, push pending)
 ### Feature 003: iPhone App (SPEC ONLY)
 ### Feature 004: iPad App (SPEC ONLY)
 

@@ -9,7 +9,7 @@ from config import (
     AZURE_TENANT_ID, _configure_azure_monitor, psycopg2, __version__,
 )
 from db import PostgresWriter, VuePostgresWriter, downsampling_loop
-from epcube_collector import EpCubeCollector, poll_loop
+from epcube_collector import EpCubeCollector
 from vue_collector import VueCollector, vue_poll_loop, vue_daily_poll_loop
 from http_handler import ExporterHandler
 
@@ -45,8 +45,8 @@ def main():
     collector = None
     if has_epcube:
         collector = EpCubeCollector(epcube_username, epcube_password, pg_writer=pg_writer)
-        collector.poll()
-        poll_thread = threading.Thread(target=poll_loop, args=(collector,), daemon=True)
+        collector._ensure_auth()
+        poll_thread = threading.Thread(target=collector.run_poll_loop, daemon=True)
         poll_thread.start()
     else:
         log.warning("EPCUBE_USERNAME/PASSWORD not set — EP Cube collector disabled")

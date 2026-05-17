@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getGroupName, groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../../src/utils/devices';
+import { getGroupName, groupDevicesByAlias, getDisplayName, getBaseDeviceId, getDisplayNameFromMeta, resolveVueDeviceAlias } from '../../src/utils/devices';
 import type { Device } from '../../src/types';
 
 function makeDevice(overrides: Partial<Device> & { device: string }): Device {
@@ -116,5 +116,70 @@ describe('getBaseDeviceId', () => {
   it('returns raw device id when no known suffix', () => {
     const device = makeDevice({ device: 'custom_device' });
     expect(getBaseDeviceId(device)).toBe('custom_device');
+  });
+});
+
+describe('getDisplayNameFromMeta', () => {
+  it('returns "EP Cube v1" when product_code has devType=0', () => {
+    expect(getDisplayNameFromMeta('EP Cube (devType=0)', 'My Alias')).toBe('EP Cube v1');
+  });
+
+  it('returns "EP Cube v2" when product_code has devType=2', () => {
+    expect(getDisplayNameFromMeta('EP Cube (devType=2)', 'My Alias')).toBe('EP Cube v2');
+  });
+
+  it('falls back to alias when product_code is null', () => {
+    expect(getDisplayNameFromMeta(null, 'My Cube Battery')).toBe('My Cube');
+  });
+
+  it('falls back to alias when product_code is undefined', () => {
+    expect(getDisplayNameFromMeta(undefined, 'My Cube Solar')).toBe('My Cube');
+  });
+
+  it('falls back to alias when product_code has unknown devType', () => {
+    expect(getDisplayNameFromMeta('EP Cube (devType=99)', 'My Cube')).toBe('My Cube');
+  });
+
+  it('returns empty string when both inputs are null/undefined', () => {
+    expect(getDisplayNameFromMeta(null, null)).toBe('');
+    expect(getDisplayNameFromMeta(undefined, undefined)).toBe('');
+  });
+
+  it('two devices with the same product_code resolve to the same display name', () => {
+    const oldName = getDisplayNameFromMeta('EP Cube (devType=2)', 'Old');
+    const newName = getDisplayNameFromMeta('EP Cube (devType=2)', 'New');
+    expect(oldName).toBe(newName);
+  });
+
+  it('two devices with different devType resolve to different display names', () => {
+    const oldName = getDisplayNameFromMeta('EP Cube (devType=0)', 'Same Alias');
+    const newName = getDisplayNameFromMeta('EP Cube (devType=2)', 'Same Alias');
+    expect(oldName).not.toBe(newName);
+  });
+});
+
+describe('resolveVueDeviceAlias', () => {
+  it('returns display_name when device found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 100)).toBe('Main Panel');
+  });
+
+  it('returns gid string when device not found', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: 'Main Panel' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 999)).toBe('999');
+  });
+
+  it('returns gid string when display_name is empty (falsy fallback)', () => {
+    // Arrange
+    const devices = [{ device_gid: 100, device_name: 'V1', display_name: '' }];
+
+    // Act + Assert
+    expect(resolveVueDeviceAlias(devices as any, 100)).toBe('100');
   });
 });

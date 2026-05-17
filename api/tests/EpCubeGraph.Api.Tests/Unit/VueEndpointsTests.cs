@@ -5,27 +5,16 @@ using EpCubeGraph.Api.Tests.Fixtures;
 
 namespace EpCubeGraph.Api.Tests.Unit;
 
-public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
+public class VueEndpointsTests
 {
-    private readonly MockableTestFactory _factory;
-    private readonly HttpClient _client;
-
-    public VueEndpointsTests(MockableTestFactory factory)
-    {
-        _factory = factory;
-        _factory.MockVueStore.Reset();
-        _client = _factory.CreateClient();
-    }
-
-    public void Dispose() => _client.Dispose();
-
     // ── GET /vue/devices ──
 
     [Fact]
     public async Task GetDevices_ReturnsOk_WithDeviceList()
     {
         // Arrange
-        _factory.MockVueStore.DevicesResult = new[]
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.DevicesResult = new[]
         {
             new VueDeviceInfo(12345, "Main Panel", "Main Panel", Connected: true, Channels: new[]
             {
@@ -33,9 +22,10 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
                 new VueDeviceChannel("1", "Kitchen", "Kitchen"),
             })
         };
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices");
+        var response = await client.GetAsync("/api/v1/vue/devices");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -50,8 +40,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetDevices_ReturnsEmptyArray_WhenNoDevices()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices");
+        var response = await client.GetAsync("/api/v1/vue/devices");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -65,15 +59,17 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetCurrentReadings_ReturnsOk_WithChannelData()
     {
         // Arrange
-        _factory.MockVueStore.CurrentReadingsResult = new VueCurrentReadingsResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.CurrentReadingsResult = new VueCurrentReadingsResponse(
             12345, 1712592000, new[]
             {
                 new VueChannelReading("1,2,3", "Main", 8450.5),
                 new VueChannelReading("1", "Kitchen", 1200.0),
             });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/current");
+        var response = await client.GetAsync("/api/v1/vue/devices/12345/readings/current");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -85,8 +81,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetCurrentReadings_Returns404_WhenNoData()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/99999/readings/current");
+        var response = await client.GetAsync("/api/v1/vue/devices/99999/readings/current");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -98,7 +98,8 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetPanelTotal_ReturnsRawAndDeduplicated()
     {
         // Arrange
-        _factory.MockVueStore.PanelTotalResult = new PanelTotalResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.PanelTotalResult = new PanelTotalResponse(
             12345, "Main Panel", 1712592000,
             RawTotalWatts: 8450.5,
             DeduplicatedTotalWatts: 5230.5,
@@ -106,9 +107,10 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
             {
                 new PanelChild(23456, "Workshop", 3220.0)
             });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/12345/total");
+        var response = await client.GetAsync("/api/v1/vue/panels/12345/total");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -122,14 +124,16 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetPanelTotal_DeduplicatedEqualsRaw_WhenNoChildren()
     {
         // Arrange
-        _factory.MockVueStore.PanelTotalResult = new PanelTotalResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.PanelTotalResult = new PanelTotalResponse(
             23456, "Workshop", 1712592000,
             RawTotalWatts: 3220.0,
             DeduplicatedTotalWatts: 3220.0,
             Children: Array.Empty<PanelChild>());
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/23456/total");
+        var response = await client.GetAsync("/api/v1/vue/panels/23456/total");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -143,8 +147,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetPanelTotal_Returns404_WhenNoMainsData()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/99999/total");
+        var response = await client.GetAsync("/api/v1/vue/panels/99999/total");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -156,15 +164,17 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetHomeTotal_ReturnsSumOfTopLevelPanels()
     {
         // Arrange
-        _factory.MockVueStore.HomeTotalResult = new HomeTotalResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.HomeTotalResult = new HomeTotalResponse(
             1712592000, 11670.5, new[]
             {
                 new PanelChild(12345, "Main Panel", 8450.5),
                 new PanelChild(34567, "Subpanel 2", 3220.0),
             });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/home/total");
+        var response = await client.GetAsync("/api/v1/vue/home/total");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -176,8 +186,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetHomeTotal_ReturnsZero_WhenNoPanels()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/home/total");
+        var response = await client.GetAsync("/api/v1/vue/home/total");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -191,16 +205,18 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetRangeReadings_ReturnsOk_WithSeries()
     {
         // Arrange
-        _factory.MockVueStore.RangeReadingsResult = new VueRangeReadingsResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.RangeReadingsResult = new VueRangeReadingsResponse(
             12345, "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z", "5s",
             new[]
             {
                 new VueChannelSeries("1,2,3", "Main", new[] { new TimeSeriesPoint(1735689600, 8450.5) }),
                 new VueChannelSeries("1", "Kitchen", new[] { new TimeSeriesPoint(1735689600, 1200.0) }),
             });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -217,8 +233,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetRangeReadings_Returns404_WhenNoData()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/99999/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/devices/99999/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -230,13 +250,15 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetPanelTotalRange_ReturnsOk_WithTimeSeries()
     {
         // Arrange
-        _factory.MockVueStore.PanelTotalRangeResult = new PanelTotalRangeResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.PanelTotalRangeResult = new PanelTotalRangeResponse(
             12345, "Main Panel", "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z", "5s",
             RawTotal: new[] { new TimeSeriesPoint(1735689600, 8000.0) },
             DeduplicatedTotal: new[] { new TimeSeriesPoint(1735689600, 5000.0) });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/12345/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/panels/12345/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -251,8 +273,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetPanelTotalRange_Returns404_WhenNoData()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/99999/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/panels/99999/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -264,12 +290,14 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetHomeTotalRange_ReturnsOk_WithTimeSeries()
     {
         // Arrange
-        _factory.MockVueStore.HomeTotalRangeResult = new HomeTotalRangeResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.HomeTotalRangeResult = new HomeTotalRangeResponse(
             "2026-01-01T00:00:00Z", "2026-01-01T01:00:00Z", "5s",
             new[] { new TimeSeriesPoint(1735689600, 11000.0) });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/home/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/home/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -283,8 +311,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetRangeReadings_Returns400_WhenStartAfterEnd()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -293,8 +325,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetRangeReadings_Returns400_WhenInvalidStep()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=abc");
+        var response = await client.GetAsync("/api/v1/vue/devices/12345/readings/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=abc");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -303,8 +339,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetPanelTotalRange_Returns400_WhenStartAfterEnd()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/panels/12345/total/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
+        var response = await client.GetAsync("/api/v1/vue/panels/12345/total/range?start=2026-01-02T00:00:00Z&end=2026-01-01T00:00:00Z");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -313,8 +353,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetHomeTotalRange_Returns400_WhenInvalidStep()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/home/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=-1s");
+        var response = await client.GetAsync("/api/v1/vue/home/total/range?start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z&step=-1s");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -326,7 +370,8 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetBulkCurrentReadings_ReturnsOk_WithAllDevices()
     {
         // Arrange
-        _factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(new[]
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(new[]
         {
             new VueDeviceCurrentReadings(480380, 1712592000, new[]
             {
@@ -338,9 +383,10 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
                 new VueChannelReading("1,2,3", "Main", 3220.0),
             }),
         });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/readings/current");
+        var response = await client.GetAsync("/api/v1/vue/readings/current");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -355,11 +401,13 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetBulkCurrentReadings_ReturnsEmptyDevices_WhenNoData()
     {
         // Arrange
-        _factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.BulkCurrentReadingsResult = new VueBulkCurrentReadingsResponse(
             Array.Empty<VueDeviceCurrentReadings>());
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/readings/current");
+        var response = await client.GetAsync("/api/v1/vue/readings/current");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -373,7 +421,8 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     public async Task GetDailyReadings_ReturnsOk_WithData()
     {
         // Arrange
-        _factory.MockVueStore.DailyReadingsResult = new VueBulkDailyReadingsResponse("2026-04-09", new[]
+        using var factory = new MockableTestFactory();
+        factory.MockVueStore.DailyReadingsResult = new VueBulkDailyReadingsResponse("2026-04-09", new[]
         {
             new VueDeviceDailyReadings(480380, new[]
             {
@@ -381,9 +430,10 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
                 new VueDailyChannelReading("4", "Kitchen", 3.2),
             }),
         });
+        using var client = factory.CreateClient();
 
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=2026-04-09");
+        var response = await client.GetAsync("/api/v1/vue/readings/daily?date=2026-04-09");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -395,8 +445,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetDailyReadings_Returns400_WhenDateMissing()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/readings/daily");
+        var response = await client.GetAsync("/api/v1/vue/readings/daily");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -405,8 +459,12 @@ public class VueEndpointsTests : IClassFixture<MockableTestFactory>, IDisposable
     [Fact]
     public async Task GetDailyReadings_Returns400_WhenDateInvalid()
     {
+        // Arrange
+        using var factory = new MockableTestFactory();
+        using var client = factory.CreateClient();
+
         // Act
-        var response = await _client.GetAsync("/api/v1/vue/readings/daily?date=not-a-date");
+        var response = await client.GetAsync("/api/v1/vue/readings/daily?date=not-a-date");
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

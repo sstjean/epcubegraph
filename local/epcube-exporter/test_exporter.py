@@ -605,10 +605,6 @@ class TestRenderStatusPage(unittest.TestCase):
 
 class TestHTTPHandler(unittest.TestCase):
 
-    def setUp(self):
-        self.collector = _make_collector()
-        self.collector._last_poll = time.time()
-
     def _make_handler(self, path, headers=None):
         """Build a testable handler without opening a real socket."""
         h = _TestableHandler()
@@ -623,37 +619,58 @@ class TestHTTPHandler(unittest.TestCase):
         return h
 
     def test_metrics_returns_404(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/metrics")
         h.send_response.assert_called_with(404)
 
     def test_health_returns_200_when_healthy(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/health")
         h.send_response.assert_called_with(200)
         self.assertIn(b"ok", h.wfile.getvalue())
 
     def test_health_returns_503_when_unhealthy(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         self.collector._last_poll = 0.0  # no poll yet
         h = self._make_handler("/health")
         h.send_response.assert_called_with(503)
         self.assertIn(b"unhealthy", h.wfile.getvalue())
 
     def test_health_no_auth_required(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/health")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_returns_200_auth_disabled(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/")
             h.send_response.assert_called_with(200)
 
     def test_debug_page_401_api_client_without_token(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """API client (no Accept: text/html) gets 401 without auth."""
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={})
             h.send_response.assert_called_with(401)
 
     def test_debug_page_redirects_browser_to_login(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Browser (Accept: text/html) without auth gets redirected to /login."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
              patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"):
@@ -662,11 +679,17 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_header.assert_any_call("Location", "/login")
 
     def test_debug_page_401_with_bad_bearer(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", False):
             h = self._make_handler("/", headers={"Authorization": "Bearer bad-token"})
             h.send_response.assert_called_with(401)
 
     def test_login_redirects_to_microsoft(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /login redirects to Microsoft authorization endpoint."""
         with patch.object(http_handler, "AZURE_REDIRECT_URI", "https://example.com/.auth/callback"), \
              patch.object(http_handler, "AZURE_CLIENT_ID", "test-client-id"), \
@@ -681,6 +704,9 @@ class TestHTTPHandler(unittest.TestCase):
             self.assertIn("client_id=test-client-id", url)
 
     def test_login_returns_500_when_not_configured(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /login returns 500 when OAuth is not configured."""
         with patch.object(http_handler, "AZURE_REDIRECT_URI", ""), \
              patch.object(http_handler, "AZURE_CLIENT_ID", ""):
@@ -688,57 +714,71 @@ class TestHTTPHandler(unittest.TestCase):
             h.send_response.assert_called_with(500)
 
     def test_callback_returns_400_without_params(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /.auth/callback without code/state returns 400."""
         h = self._make_handler("/.auth/callback")
         h.send_response.assert_called_with(400)
 
     def test_callback_returns_400_with_invalid_state(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """GET /.auth/callback with unknown state returns 400."""
         h = self._make_handler("/.auth/callback?code=test&state=invalid")
         h.send_response.assert_called_with(400)
 
     def test_session_cookie_grants_access(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Valid session cookie grants access to debug page."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
-             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
             session_id = "test-session-123"
-            with config._auth_lock:
-                config._sessions[session_id] = {
+            with http_handler._auth_lock:
+                http_handler._sessions[session_id] = {
                     "expires": time.time() + 3600,
                     "user": "test@example.com",
                 }
-            try:
-                signed = http_handler._sign_session(session_id)
-                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-                h.send_response.assert_called_with(200)
-            finally:
-                with config._auth_lock:
-                    config._sessions.pop(session_id, None)
+            signed = http_handler._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(200)
 
     def test_expired_session_denied(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         """Expired session cookie is rejected."""
         with patch.object(http_handler, "DISABLE_AUTH", False), \
-             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"):
+             patch.object(http_handler, "AZURE_CLIENT_SECRET", "test-secret"), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
             session_id = "expired-session"
-            with config._auth_lock:
-                config._sessions[session_id] = {
+            with http_handler._auth_lock:
+                http_handler._sessions[session_id] = {
                     "expires": time.time() - 1,  # already expired
                     "user": "test@example.com",
                 }
-            try:
-                signed = http_handler._sign_session(session_id)
-                h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
-                h.send_response.assert_called_with(401)
-            finally:
-                with config._auth_lock:
-                    config._sessions.pop(session_id, None)
+            signed = http_handler._sign_session(session_id)
+            h = self._make_handler("/", headers={"Cookie": f"_session={signed}"})
+            h.send_response.assert_called_with(401)
 
     def test_status_alias_works(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         with patch.object(http_handler, "DISABLE_AUTH", True):
             h = self._make_handler("/status")
             h.send_response.assert_called_with(200)
 
     def test_unknown_path_returns_404(self):
+        # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/unknown")
         h.send_response.assert_called_with(404)
 
@@ -1151,6 +1191,21 @@ class TestPostgresWriter(unittest.TestCase):
         self.assertEqual(call_args[0][1][0], "epcube1_battery")
         self.assertEqual(call_args[0][1][1], "storage_battery")
         mock_conn.commit.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_device_sets_status_active(self, mock_pg):
+        """Re-discovered devices must be set back to 'active' on upsert."""
+        mock_conn, mock_cursor = self._make_mock_psycopg2()
+        mock_pg.connect.return_value = mock_conn
+
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+        mock_cursor.reset_mock()
+
+        writer.upsert_device("epcube1_battery", "storage_battery")
+
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("status", sql.lower())
+        self.assertIn("active", sql.lower())
 
     @patch.object(db, "psycopg2")
     def test_write_readings(self, mock_pg):
@@ -2523,61 +2578,36 @@ class TestVuePostgresWriterDaily(unittest.TestCase):
 
 
 class TestReadVueDailyPollInterval(unittest.TestCase):
-    """Tests for _read_vue_daily_poll_interval_from_db."""
+    """Tests for _read_vue_daily_poll_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test@localhost/test")
-    def test_returns_default_when_no_dsn(self):
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
         # Act
         result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_reads_from_settings_table(self):
-        # Arrange
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("600",)
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=600)
+    def test_reads_from_settings_table(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, 600)
-        mock_cursor.execute.assert_called_once()
-        sql = mock_cursor.execute.call_args[0][0]
-        self.assertIn("vue_daily_poll_interval_seconds", sql)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_returns_default_on_db_error(self):
-        # Arrange
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.side_effect = Exception("conn failed")
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_on_db_error(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
 
-    @patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test/db")
-    def test_returns_default_when_no_setting(self):
-        # Arrange
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_setting(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
@@ -3522,12 +3552,13 @@ class TestDailyEnergyFetchError(unittest.TestCase):
 
 
 class TestReadPollIntervalFromDb(unittest.TestCase):
-    """Cover epcube_collector._read_poll_interval_from_db."""
+    """Cover db.read_setting_int_from_db (standalone function)."""
 
     def test_returns_default_when_no_dsn(self):
         # Arrange & Act
-        with patch.object(epcube_collector, "POSTGRES_DSN", ""):
-            result = epcube_collector._read_poll_interval_from_db()
+        with patch.object(db, "POSTGRES_DSN", ""):
+            result = db.read_setting_int_from_db(
+                "epcube_poll_interval_seconds", epcube_collector.DEFAULT_POLL_INTERVAL, 1, 3600)
 
         # Assert
         self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
@@ -3541,11 +3572,12 @@ class TestReadPollIntervalFromDb(unittest.TestCase):
         mock_pg = MagicMock()
         mock_pg.connect.return_value = mock_conn
 
-        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
 
             # Act
-            result = epcube_collector._read_poll_interval_from_db()
+            result = db.read_setting_int_from_db(
+                "epcube_poll_interval_seconds", epcube_collector.DEFAULT_POLL_INTERVAL, 1, 3600)
 
         # Assert
         self.assertEqual(result, 30)
@@ -3560,11 +3592,12 @@ class TestReadPollIntervalFromDb(unittest.TestCase):
         mock_pg = MagicMock()
         mock_pg.connect.return_value = mock_conn
 
-        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
 
             # Act
-            result = epcube_collector._read_poll_interval_from_db()
+            result = db.read_setting_int_from_db(
+                "epcube_poll_interval_seconds", epcube_collector.DEFAULT_POLL_INTERVAL, 1, 3600)
 
         # Assert
         self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
@@ -3578,11 +3611,12 @@ class TestReadPollIntervalFromDb(unittest.TestCase):
         mock_pg = MagicMock()
         mock_pg.connect.return_value = mock_conn
 
-        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
 
             # Act
-            result = epcube_collector._read_poll_interval_from_db()
+            result = db.read_setting_int_from_db(
+                "epcube_poll_interval_seconds", epcube_collector.DEFAULT_POLL_INTERVAL, 1, 3600)
 
         # Assert
         self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
@@ -3592,18 +3626,19 @@ class TestReadPollIntervalFromDb(unittest.TestCase):
         mock_pg = MagicMock()
         mock_pg.connect.side_effect = Exception("conn failed")
 
-        with patch.object(epcube_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
 
             # Act
-            result = epcube_collector._read_poll_interval_from_db()
+            result = db.read_setting_int_from_db(
+                "epcube_poll_interval_seconds", epcube_collector.DEFAULT_POLL_INTERVAL, 1, 3600)
 
         # Assert
         self.assertEqual(result, epcube_collector.DEFAULT_POLL_INTERVAL)
 
 
 class TestEpCubePollLoop(unittest.TestCase):
-    """Cover epcube_collector.poll_loop."""
+    """Cover EpCubeCollector.run_poll_loop."""
 
     def test_poll_loop_calls_poll_and_reads_interval(self):
         # Arrange
@@ -3615,13 +3650,17 @@ class TestEpCubePollLoop(unittest.TestCase):
             if iteration["n"] >= 2:
                 raise KeyboardInterrupt("stop")
 
-        with patch.object(epcube_collector, "_read_poll_interval_from_db", return_value=5), \
-             patch("time.sleep", side_effect=mock_sleep), \
-             patch.object(c, "poll"):
+        c._pg.read_setting_int = MagicMock(return_value=5)
+
+        with patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"), \
+             patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=lambda fn, **kw: fn()):
 
             # Act & Assert
             with self.assertRaises(KeyboardInterrupt):
-                epcube_collector.poll_loop(c)
+                c.run_poll_loop()
 
         self.assertEqual(c._poll_interval, 5)
 
@@ -3630,19 +3669,19 @@ class TestEpCubePollLoop(unittest.TestCase):
         c = _make_collector()
         call_count = {"n": 0}
 
-        def mock_read_interval():
+        def mock_read_setting(key, default, min_val, max_val):
             call_count["n"] += 1
-            if call_count["n"] >= 2:
+            if call_count["n"] >= 3:
                 raise KeyboardInterrupt("stop")
             raise RuntimeError("db down")
 
-        with patch.object(epcube_collector, "_read_poll_interval_from_db",
-                          side_effect=mock_read_interval), \
-             patch("time.sleep"):
+        c._pg.read_setting_int = MagicMock(side_effect=mock_read_setting)
+
+        with patch("time.sleep"):
 
             # Act & Assert
             with self.assertRaises(KeyboardInterrupt):
-                epcube_collector.poll_loop(c)
+                c.run_poll_loop()
 
         self.assertGreater(c._consecutive_errors, 0)
 
@@ -3740,19 +3779,20 @@ class TestCleanupExpired(unittest.TestCase):
     """Cover _cleanup_expired deleting expired sessions and stale auth states."""
 
     def test_removes_expired_sessions_and_stale_auth(self):
-        # Arrange — use the _sessions and _pending_auth dicts from http_handler
-        # to ensure we reference the same objects _cleanup_expired uses
-        sessions = http_handler._sessions
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
+        # Arrange — patch isolated session/pending dicts and lock for this test
+        with patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            sessions = http_handler._sessions
+            pending = http_handler._pending_auth
+            lock = http_handler._auth_lock
 
-        with lock:
-            sessions["expired-1"] = {"expires": 0, "user": "a"}
-            sessions["valid-1"] = {"expires": time.time() + 3600, "user": "b"}
-            pending["stale-state"] = {"code_verifier": "v", "timestamp": 0}
-            pending["fresh-state"] = {"code_verifier": "v", "timestamp": time.time()}
+            with lock:
+                sessions["expired-1"] = {"expires": 0, "user": "a"}
+                sessions["valid-1"] = {"expires": time.time() + 3600, "user": "b"}
+                pending["stale-state"] = {"code_verifier": "v", "timestamp": 0}
+                pending["fresh-state"] = {"code_verifier": "v", "timestamp": time.time()}
 
-        try:
             # Act
             http_handler._cleanup_expired()
 
@@ -3762,10 +3802,6 @@ class TestCleanupExpired(unittest.TestCase):
                 self.assertIn("valid-1", sessions)
                 self.assertNotIn("stale-state", pending)
                 self.assertIn("fresh-state", pending)
-        finally:
-            with lock:
-                sessions.pop("valid-1", None)
-                pending.pop("fresh-state", None)
 
 
 class TestRenderStatusPageEdgeCases(unittest.TestCase):
@@ -3944,10 +3980,6 @@ class TestRenderVueDebugPageEdgeCases(unittest.TestCase):
 class TestHandleCallbackFull(unittest.TestCase):
     """Cover _handle_callback OAuth code exchange paths."""
 
-    def setUp(self):
-        self.collector = _make_collector()
-        self.collector._last_poll = time.time()
-
     def _make_handler(self, path, headers=None):
         h = _TestableHandler()
         h.collector = self.collector
@@ -3962,6 +3994,8 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_with_error_param_returns_400(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         h = self._make_handler("/.auth/callback?error=access_denied&error_description=User+denied")
 
         # Act
@@ -3973,26 +4007,23 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_token_exchange_failure_returns_500(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-123"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
 
-        # Must set pending auth on the SAME dict _handle_callback uses
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier123",
-                "timestamp": time.time(),
-            }
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier123",
+                    "timestamp": time.time(),
+                }
 
-        try:
             with patch("urllib.request.urlopen", side_effect=Exception("network error")):
                 # Act
                 h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
 
         # Assert
         h.send_response.assert_called_with(500)
@@ -4000,48 +4031,42 @@ class TestHandleCallbackFull(unittest.TestCase):
 
     def test_callback_jwt_validation_failure_returns_401(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-456"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
-
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier456",
-                "timestamp": time.time(),
-            }
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps({"access_token": "bad-jwt"}).encode()
         mock_resp.__enter__ = MagicMock(return_value=mock_resp)
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        try:
-            with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier456",
+                    "timestamp": time.time(),
+                }
+
+            try:
+                with patch("urllib.request.urlopen", return_value=mock_resp):
+                    http_handler.ExporterHandler._jwks_client = None
+                    h.do_GET()
+            finally:
                 http_handler.ExporterHandler._jwks_client = None
-                h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
-            http_handler.ExporterHandler._jwks_client = None
 
         # Assert
         h.send_response.assert_called_with(401)
 
     def test_callback_success_creates_session(self):
         # Arrange
+        self.collector = _make_collector()
+        self.collector._last_poll = time.time()
         state_val = "test-state-789"
         h = self._make_handler(
             f"/.auth/callback?code=auth-code&state={state_val}")
-
-        pending = http_handler._pending_auth
-        lock = http_handler._auth_lock
-        with lock:
-            pending[state_val] = {
-                "code_verifier": "verifier789",
-                "timestamp": time.time(),
-            }
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = json.dumps(
@@ -4058,15 +4083,22 @@ class TestHandleCallbackFull(unittest.TestCase):
         mock_jwt.PyJWKClient.return_value = mock_jwks
         mock_jwt.decode.return_value = {"preferred_username": "user@test.com"}
 
-        try:
-            with patch("urllib.request.urlopen", return_value=mock_resp), \
-                 patch.dict(sys.modules, {"jwt": mock_jwt}):
+        with patch.object(http_handler, "_pending_auth", {}), \
+             patch.object(http_handler, "_sessions", {}), \
+             patch.object(http_handler, "_auth_lock", threading.Lock()):
+            with http_handler._auth_lock:
+                http_handler._pending_auth[state_val] = {
+                    "code_verifier": "verifier789",
+                    "timestamp": time.time(),
+                }
+
+            try:
+                with patch("urllib.request.urlopen", return_value=mock_resp), \
+                     patch.dict(sys.modules, {"jwt": mock_jwt}):
+                    http_handler.ExporterHandler._jwks_client = None
+                    h.do_GET()
+            finally:
                 http_handler.ExporterHandler._jwks_client = None
-                h.do_GET()
-        finally:
-            with lock:
-                pending.pop(state_val, None)
-            http_handler.ExporterHandler._jwks_client = None
 
         # Assert
         h.send_response.assert_called_with(302)
@@ -4223,161 +4255,90 @@ class TestDoGetNoCollector(unittest.TestCase):
 
 
 class TestReadVuePollIntervalFromDb(unittest.TestCase):
-    """Cover vue_collector._read_vue_poll_interval_from_db."""
+    """Cover vue_collector._read_vue_poll_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+        mock_read.assert_called_once_with("vue_poll_interval_seconds", vue_collector.DEFAULT_VUE_POLL_INTERVAL, 1, 3600)
 
-    def test_reads_valid_interval(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ('"2"',)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=2)
+    def test_reads_valid_interval(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, 2)
-        mock_conn.close.assert_called_once()
 
-    def test_returns_default_when_out_of_range(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("9999",)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_out_of_range(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
-    def test_returns_default_on_exception(self):
-        # Arrange
-        mock_pg = MagicMock()
-        mock_pg.connect.side_effect = Exception("fail")
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_on_exception(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_POLL_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_POLL_INTERVAL)
 
 
 class TestReadVueDeviceRefreshInterval(unittest.TestCase):
-    """Cover vue_collector._read_vue_device_refresh_interval_from_db."""
+    """Cover vue_collector._read_vue_device_refresh_interval_from_db (delegates to _read_setting_int_from_db)."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+        mock_read.assert_called_once_with("vue_device_refresh_interval_seconds", vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL, 60, 86400)
 
-    def test_reads_valid_interval(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ('"120"',)
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=120)
+    def test_reads_valid_interval(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, 120)
 
-    def test_returns_default_when_out_of_range(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = ("10",)  # below 60 minimum
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_out_of_range(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
 
-    def test_returns_default_on_exception(self):
-        # Arrange
-        mock_pg = MagicMock()
-        mock_pg.connect.side_effect = Exception("fail")
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_on_exception(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-        mock_pg = MagicMock()
-        mock_pg.connect.return_value = mock_conn
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.dict(sys.modules, {"psycopg2": mock_pg}):
-
-            # Act
-            result = vue_collector._read_vue_device_refresh_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_device_refresh_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DEVICE_REFRESH_INTERVAL)
@@ -4386,27 +4347,19 @@ class TestReadVueDeviceRefreshInterval(unittest.TestCase):
 class TestReadVueDailyPollIntervalFallback(unittest.TestCase):
     """Cover the default return path in _read_vue_daily_poll_interval_from_db."""
 
-    def test_returns_default_when_no_dsn(self):
-        # Arrange & Act
-        with patch.object(vue_collector, "POSTGRES_DSN", ""):
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_dsn(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+        mock_read.assert_called_once_with("vue_daily_poll_interval_seconds", vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL, 1, 3600)
 
-    def test_returns_default_when_no_row(self):
-        # Arrange
-        mock_cursor = MagicMock()
-        mock_cursor.fetchone.return_value = None
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value = mock_cursor
-
-        with patch.object(vue_collector, "POSTGRES_DSN", "postgresql://test"), \
-             patch.object(vue_collector, "psycopg2") as mock_pg:
-            mock_pg.connect.return_value = mock_conn
-
-            # Act
-            result = vue_collector._read_vue_daily_poll_interval_from_db()
+    @patch.object(vue_collector, "read_setting_int_from_db", return_value=vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
+    def test_returns_default_when_no_row(self, mock_read):
+        # Act
+        result = vue_collector._read_vue_daily_poll_interval_from_db()
 
         # Assert
         self.assertEqual(result, vue_collector.DEFAULT_VUE_DAILY_POLL_INTERVAL)
@@ -4765,14 +4718,19 @@ class TestConfigPsycopg2Import(unittest.TestCase):
         mock_pg = MagicMock()
         mock_extras = MagicMock()
         original_modules = {}
-        # Save and inject mocks
         for mod_name in ["psycopg2", "psycopg2.extras"]:
             original_modules[mod_name] = sys.modules.get(mod_name)
         sys.modules["psycopg2"] = mock_pg
         sys.modules["psycopg2.extras"] = mock_extras
 
-        # Also save config's current psycopg2 ref
-        original_psycopg2 = config.psycopg2
+        # Snapshot every config attribute that other modules may have already
+        # imported by name. Reloading config rebinds these on the config module
+        # itself, but bound references in http_handler / exporter / etc. still
+        # point at the originals, so we must restore the original objects on the
+        # config module after the reload (not reload a second time, which would
+        # produce yet another distinct object).
+        original_attrs = {name: getattr(config, name) for name in dir(config)
+                          if not name.startswith("__")}
 
         try:
             # Act
@@ -4781,14 +4739,13 @@ class TestConfigPsycopg2Import(unittest.TestCase):
             # Assert — config.psycopg2 should be the mock, not None
             self.assertIs(config.psycopg2, mock_pg)
         finally:
-            # Restore original state
-            config.psycopg2 = original_psycopg2
+            for name, value in original_attrs.items():
+                setattr(config, name, value)
             for mod_name, orig in original_modules.items():
                 if orig is None:
                     sys.modules.pop(mod_name, None)
                 else:
                     sys.modules[mod_name] = orig
-            importlib.reload(config)
 
 
 class TestVueCollectorPyEmVueImport(unittest.TestCase):
@@ -4826,6 +4783,1682 @@ class TestVueCollectorPyEmVueImport(unittest.TestCase):
                 else:
                     sys.modules[mod_name] = orig
             importlib.reload(vue_collector)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1+2: Discovery interval setting reader tests
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryInterval(unittest.TestCase):
+    """Tests for db.read_setting_int_from_db with discovery_interval_seconds."""
+
+    def test_returns_default_when_no_dsn(self):
+        # Arrange & Act
+        with patch.object(db, "POSTGRES_DSN", ""):
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_reads_valid_interval_from_db(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ('"1800"',)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 1800)
+        mock_cursor.execute.assert_called_once()
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("settings", sql)
+        params = mock_cursor.execute.call_args[0][1]
+        self.assertEqual(params, ("discovery_interval_seconds",))
+        mock_conn.close.assert_called_once()
+
+    def test_returns_default_when_no_row(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = None
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_below_min(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("30",)  # below 60 minimum
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_above_max(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("100000",)  # above 86400 maximum
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_on_db_exception(self):
+        # Arrange
+        mock_pg = MagicMock()
+        mock_pg.connect.side_effect = Exception("connection refused")
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+    def test_returns_default_when_value_not_numeric(self):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = ("not_a_number",)
+        mock_conn = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg = MagicMock()
+        mock_pg.connect.return_value = mock_conn
+
+        with patch.object(db, "POSTGRES_DSN", "postgresql://test"), \
+             patch.object(db, "psycopg2", mock_pg):
+            # Act
+            result = db.read_setting_int_from_db(
+                "discovery_interval_seconds", epcube_collector.DEFAULT_DISCOVERY_INTERVAL, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, epcube_collector.DEFAULT_DISCOVERY_INTERVAL)
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: compare_device_lists tests
+# ---------------------------------------------------------------------------
+
+class TestCompareDeviceLists(unittest.TestCase):
+    """Tests for compare_device_lists — pure set comparison."""
+
+    def test_no_changes(self):
+        # Arrange
+        known = {"A", "B", "C"}
+        cloud = {"A", "B", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, {"A", "B", "C"})
+
+    def test_new_device_added(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = {"A", "B", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, {"A", "B"})
+
+    def test_device_removed(self):
+        # Arrange
+        known = {"A", "B", "C"}
+        cloud = {"A", "B"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, {"C"})
+        self.assertEqual(unchanged, {"A", "B"})
+
+    def test_device_added_and_removed(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = {"A", "C"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, {"B"})
+        self.assertEqual(unchanged, {"A"})
+
+    def test_empty_known_all_added(self):
+        # Arrange
+        known = set()
+        cloud = {"A", "B"}
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"A", "B"})
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, set())
+
+    def test_empty_cloud_all_removed(self):
+        # Arrange
+        known = {"A", "B"}
+        cloud = set()
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, {"A", "B"})
+        self.assertEqual(unchanged, set())
+
+    def test_both_empty(self):
+        # Arrange
+        known = set()
+        cloud = set()
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, set())
+        self.assertEqual(removed, set())
+        self.assertEqual(unchanged, set())
+
+    def test_accepts_lists(self):
+        # Arrange — function should accept any iterable, not just sets
+        known = ["A", "B"]
+        cloud = ["B", "C"]
+
+        # Act
+        added, removed, unchanged = epcube_collector.compare_device_lists(known, cloud)
+
+        # Assert
+        self.assertEqual(added, {"C"})
+        self.assertEqual(removed, {"A"})
+        self.assertEqual(unchanged, {"B"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: retry_with_backoff tests
+# ---------------------------------------------------------------------------
+
+class TestRetryWithBackoff(unittest.TestCase):
+    """Tests for retry_with_backoff — exponential retry logic."""
+
+    @patch.object(epcube_collector, "time")
+    def test_success_on_first_try(self, mock_time):
+        # Arrange
+        fn = MagicMock(return_value="ok")
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=10)
+
+        # Assert
+        self.assertEqual(result, "ok")
+        fn.assert_called_once()
+        mock_time.sleep.assert_not_called()
+
+    @patch.object(epcube_collector, "time")
+    def test_success_on_retry(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[RuntimeError("fail"), RuntimeError("fail"), "ok"])
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=10)
+
+        # Assert
+        self.assertEqual(result, "ok")
+        self.assertEqual(fn.call_count, 3)
+        self.assertEqual(mock_time.sleep.call_count, 2)
+
+    @patch.object(epcube_collector, "time")
+    def test_all_retries_fail_raises(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=RuntimeError("persistent failure"))
+
+        # Act & Assert
+        with self.assertRaises(RuntimeError) as ctx:
+            epcube_collector.retry_with_backoff(fn, max_retries=3, base_delay=5)
+
+        self.assertIn("persistent failure", str(ctx.exception))
+        self.assertEqual(fn.call_count, 3)
+        # Only 2 sleeps (between retries, not after last)
+        self.assertEqual(mock_time.sleep.call_count, 2)
+
+    @patch.object(epcube_collector, "time")
+    def test_exponential_delay(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[RuntimeError("1"), RuntimeError("2"), RuntimeError("3"), "ok"])
+
+        # Act
+        epcube_collector.retry_with_backoff(fn, max_retries=4, base_delay=10)
+
+        # Assert — delays should be 10, 20, 40 (base * 2^attempt)
+        delays = [call[0][0] for call in mock_time.sleep.call_args_list]
+        self.assertEqual(delays, [10, 20, 40])
+
+    @patch.object(epcube_collector, "time")
+    def test_custom_params(self, mock_time):
+        # Arrange
+        fn = MagicMock(side_effect=[ValueError("err"), 42])
+
+        # Act
+        result = epcube_collector.retry_with_backoff(fn, max_retries=5, base_delay=30)
+
+        # Assert
+        self.assertEqual(result, 42)
+        self.assertEqual(fn.call_count, 2)
+        mock_time.sleep.assert_called_once_with(30)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: _read_known_device_ids_from_db tests
+# ---------------------------------------------------------------------------
+
+class TestReadKnownDeviceIdsFromDb(unittest.TestCase):
+    """Tests for PostgresWriter.read_active_epcube_ids — reads active EP Cube device IDs from DB."""
+
+    @patch.object(db, "psycopg2")
+    def test_returns_empty_set_when_no_dsn(self, mock_pg):
+        # Arrange — writer initializes normally, then connection breaks for the read
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test")
+
+        # Now break the connection for the read
+        mock_conn.cursor.side_effect = Exception("connection lost")
+
+        # Act
+        result = writer.read_active_epcube_ids()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    @patch.object(db, "psycopg2")
+    def test_returns_raw_cloud_ids(self, mock_pg):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchall.return_value = [
+            ("epcube123_battery",), ("epcube123_solar",),
+            ("epcube456_battery",), ("epcube456_solar",),
+        ]
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test")
+
+        # Act
+        result = writer.read_active_epcube_ids()
+
+        # Assert — should return raw cloud IDs, deduplicating battery/solar
+        self.assertEqual(result, {"123", "456"})
+
+    @patch.object(db, "psycopg2")
+    def test_returns_empty_set_on_db_error(self, mock_pg):
+        # Arrange — writer initializes normally, then connection fails for the read
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test")
+
+        # Now break the connection for the read
+        mock_conn.cursor.side_effect = Exception("connection refused")
+
+        # Act
+        result = writer.read_active_epcube_ids()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    @patch.object(db, "psycopg2")
+    def test_returns_empty_set_when_no_devices(self, mock_pg):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchall.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test")
+
+        # Act
+        result = writer.read_active_epcube_ids()
+
+        # Assert
+        self.assertEqual(result, set())
+
+    @patch.object(db, "psycopg2")
+    def test_queries_only_active_epcube_devices(self, mock_pg):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchall.return_value = [("epcube100_battery",)]
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test")
+
+        # Act
+        writer.read_active_epcube_ids()
+
+        # Assert — SQL should filter by status='active' and device_id pattern
+        sql = mock_cursor.execute.call_args[0][0]
+        self.assertIn("active", sql.lower())
+        self.assertIn("epcube", sql.lower())
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T015 — New device detection tests
+# ---------------------------------------------------------------------------
+
+class TestNewDeviceDetection(unittest.TestCase):
+    """T015: _discover_devices detects new devices, registers in DB, logs discovery."""
+
+    def test_new_device_registered_in_db(self):
+        """When cloud returns a device not in DB, upsert_device is called for both sub-devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing_dev = _make_device(dev_id="100", name="Existing")
+        new_dev = _make_device(dev_id="200", name="New Device")
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing_dev, new_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — new device sub-devices registered in DB
+        call_ids = [call[0][0] for call in c._pg.upsert_device.call_args_list]
+        self.assertIn("epcube200_battery", call_ids)
+        self.assertIn("epcube200_solar", call_ids)
+
+    def test_existing_device_not_re_registered(self):
+        """Devices already known in DB are not registered again by _discover_devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing_dev = _make_device(dev_id="100", name="Existing")
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — no upsert_device calls for already-known device
+        c._pg.upsert_device.assert_not_called()
+
+    def test_devices_list_updated_from_cloud(self):
+        """After discovery, self._devices reflects the cloud device list."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = []
+        dev = _make_device(dev_id="100", name="Device")
+        c._pg.read_active_epcube_ids = MagicMock(return_value=set())
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        self.assertEqual(len(c._devices), 1)
+        self.assertEqual(c._devices[0]["id"], "100")
+
+    def test_new_device_discovery_logged(self):
+        """Discovery of a new device logs a message about the new device."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="300", name="Brand New")
+        c._pg.read_active_epcube_ids = MagicMock(return_value=set())
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="INFO") as cm:
+                c._discover_devices()
+
+        # Assert — log should mention new device discovery
+        found = any("new device" in msg.lower() or "discovered" in msg.lower()
+                     for msg in cm.output)
+        self.assertTrue(found, f"Expected 'new device' or 'discovered' in logs: {cm.output}")
+
+    def test_uses_compare_device_lists(self):
+        """_discover_devices uses compare_device_lists for set comparison."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        dev = _make_device(dev_id="1", name="A")
+        c._pg.read_active_epcube_ids = MagicMock(return_value=set())
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [dev]}), \
+             patch.object(epcube_collector, "compare_device_lists",
+                          wraps=epcube_collector.compare_device_lists) as mock_compare:
+            # Act
+            c._discover_devices()
+
+        # Assert
+        mock_compare.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T016 — Discovery interval timing tests
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryIntervalTiming(unittest.TestCase):
+    """T016: run_poll_loop runs discovery on interval, reads interval from DB."""
+
+    def test_poll_loop_calls_discovery_via_retry(self):
+        """run_poll_loop calls discovery via retry_with_backoff on first iteration."""
+        # Arrange
+        c = _make_collector()
+        retry_calls = []
+
+        def mock_retry(fn, **kw):
+            retry_calls.append(True)
+            fn()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 1:
+                raise KeyboardInterrupt("stop")
+
+        c._pg.read_setting_int = MagicMock(return_value=5)
+
+        with patch.object(epcube_collector, "retry_with_backoff", side_effect=mock_retry), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                c.run_poll_loop()
+
+        # Assert — retry_with_backoff was called to wrap discovery
+        self.assertEqual(len(retry_calls), 1)
+
+    def test_poll_loop_reads_discovery_interval_from_db(self):
+        """run_poll_loop calls _pg.read_setting_int for discovery_interval_seconds each cycle."""
+        # Arrange
+        c = _make_collector()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 1:
+                raise KeyboardInterrupt("stop")
+
+        c._pg.read_setting_int = MagicMock(return_value=5)
+
+        with patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=lambda fn, **kw: fn()), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                c.run_poll_loop()
+
+        # Assert — read_setting_int was called (for both poll and discovery intervals)
+        self.assertTrue(c._pg.read_setting_int.called)
+
+    def test_poll_loop_skips_discovery_when_interval_not_elapsed(self):
+        """Discovery runs once (first iteration), then skips until interval elapses."""
+        # Arrange
+        c = _make_collector()
+        discover_count = {"n": 0}
+
+        def mock_retry(fn, **kw):
+            discover_count["n"] += 1
+            fn()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 3:
+                raise KeyboardInterrupt("stop")
+
+        def mock_read_setting(key, default, min_val, max_val):
+            if key == "discovery_interval_seconds":
+                return 3600
+            return 5
+
+        c._pg.read_setting_int = MagicMock(side_effect=mock_read_setting)
+
+        with patch.object(epcube_collector, "retry_with_backoff", side_effect=mock_retry), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll"), \
+             patch.object(c, "_discover_devices"):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                c.run_poll_loop()
+
+        # Assert — discovery should run once (first iteration only, 5s << 3600s)
+        self.assertEqual(discover_count["n"], 1)
+
+    def test_poll_loop_continues_after_discovery_failure(self):
+        """run_poll_loop logs and continues when discovery exhausts all retries."""
+        # Arrange
+        c = _make_collector()
+
+        iteration = {"n": 0}
+
+        def mock_sleep(secs):
+            iteration["n"] += 1
+            if iteration["n"] >= 2:
+                raise KeyboardInterrupt("stop")
+
+        c._pg.read_setting_int = MagicMock(return_value=5)
+
+        with patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=RuntimeError("all retries failed")), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll") as mock_poll:
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                c.run_poll_loop()
+
+        # Assert — poll still runs despite discovery failure
+        self.assertTrue(mock_poll.called)
+
+    def test_poll_loop_calls_poll_before_first_sleep_after_discovery(self):
+        """Regression: after discovery (first iteration), poll() must run BEFORE
+        time.sleep(interval) so new devices begin emitting telemetry immediately
+        instead of waiting a full poll cycle."""
+        # Arrange
+        c = _make_collector()
+        events = []
+
+        def mock_sleep(secs):
+            events.append(("sleep", secs))
+            # Stop after the first sleep so we see the ordering of just the first iteration.
+            raise KeyboardInterrupt("stop")
+
+        def record_poll():
+            events.append(("poll",))
+
+        def record_discover():
+            events.append(("discover",))
+
+        c._pg.read_setting_int = MagicMock(return_value=60)
+
+        with patch.object(epcube_collector, "retry_with_backoff",
+                          side_effect=lambda fn, **kw: fn()), \
+             patch("time.sleep", side_effect=mock_sleep), \
+             patch.object(c, "poll", side_effect=record_poll), \
+             patch.object(c, "_discover_devices", side_effect=record_discover):
+
+            # Act
+            with self.assertRaises(KeyboardInterrupt):
+                c.run_poll_loop()
+
+        # Assert — order must be: discover → poll → sleep (poll before sleep)
+        kinds = [e[0] for e in events]
+        self.assertIn("poll", kinds, "poll() must run on the first iteration")
+        self.assertIn("sleep", kinds, "sleep() must run on the first iteration")
+        self.assertLess(
+            kinds.index("poll"),
+            kinds.index("sleep"),
+            f"poll() must be called BEFORE sleep() on the first iteration; got order: {kinds}",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T017 — Startup discovery tests
+# ---------------------------------------------------------------------------
+
+class TestStartupDiscovery(unittest.TestCase):
+    """T017: _discover_devices discovers new devices from cloud vs DB."""
+
+    def test_startup_registers_new_devices_from_cloud(self):
+        """Devices in cloud but not in DB are registered via _discover_devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="500", name="Startup Device")
+        c._pg.read_active_epcube_ids = MagicMock(return_value=set())
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — device registered in DB via upsert_device
+        call_ids = [call[0][0] for call in c._pg.upsert_device.call_args_list]
+        self.assertIn("epcube500_battery", call_ids)
+        self.assertIn("epcube500_solar", call_ids)
+
+    def test_startup_discovery_logs_new_devices(self):
+        """New devices are logged as discovered by _discover_devices."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="600", name="New At Startup")
+        c._pg.read_active_epcube_ids = MagicMock(return_value=set())
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="INFO") as cm:
+                c._discover_devices()
+
+        # Assert — log mentions new device discovery
+        found = any("new device" in msg.lower() or "discovered" in msg.lower()
+                     for msg in cm.output)
+        self.assertTrue(found, f"Expected discovery log in: {cm.output}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: T018 — Empty cloud device list guard (FR-007)
+# ---------------------------------------------------------------------------
+
+class TestEmptyCloudListGuard(unittest.TestCase):
+    """T018: FR-007 — empty cloud list treated as error, current devices retained."""
+
+    def test_empty_list_retains_current_devices(self):
+        """When cloud returns empty device list, self._devices is NOT cleared."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        original_device = _make_device(dev_id="100", name="Existing")
+        c._devices = [original_device]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            c._discover_devices()
+
+        # Assert — devices should be retained
+        self.assertEqual(len(c._devices), 1)
+        self.assertEqual(c._devices[0]["id"], "100")
+
+    def test_empty_list_logs_warning(self):
+        """When cloud returns empty device list, a warning is logged."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = [_make_device(dev_id="100")]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="WARNING") as cm:
+                c._discover_devices()
+
+        # Assert — warning about empty device list
+        found = any("empty" in msg.lower() for msg in cm.output)
+        self.assertTrue(found, f"Expected 'empty' in warning logs: {cm.output}")
+
+    def test_empty_list_no_db_registration(self):
+        """When cloud returns empty list, no devices are registered in DB."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        c._devices = [_make_device(dev_id="100")]
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": []}):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        c._pg.upsert_device.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T023 — Removed device detection tests
+# ---------------------------------------------------------------------------
+
+class TestRemovedDeviceDetection(unittest.TestCase):
+    """T023: _discover_devices detects removed devices, updates DB status, logs removal."""
+
+    def test_removed_device_excluded_from_poll_list(self):
+        """When a known device disappears from cloud, self._devices no longer contains it."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "200"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — only the remaining device is in the poll list
+        poll_ids = [str(d["id"]) for d in c._devices]
+        self.assertIn("100", poll_ids)
+        self.assertNotIn("200", poll_ids)
+
+    def test_removed_device_status_updated_in_db(self):
+        """When a device is removed, update_device_status is called with 'removed'."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "300"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status called for the removed device
+        c._pg.update_device_status.assert_called_once_with("300", "removed")
+
+    def test_removed_device_logged(self):
+        """When a device is removed, a log message identifies it."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "400"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            with self.assertLogs("epcube-exporter", level="WARNING") as cm:
+                c._discover_devices()
+
+        # Assert — log mentions device removal
+        found = any("removed" in msg.lower() and "400" in msg for msg in cm.output)
+        self.assertTrue(found, f"Expected removal log for device 400 in: {cm.output}")
+
+    def test_multiple_devices_removed(self):
+        """When multiple devices are removed, all are handled."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "500", "600"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status called for each removed device
+        called_ids = {call[0][0] for call in c._pg.update_device_status.call_args_list}
+        self.assertEqual(called_ids, {"500", "600"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T024 — Historical data preservation tests (FR-004)
+# ---------------------------------------------------------------------------
+
+class TestHistoricalDataPreservation(unittest.TestCase):
+    """T024: FR-004 — device removal does NOT delete readings or device records."""
+
+    def test_no_delete_calls_on_removal(self):
+        """When a device is removed, no delete operations are performed on the writer."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "700"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — no delete methods called
+        # Check that the mock pg_writer has no delete-related calls
+        for call in c._pg.method_calls:
+            method_name = call[0]
+            self.assertNotIn("delete", method_name.lower(),
+                             f"Unexpected delete call: {method_name}")
+
+    def test_device_record_preserved_after_removal(self):
+        """The device record remains in DB (status updated, not deleted)."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining_dev = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "800"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining_dev]}):
+            # Act
+            c._discover_devices()
+
+        # Assert — update_device_status is called (not delete), proving record is kept
+        c._pg.update_device_status.assert_called_once_with("800", "removed")
+        # Verify no method call contains 'delete_device' or 'remove_device'
+        method_names = [call[0] for call in c._pg.method_calls]
+        self.assertFalse(any("delete_device" in m or "remove_device" in m for m in method_names))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: T025 — update_device_status tests
+# ---------------------------------------------------------------------------
+
+class TestUpdateDeviceStatus(unittest.TestCase):
+    """T025: PostgresWriter.update_device_status updates status for both sub-devices."""
+
+    @patch.object(db, "psycopg2")
+    def test_updates_both_sub_devices(self, mock_pg):
+        """update_device_status updates _battery and _solar device records."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.update_device_status("123", "removed")
+
+        # Assert — SQL UPDATE for both sub-devices
+        update_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'UPDATE' in str(call) and 'devices' in str(call)]
+        self.assertGreaterEqual(len(update_calls), 1)
+        # Check that both device IDs are included
+        all_params = [str(call) for call in mock_cursor.execute.call_args_list]
+        all_sql = " ".join(all_params)
+        self.assertIn("epcube123_battery", all_sql)
+        self.assertIn("epcube123_solar", all_sql)
+        mock_conn.commit.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_updates_status_to_given_value(self, mock_pg):
+        """update_device_status sets status column to the provided value."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.update_device_status("456", "merged")
+
+        # Assert — the status value is passed to the SQL
+        all_params = [str(call) for call in mock_cursor.execute.call_args_list]
+        all_sql = " ".join(all_params)
+        self.assertIn("merged", all_sql)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: T027 — Pending replacement creation tests
+# ---------------------------------------------------------------------------
+
+class TestPendingReplacementCreation(unittest.TestCase):
+    """T027: _discover_devices creates pending_replacement when alias matches."""
+
+    def test_same_cycle_add_and_remove_creates_pending(self):
+        """When discovery sees both an add and a remove in one cycle, insert pending_replacement."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="200", name="Replacement")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_removed_predecessor = MagicMock(return_value="100")
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}):
+            # Act — DB knows {100}, cloud returns {200} → 100 removed, 200 added
+            c._discover_devices()
+
+        # Assert — find_removed_predecessor matched them by alias
+        c._pg.find_removed_predecessor.assert_called_once_with("200")
+        c._pg.insert_pending_replacement.assert_called_once_with("100", "200")
+
+    def test_add_only_no_pending_when_no_removed_predecessor(self):
+        """When discovery sees only additions and no removed predecessor exists, no pending created."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        existing = _make_device(dev_id="100", name="Existing")
+        new_dev = _make_device(dev_id="200", name="Brand New")
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_removed_predecessor = MagicMock(return_value=None)
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing, new_dev]}):
+            # Act — DB knows {100}, cloud returns {100, 200} → only addition
+            c._discover_devices()
+
+        # Assert — find_removed_predecessor called but returned None
+        c._pg.find_removed_predecessor.assert_called_once_with("200")
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_add_only_creates_pending_when_removed_predecessor_found(self):
+        """New device added with no removal this cycle, but a previously removed device matches by alias."""
+        # Arrange — DB knows {100} active, cloud returns {100, 200} → 200 is added
+        # find_removed_predecessor("200") returns "999" (a previously removed device)
+        c = _make_collector()
+        c._token = "fake_token"
+        existing = _make_device(dev_id="100", name="Existing")
+        new_dev = _make_device(dev_id="200", name="Same Name As 999")
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_removed_predecessor = MagicMock(return_value="999")
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [existing, new_dev]}):
+            c._discover_devices()
+
+        # Assert — pending replacement recorded for the cross-cycle match
+        c._pg.find_removed_predecessor.assert_called_once_with("200")
+        c._pg.insert_pending_replacement.assert_called_once_with("999", "200")
+
+    def test_remove_only_no_pending_replacement(self):
+        """When discovery sees only removals, no pending_replacement is created."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "200"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}):
+            # Act — DB knows {100, 200}, cloud returns {100} → only removal
+            c._discover_devices()
+
+        # Assert
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_multiple_additions_each_checked_for_predecessor(self):
+        """N added devices → N calls to find_removed_predecessor."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        new1 = _make_device(dev_id="500", name="New 1")
+        new2 = _make_device(dev_id="600", name="New 2")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_removed_predecessor = MagicMock(side_effect=lambda x: {"500": "100", "600": "200"}.get(x))
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "200"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new1, new2]}):
+            # Act — 2 removed (100, 200), 2 added (500, 600)
+            c._discover_devices()
+
+        # Assert — one record per matched pair
+        self.assertEqual(c._pg.insert_pending_replacement.call_count, 2)
+        called_old_ids = {call[0][0] for call in c._pg.insert_pending_replacement.call_args_list}
+        self.assertEqual(called_old_ids, {"100", "200"})
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: T028 — insert_pending_replacement tests
+# ---------------------------------------------------------------------------
+
+class TestInsertPendingReplacement(unittest.TestCase):
+    """T028: PostgresWriter.insert_pending_replacement inserts into pending_replacements."""
+
+    @patch.object(db, "psycopg2")
+    def test_inserts_record(self, mock_pg):
+        """insert_pending_replacement issues an INSERT into pending_replacements."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.insert_pending_replacement("123", "456")
+
+        # Assert — INSERT into pending_replacements with both IDs
+        insert_calls = [call for call in mock_cursor.execute.call_args_list
+                        if 'pending_replacements' in str(call) and 'INSERT' in str(call)]
+        self.assertEqual(len(insert_calls), 1)
+        params = insert_calls[0][0][1]
+        self.assertEqual(params, ("123", "456"))
+        mock_conn.commit.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_uses_on_conflict_do_nothing(self, mock_pg):
+        """insert_pending_replacement uses ON CONFLICT DO NOTHING for idempotency."""
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        writer = db.PostgresWriter("postgresql://test:test@localhost/test")
+
+        # Act
+        writer.insert_pending_replacement("789", "012")
+
+        # Assert
+        all_sql = " ".join(str(call) for call in mock_cursor.execute.call_args_list).upper()
+        self.assertIn("ON CONFLICT", all_sql)
+        self.assertIn("DO NOTHING", all_sql)
+
+
+# ---------------------------------------------------------------------------
+# Cross-cycle replacement detection (Option 1)
+# ---------------------------------------------------------------------------
+
+class TestCrossCycleReplacementDetection(unittest.TestCase):
+    """When a device is removed in a cycle without a same-cycle add, look up an
+    existing active device with the same alias registered after the removed one
+    and insert a pending_replacement row."""
+
+    def test_remove_only_inserts_pending_when_alias_match_found(self):
+        """Lone removal triggers find_replacement_candidate; insert pending if it returns an id."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value="200")
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "999"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}):
+            # Act — DB knows {100, 999}, cloud returns {100} → 999 removed (no same-cycle add)
+            c._discover_devices()
+
+        # Assert — find_replacement_candidate consulted with the removed id, pending inserted
+        c._pg.find_replacement_candidate.assert_called_once_with("999")
+        c._pg.insert_pending_replacement.assert_called_once_with("999", "200")
+
+    def test_remove_only_no_pending_when_no_alias_match(self):
+        """Lone removal with no alias match → no pending row inserted."""
+        # Arrange
+        c = _make_collector()
+        c._token = "fake_token"
+        remaining = _make_device(dev_id="100", name="Remaining")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_replacement_candidate = MagicMock(return_value=None)
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100", "999"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [remaining]}):
+            # Act
+            c._discover_devices()
+
+        # Assert
+        c._pg.find_replacement_candidate.assert_called_once_with("999")
+        c._pg.insert_pending_replacement.assert_not_called()
+
+    def test_paired_via_added_skips_removed_cross_cycle_lookup(self):
+        """A removed device already paired via find_removed_predecessor should not also trigger find_replacement_candidate."""
+        # Arrange — DB knows {100}, cloud returns {200} → 100 removed, 200 added
+        # find_removed_predecessor("200") returns "100" → paired already
+        c = _make_collector()
+        c._token = "fake_token"
+        new_dev = _make_device(dev_id="200", name="Replacement")
+        c._pg.update_device_status = MagicMock()
+        c._pg.insert_pending_replacement = MagicMock()
+        c._pg.find_removed_predecessor = MagicMock(return_value="100")
+        c._pg.find_replacement_candidate = MagicMock(return_value="999")  # would be used if called
+        c._pg.read_active_epcube_ids = MagicMock(return_value={"100"})
+
+        with patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 200, "data": [new_dev]}):
+            c._discover_devices()
+
+        # Assert — paired via added loop; removed cross-cycle lookup skipped
+        c._pg.find_replacement_candidate.assert_not_called()
+        c._pg.insert_pending_replacement.assert_called_once_with("100", "200")
+
+
+class TestFindReplacementCandidate(unittest.TestCase):
+    """PostgresWriter.find_replacement_candidate finds active alias-match devices."""
+
+    def _make_writer(self, mock_pg, fetch_results):
+        """Helper to set up a writer whose cursor.fetchone returns the queued results in order."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone.side_effect = list(fetch_results)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test:test@localhost/test"), mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_returns_candidate_id_when_active_alias_match_found(self, mock_pg):
+        """Returns the raw cloud id of the active alias-matching device."""
+        # Arrange — first fetchone (lookup old): (alias, old_created); second (lookup candidate): (device_id,)
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-04-09T12:59:49+00:00"),
+            ("epcube5840_battery",),
+        ])
+
+        # Act
+        result = writer.find_replacement_candidate("5488")
+
+        # Assert
+        self.assertEqual(result, "5840")
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_old_device_missing(self, mock_pg):
+        """Returns None when the removed device has no row in devices."""
+        writer, _ = self._make_writer(mock_pg, [None])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_old_device_has_no_alias(self, mock_pg):
+        """Returns None when the removed device row has a NULL alias."""
+        writer, _ = self._make_writer(mock_pg, [(None, "2026-04-09T12:59:49+00:00")])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_no_active_match(self, mock_pg):
+        """Returns None when the candidate lookup finds no row."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-04-09T12:59:49+00:00"),
+            None,
+        ])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_candidate_id_unparseable(self, mock_pg):
+        """Returns None when the candidate device_id doesn't match the epcubeN_battery shape."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Same Alias", "2026-04-09T12:59:49+00:00"),
+            ("vue_panel_42",),  # not an epcube*_battery id
+        ])
+        self.assertIsNone(writer.find_replacement_candidate("5488"))
+
+
+class TestFindRemovedPredecessor(unittest.TestCase):
+    """PostgresWriter.find_removed_predecessor finds removed alias-match devices."""
+
+    def _make_writer(self, mock_pg, fetch_results):
+        """Helper to set up a writer whose cursor.fetchone returns the queued results in order."""
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone.side_effect = list(fetch_results)
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test:test@localhost/test"), mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_returns_predecessor_id_when_removed_alias_match_found(self, mock_pg):
+        """Returns the raw cloud id of the removed alias-matching device."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-05-16T15:00:00+00:00"),  # new device alias + created_at
+            ("epcube5488_battery",),  # removed predecessor
+        ])
+        result = writer.find_removed_predecessor("5840")
+        self.assertEqual(result, "5488")
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_new_device_missing(self, mock_pg):
+        """Returns None when the new device has no row in devices."""
+        writer, _ = self._make_writer(mock_pg, [None])
+        self.assertIsNone(writer.find_removed_predecessor("5840"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_new_device_has_no_alias(self, mock_pg):
+        """Returns None when the new device row has a NULL alias."""
+        writer, _ = self._make_writer(mock_pg, [(None, "2026-05-16T15:00:00+00:00")])
+        self.assertIsNone(writer.find_removed_predecessor("5840"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_no_removed_match(self, mock_pg):
+        """Returns None when no removed device matches the alias."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Steve St Jean 3", "2026-05-16T15:00:00+00:00"),
+            None,
+        ])
+        self.assertIsNone(writer.find_removed_predecessor("5840"))
+
+    @patch.object(db, "psycopg2")
+    def test_returns_none_when_predecessor_id_unparseable(self, mock_pg):
+        """Returns None when the predecessor device_id doesn't match the epcubeN_battery shape."""
+        writer, _ = self._make_writer(mock_pg, [
+            ("Same Alias", "2026-05-16T15:00:00+00:00"),
+            ("vue_panel_42",),
+        ])
+        self.assertIsNone(writer.find_removed_predecessor("5840"))
+
+
+# ---------------------------------------------------------------------------
+# Coverage gap: PostgresWriter.read_setting_int (instance method)
+# ---------------------------------------------------------------------------
+
+class TestPostgresWriterReadSettingInt(unittest.TestCase):
+    """Cover PostgresWriter.read_setting_int — the instance-method variant
+    used by collector code via `self._pg.read_setting_int(...)`."""
+
+    def _make_writer(self, mock_pg, fetch_results):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_cursor.fetchone.side_effect = list(fetch_results)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test"), mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_returns_value_when_in_range(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("3600",)])
+
+        # Act
+        result = writer.read_setting_int("discovery_interval_seconds", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 3600)
+
+    @patch.object(db, "psycopg2")
+    def test_strips_double_quotes_from_jsonb_value(self, mock_pg):
+        # Arrange — settings values are stored as JSONB strings ("3600")
+        writer, _ = self._make_writer(mock_pg, [('"3600"',)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 3600)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_value_below_min(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("30",)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_value_above_max(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [("99999",)])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_row_missing(self, mock_pg):
+        # Arrange
+        writer, _ = self._make_writer(mock_pg, [None])
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_returns_default_when_db_raises(self, mock_pg):
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("DB down")
+
+        # Act
+        result = writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert
+        self.assertEqual(result, 60)
+
+    @patch.object(db, "psycopg2")
+    def test_rolls_back_connection_when_select_fails(self, mock_pg):
+        """Regression: a failed SELECT must NOT leave the conn in an aborted
+        transaction state — otherwise the next query (e.g., upsert_device)
+        fails with psycopg2.errors.InFailedSqlTransaction."""
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert — connection must have been rolled back
+        writer._conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_logs_warning_with_traceback_when_select_fails(self, mock_pg):
+        """Regression: silent log.debug hides the underlying SQL error.
+        Failures MUST be logged at WARNING level with traceback so they
+        surface in container logs at the default INFO level."""
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        with patch.object(db.log, "warning") as mock_warning, \
+                patch.object(db.log, "debug") as mock_debug:
+            writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert — warning is called with exc_info=True; debug is NOT used to
+        # hide the failure
+        self.assertTrue(mock_warning.called, "Expected log.warning to surface the failure")
+        _, kwargs = mock_warning.call_args
+        self.assertTrue(kwargs.get("exc_info"), "Expected exc_info=True so the traceback is logged")
+        mock_debug.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: aborted-transaction recovery for read_active_epcube_ids
+# ---------------------------------------------------------------------------
+
+class TestReadActiveEpcubeIdsRecoverConnection(unittest.TestCase):
+    """Regression tests for the staging InFailedSqlTransaction incident.
+
+    Prior to the fix, a swallowed exception inside read_active_epcube_ids
+    left the psycopg2 connection in an aborted-transaction state, which
+    poisoned every subsequent query in the same discovery cycle (e.g.,
+    upsert_device → psycopg2.errors.InFailedSqlTransaction)."""
+
+    def _make_writer(self, mock_pg):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test"), mock_conn, mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_rolls_back_connection_when_select_fails(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        writer.read_active_epcube_ids()
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_logs_warning_with_traceback_when_select_fails(self, mock_pg):
+        # Arrange
+        writer, _, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        with patch.object(db.log, "warning") as mock_warning, \
+                patch.object(db.log, "debug") as mock_debug:
+            writer.read_active_epcube_ids()
+
+        # Assert
+        self.assertTrue(mock_warning.called, "Expected log.warning to surface the failure")
+        _, kwargs = mock_warning.call_args
+        self.assertTrue(kwargs.get("exc_info"), "Expected exc_info=True so the traceback is logged")
+        mock_debug.assert_not_called()
+
+    @patch.object(db, "psycopg2")
+    def test_rollback_failure_drops_connection(self, mock_pg):
+        """If rollback itself raises (connection already broken), drop the
+        cached connection so the next _get_conn() reconnects from scratch."""
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("SELECT failure")
+        conn.rollback.side_effect = RuntimeError("rollback failure")
+
+        # Act
+        writer.read_active_epcube_ids()
+
+        # Assert — cached connection must be cleared so the next call reconnects
+        self.assertIsNone(writer._conn)
+
+
+# ---------------------------------------------------------------------------
+# _discover_devices non-200 cloud response — must raise so retry_with_backoff
+# actually retries (PR #137 review: previously returned silently, causing the
+# next discovery to be delayed by a full interval after a transient failure).
+# ---------------------------------------------------------------------------
+
+class TestDiscoverDevicesCloudError(unittest.TestCase):
+    """Cover the failure path when the cloud /home/deviceList call returns
+    a non-200 status."""
+
+    def test_discover_raises_runtime_error_on_non_200_cloud_status(self):
+        # Arrange
+        c = _make_collector()
+        c._token = "valid-token"
+
+        with patch.object(c, "_ensure_auth"), \
+             patch.object(epcube_collector, "_api_request",
+                          return_value={"status": 500, "message": "cloud down"}):
+
+            # Act + Assert — must raise so retry_with_backoff triggers a retry
+            with self.assertRaises(RuntimeError):
+                c._discover_devices()
+
+        # Device state must not have been mutated by the failed call
+        self.assertEqual(len(c._devices), 0)
+
+    def test_retry_with_backoff_retries_on_non_200_cloud_status(self):
+        """End-to-end: retry_with_backoff sees the raised RuntimeError and
+        retries up to max_retries times before giving up."""
+        c = _make_collector()
+        c._token = "valid-token"
+        call_count = {"n": 0}
+
+        def fake_api(method, path, **kwargs):
+            call_count["n"] += 1
+            return {"status": 500, "message": "cloud down"}
+
+        with patch.object(c, "_ensure_auth"), \
+             patch.object(epcube_collector, "_api_request", side_effect=fake_api), \
+             patch.object(epcube_collector.time, "sleep"):  # skip backoff sleeps
+            with self.assertRaises(RuntimeError):
+                epcube_collector.retry_with_backoff(c._discover_devices, max_retries=3)
+
+        # Three discovery attempts (max_retries=3)
+        self.assertEqual(call_count["n"], 3)
+
+
+# ---------------------------------------------------------------------------
+# Regression: aborted-transaction recovery for VuePostgresWriter writes
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterRollback(unittest.TestCase):
+    """Regression tests for the staging Vue InFailedSqlTransaction incident.
+
+    Prior to the fix, a failed write on VuePostgresWriter's long-lived
+    connection (e.g., upsert_device after a prod→staging mirror left the
+    schema mismatched) propagated the exception to the caller without
+    rolling back the connection. The next write on the same connection
+    then failed with psycopg2.errors.InFailedSqlTransaction, poisoning the
+    entire Vue poll loop until the container restarted."""
+
+    def _make_writer(self, mock_pg):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.VuePostgresWriter("postgresql://test"), mock_conn, mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_device_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        # Schema init already ran in __init__ before side_effect was set; the
+        # next cursor.execute belongs to upsert_device → make it fail.
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_device(device_gid=12345, device_name="Test")
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_channel_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_channel(device_gid=12345, channel_num="1,2,3")
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_write_readings_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        mock_pg.extras.execute_values.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.write_readings([(12345, "1,2,3", "2026-05-17T19:00:00Z", 1.5)])
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_daily_readings_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        mock_pg.extras.execute_values.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_daily_readings([(12345, "1,2,3", "2026-05-17", 12.5)])
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_rollback_failure_drops_connection(self, mock_pg):
+        """If rollback itself raises (connection already broken), drop the
+        cached connection so the next _get_conn() reconnects from scratch."""
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+        conn.rollback.side_effect = RuntimeError("rollback failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_device(device_gid=12345, device_name="Test")
+
+        # Assert — cached connection cleared so the next call reconnects
+        self.assertIsNone(writer._conn)
 
 
 if __name__ == "__main__":

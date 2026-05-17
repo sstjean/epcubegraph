@@ -10,6 +10,9 @@ export interface EnergyFlowDiagramProps {
   vueDeviceMapping?: VueDeviceMapping;
   vueDevices?: VueDeviceInfo[];
   hierarchyEntries?: PanelHierarchyEntry[];
+  /** When true, wrap each flow diagram in a `.device-removed` div so the
+   *  faded/grayscale styling is applied (used for devices with status='removed'). */
+  removed?: boolean;
 }
 
 const WIDTH = 380;
@@ -117,13 +120,18 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
   return (
     <article class="device-card" aria-label={`Energy flow for ${group.name}`}>
       <header class="device-card-header">
-        <h3>{group.name}</h3>
-        <span
-          aria-label={group.online ? 'Online' : 'Offline'}
-          class={`badge ${group.online ? 'badge-online' : 'badge-offline'}`}
-        >
-          {group.online ? 'Online' : 'Offline'}
-        </span>
+        <div class="device-card-title-row">
+          <h3>{group.name}</h3>
+          <span
+            aria-label={group.online ? 'Online' : 'Offline'}
+            class={`badge ${group.online ? 'badge-online' : 'badge-offline'}`}
+          >
+            {group.online ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        {group.pendingMergeNote && (
+          <p class="device-card-pending-note">{group.pendingMergeNote}</p>
+        )}
       </header>
       <div class="energy-flow-diagram">
         <svg
@@ -367,17 +375,24 @@ export function getCircuitsForGroup(
   return entries.sort(sortByWattsThenName);
 }
 
-export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping, vueDevices, hierarchyEntries }: EnergyFlowDiagramProps) {
+export function EnergyFlowDiagram({ groups, vueCurrentReadings, vueDeviceMapping, vueDevices, hierarchyEntries, removed }: EnergyFlowDiagramProps) {
   return (
     <div class="device-cards">
-      {groups.map((group, i) => (
-        <SystemFlowDiagram
-          key={group.name}
-          group={group}
-          index={i}
-          circuits={getCircuitsForGroup(group.baseDeviceId, vueCurrentReadings, vueDeviceMapping, hierarchyEntries, vueDevices)}
-        />
-      ))}
+      {groups.map((group, i) => {
+        const diagram = (
+          <SystemFlowDiagram
+            key={group.name}
+            group={group}
+            index={i}
+            circuits={getCircuitsForGroup(group.baseDeviceId, vueCurrentReadings, vueDeviceMapping, hierarchyEntries, vueDevices)}
+          />
+        );
+        return removed ? (
+          <div key={`removed-${group.name}`} class="device-removed">{diagram}</div>
+        ) : (
+          diagram
+        );
+      })}
     </div>
   );
 }

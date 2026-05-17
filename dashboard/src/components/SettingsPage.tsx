@@ -1,409 +1,65 @@
-import { useState, useEffect } from 'preact/hooks';
-import { fetchSettings, updateSetting, fetchDevices, fetchVueDevices, fetchHierarchy, updateHierarchy } from '../api';
-import type { Device, VueDeviceInfo, VuePanelMapping, PanelHierarchyEntry } from '../types';
-import { groupDevicesByAlias, getDisplayName, getBaseDeviceId } from '../utils/devices';
-import { errorMessage, toTrackedError } from '../utils/errors';
-import { isValidVueDeviceMapping } from '../hooks/useVueData';
+import { useState } from 'preact/hooks';
+import { DeviceMerge } from './DeviceMerge';
+import { PollingIntervalsSection } from './settings/PollingIntervalsSection';
+import { VueDeviceMappingSection } from './settings/VueDeviceMappingSection';
+import { PanelHierarchySection } from './settings/PanelHierarchySection';
+import { RemovedDevicesSection } from './settings/RemovedDevicesSection';
 
-const POLL_SETTINGS = [
-  { key: 'epcube_poll_interval_seconds', label: 'EP Cube Polling Interval', default: '30', group: 'EP Cube' },
-  { key: 'vue_poll_interval_seconds', label: 'Emporia Vue Current Polling', default: '1', group: 'Emporia Vue' },
-  { key: 'vue_daily_poll_interval_seconds', label: 'Emporia Vue Daily Polling', default: '300', group: 'Emporia Vue' },
+export type SettingsTab = 'polling' | 'mapping' | 'hierarchy' | 'merge' | 'removed';
+
+const SETTINGS_TABS: readonly { id: SettingsTab; label: string }[] = [
+  { id: 'polling', label: 'Polling' },
+  { id: 'mapping', label: 'Vue Mapping' },
+  { id: 'hierarchy', label: 'Hierarchy' },
+  { id: 'merge', label: 'Merge' },
+  { id: 'removed', label: 'Removed' },
 ] as const;
 
-interface EpCubeGroup {
-  baseDeviceId: string;
-  displayName: string;
-  devices: Device[];
-}
+export function SettingsPage({ initialTab }: { initialTab?: SettingsTab } = {}) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    if (initialTab) return initialTab;
+    const stored = localStorage.getItem('settingsActiveTab');
+    return stored && SETTINGS_TABS.some((t) => t.id === stored) ? (stored as SettingsTab) : 'polling';
+  });
 
-export function resolveDeviceAlias(vueDevices: VueDeviceInfo[], gid: number): string {
-  return vueDevices.find((v) => v.device_gid === gid)?.display_name || String(gid);
-}
-
-export function buildEpcubeGroups(devices: Device[]): EpCubeGroup[] {
-  const groupMap = groupDevicesByAlias(devices);
-  return Array.from(groupMap.entries()).map(([_key, devs]) => ({
-    baseDeviceId: getBaseDeviceId(devs[0]),
-    displayName: getDisplayName(devs),
-    devices: devs,
-  }));
-}
-
-export function initializeMapping(
-  groups: EpCubeGroup[],
-  rawMapping: string | undefined,
-): Record<string, VuePanelMapping | undefined> {
-  const mapping: Record<string, VuePanelMapping | undefined> = {};
-  for (const g of groups) mapping[g.baseDeviceId] = undefined;
-  if (rawMapping) {
-    try {
-      const parsed: unknown = JSON.parse(rawMapping);
-      if (isValidVueDeviceMapping(parsed)) {
-        for (const [key, panel] of Object.entries(parsed)) {
-          if (key in mapping) {
-            mapping[key] = panel;
-          }
-        }
-      } else {
-        toTrackedError(new Error('vue_device_mapping uses legacy array format'), 'Invalid vue_device_mapping format');
-      }
-    } catch (err) {
-      toTrackedError(err, 'Malformed vue_device_mapping JSON');
-    }
+  function handleTabChange(tab: SettingsTab) {
+    setActiveTab(tab);
+    localStorage.setItem('settingsActiveTab', tab);
   }
-  return mapping;
-}
-
-export function validatePollingValue(val: string): string | null {
-  const n = Number(val);
-  if (!Number.isFinite(n) || !Number.isInteger(n)) return 'Must be a whole number';
-  if (n < 1) return 'Minimum is 1 second';
-  if (n > 3600) return 'Maximum is 3600 seconds';
-  return null;
-}
-
-export function SettingsPage() {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savingMapping, setSavingMapping] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pollingMessage, setPollingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [mappingMessage, setMappingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [epcubeGroups, setEpcubeGroups] = useState<EpCubeGroup[]>([]);
-  const [vueDevices, setVueDevices] = useState<VueDeviceInfo[]>([]);
-  const [hierarchyEntries, setHierarchyEntries] = useState<PanelHierarchyEntry[]>([]);
-  const [mapping, setMapping] = useState<Record<string, VuePanelMapping | undefined>>({});
-  const [savingHierarchy, setSavingHierarchy] = useState(false);
-  const [hierarchyMessage, setHierarchyMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [addParentGid, setAddParentGid] = useState('');
-  const [addChildGid, setAddChildGid] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const [settingsRes, devicesRes, vueDevicesRes, hierarchyRes] = await Promise.all([
-          fetchSettings(),
-          fetchDevices().catch(() => ({ devices: [] as Device[] })),
-          fetchVueDevices().catch(() => ({ devices: [] as VueDeviceInfo[] })),
-          fetchHierarchy().catch(() => ({ entries: [] as PanelHierarchyEntry[] })),
-        ]);
-        if (cancelled) return;
-        const vals: Record<string, string> = {};
-        for (const s of settingsRes.settings) vals[s.key] = s.value;
-        for (const ps of POLL_SETTINGS) {
-          if (!(ps.key in vals)) vals[ps.key] = ps.default;
-        }
-        setValues(vals);
-        setVueDevices(vueDevicesRes.devices);
-        setHierarchyEntries(hierarchyRes.entries);
-
-        const groups = buildEpcubeGroups(devicesRes.devices);
-        setEpcubeGroups(groups);
-
-        setMapping(initializeMapping(groups, vals.vue_device_mapping));
-      } catch (err) {
-        if (!cancelled) setError(errorMessage(err, 'Failed to load settings'));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
-
-  function handleChange(key: string, val: string) {
-    setValues((prev) => ({ ...prev, [key]: val }));
-    setPollingMessage(null);
-  }
-
-  async function handleSavePolling() {
-    setPollingMessage(null);
-    setError(null);
-
-    // Validate all editable fields — use same fallback as rendered input
-    for (const ps of POLL_SETTINGS) {
-      const err = validatePollingValue(values[ps.key] ?? ps.default);
-      if (err) {
-        setPollingMessage({ type: 'error', text: `${ps.label}: ${err}` });
-        return;
-      }
-    }
-
-    setSaving(true);
-    try {
-      for (const ps of POLL_SETTINGS) {
-        await updateSetting(ps.key, values[ps.key] ?? ps.default);
-      }
-      setPollingMessage({ type: 'success', text: 'Polling intervals saved' });
-    } catch (err) {
-      setPollingMessage({ type: 'error', text: errorMessage(err, 'Failed to save') });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // ── Mapping editor handlers ──
-
-  function getAllAssignedGids(): Set<number> {
-    const gids = new Set<number>();
-    for (const panel of Object.values(mapping)) {
-      if (panel) gids.add(panel.gid);
-    }
-    return gids;
-  }
-
-  function handleSelectDevice(deviceId: string, gidStr: string) {
-    const gid = Number(gidStr);
-    if (!gid) {
-      setMapping((prev) => ({ ...prev, [deviceId]: undefined }));
-      setMappingMessage(null);
-      return;
-    }
-    const alias = resolveDeviceAlias(vueDevices, gid);
-    setMapping((prev) => ({
-      ...prev,
-      [deviceId]: { gid, alias },
-    }));
-    setMappingMessage(null);
-  }
-
-  async function handleSaveMapping() {
-    setMappingMessage(null);
-    setError(null);
-    setSavingMapping(true);
-    try {
-      // Only include devices with assigned panels
-      const filtered: Record<string, VuePanelMapping> = {};
-      for (const [key, panel] of Object.entries(mapping)) {
-        if (panel) filtered[key] = panel;
-      }
-      await updateSetting('vue_device_mapping', JSON.stringify(filtered));
-      setMappingMessage({ type: 'success', text: 'Device mapping saved' });
-    } catch (err) {
-      setMappingMessage({ type: 'error', text: errorMessage(err, 'Failed to save') });
-    } finally {
-      setSavingMapping(false);
-    }
-  }
-
-  // ── Hierarchy editor handlers ──
-
-  function handleAddHierarchyEntry() {
-    setHierarchyMessage(null);
-    const parentGid = Number(addParentGid);
-    const childGid = Number(addChildGid);
-    if (!parentGid || !childGid) return;
-
-    if (parentGid === childGid) {
-      setHierarchyMessage({ type: 'error', text: 'A panel cannot be its own child' });
-      return;
-    }
-
-    const duplicate = hierarchyEntries.some(
-      (e) => e.parent_device_gid === parentGid && e.child_device_gid === childGid,
-    );
-    if (duplicate) {
-      setHierarchyMessage({ type: 'error', text: 'This relationship already exists' });
-      return;
-    }
-
-    setHierarchyEntries((prev) => [
-      ...prev,
-      { id: 0, parent_device_gid: parentGid, child_device_gid: childGid },
-    ]);
-    setAddParentGid('');
-    setAddChildGid('');
-  }
-
-  function handleRemoveHierarchyEntry(parentGid: number, childGid: number) {
-    setHierarchyEntries((prev) =>
-      prev.filter((e) => !(e.parent_device_gid === parentGid && e.child_device_gid === childGid)),
-    );
-    setHierarchyMessage(null);
-  }
-
-  async function handleSaveHierarchy() {
-    setHierarchyMessage(null);
-    setSavingHierarchy(true);
-    try {
-      const input = hierarchyEntries.map((e) => ({
-        parent_device_gid: e.parent_device_gid,
-        child_device_gid: e.child_device_gid,
-      }));
-      const result = await updateHierarchy(input);
-      setHierarchyEntries(result.entries);
-      setHierarchyMessage({ type: 'success', text: 'Hierarchy saved' });
-    } catch (err) {
-      setHierarchyMessage({ type: 'error', text: errorMessage(err, 'Failed to save hierarchy') });
-    } finally {
-      setSavingHierarchy(false);
-    }
-  }
-
-  if (loading) return <section aria-busy="true"><h2>Settings</h2><p>Loading...</p></section>;
 
   return (
     <section aria-label="Settings">
       <h2>Settings</h2>
-
-      {error && <p role="alert" class="settings-error">{error}</p>}
-
-      <div class="settings-section">
-        <h3>Polling Intervals</h3>
-        <div class="settings-fields">
-          {POLL_SETTINGS.map((ps) => (
-            <div class="settings-field" key={ps.key}>
-              <label for={ps.key}>
-                {ps.label} (seconds)
-              </label>
-              <input
-                id={ps.key}
-                type="number"
-                min="1"
-                max="3600"
-                value={values[ps.key] ?? ps.default}
-                onInput={(e) => handleChange(ps.key, (e.target as HTMLInputElement).value)}
-              />
-            </div>
+      <div class="settings-layout">
+        <nav class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+          {SETTINGS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`settings-tab-${t.id}`}
+              aria-selected={activeTab === t.id}
+              aria-controls={`settings-tabpanel-${t.id}`}
+              tabIndex={activeTab === t.id ? 0 : -1}
+              class={`settings-tab${activeTab === t.id ? ' settings-tab--active' : ''}`}
+              onClick={() => handleTabChange(t.id)}
+            >
+              {t.label}
+            </button>
           ))}
-        </div>
-        <button
-          type="button"
-          class="settings-save"
-          onClick={handleSavePolling}
-          disabled={saving}
+        </nav>
+        <div
+          class="settings-content"
+          role="tabpanel"
+          id={`settings-tabpanel-${activeTab}`}
+          aria-labelledby={`settings-tab-${activeTab}`}
         >
-          {saving ? 'Saving...' : 'Save Polling Intervals'}
-        </button>
-        {pollingMessage && (
-          <p role={pollingMessage.type === 'error' ? 'alert' : 'status'} class={pollingMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
-            {pollingMessage.text}
-          </p>
-        )}
-      </div>
-
-      <div class="settings-section">
-        <h3>Vue Device Mapping</h3>
-        {epcubeGroups.length === 0 && <p class="settings-coming-soon">No EP Cube devices found</p>}
-        {epcubeGroups.length > 0 && vueDevices.length === 0 && <p class="settings-coming-soon">No Vue devices available</p>}
-        {epcubeGroups.length > 0 && vueDevices.length > 0 && (
-          <>
-            {epcubeGroups.map((group) => {
-              const assignedGids = getAllAssignedGids();
-              const childGids = new Set(hierarchyEntries.map((h) => h.child_device_gid));
-              const panel = mapping[group.baseDeviceId];
-              const eligible = vueDevices.filter(
-                (v) => !childGids.has(v.device_gid) && (!assignedGids.has(v.device_gid) || v.device_gid === panel?.gid),
-              );
-              return (
-                <div class="mapping-device" key={group.baseDeviceId}>
-                  <h4>{group.displayName}</h4>
-                  <select
-                    aria-label={`Select Vue device for ${group.displayName}`}
-                    value={panel ? String(panel.gid) : ''}
-                    onChange={(e) => handleSelectDevice(group.baseDeviceId, (e.target as HTMLSelectElement).value)}
-                  >
-                    <option value="">None</option>
-                    {eligible.map((v) => (
-                      <option key={v.device_gid} value={String(v.device_gid)}>
-                        {v.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
-            <button
-              type="button"
-              class="settings-save"
-              onClick={handleSaveMapping}
-              disabled={savingMapping}
-            >
-              {savingMapping ? 'Saving...' : 'Save Mapping'}
-            </button>
-            {mappingMessage && (
-              <p role={mappingMessage.type === 'error' ? 'alert' : 'status'} class={mappingMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
-                {mappingMessage.text}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-
-      <div class="settings-section">
-        <h3>Panel Hierarchy</h3>
-        {vueDevices.length === 0 && <p class="settings-coming-soon">No Vue devices available</p>}
-        {vueDevices.length > 0 && (
-          <>
-            {hierarchyEntries.length > 0 && (
-              <div class="hierarchy-entries">
-                {hierarchyEntries.map((e) => (
-                  <div class="hierarchy-entry-row" key={`${e.parent_device_gid}-${e.child_device_gid}`}>
-                    <span>{resolveDeviceAlias(vueDevices, e.parent_device_gid)} → {resolveDeviceAlias(vueDevices, e.child_device_gid)}</span>
-                    <button
-                      type="button"
-                      aria-label={`Remove hierarchy entry ${e.child_device_gid}`}
-                      class="mapping-remove-btn"
-                      onClick={() => handleRemoveHierarchyEntry(e.parent_device_gid, e.child_device_gid)}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div class="hierarchy-add-row">
-              <select
-                aria-label="Parent panel"
-                value={addParentGid}
-                onChange={(e) => setAddParentGid((e.target as HTMLSelectElement).value)}
-              >
-                <option value="">Parent…</option>
-                {vueDevices.map((v) => (
-                  <option key={v.device_gid} value={String(v.device_gid)}>
-                    {v.display_name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Child panel"
-                value={addChildGid}
-                onChange={(e) => setAddChildGid((e.target as HTMLSelectElement).value)}
-              >
-                <option value="">Child…</option>
-                {vueDevices.map((v) => (
-                  <option key={v.device_gid} value={String(v.device_gid)}>
-                    {v.display_name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleAddHierarchyEntry}
-              >
-                Add
-              </button>
-            </div>
-            <button
-              type="button"
-              class="settings-save"
-              onClick={handleSaveHierarchy}
-              disabled={savingHierarchy}
-            >
-              {savingHierarchy ? 'Saving...' : 'Save Hierarchy'}
-            </button>
-            {hierarchyMessage && (
-              <p role={hierarchyMessage.type === 'error' ? 'alert' : 'status'} class={hierarchyMessage.type === 'error' ? 'settings-error' : 'settings-success'}>
-                {hierarchyMessage.text}
-              </p>
-            )}
-          </>
-        )}
+          {activeTab === 'polling' && <PollingIntervalsSection />}
+          {activeTab === 'mapping' && <VueDeviceMappingSection />}
+          {activeTab === 'hierarchy' && <PanelHierarchySection />}
+          {activeTab === 'merge' && <DeviceMerge />}
+          {activeTab === 'removed' && <RemovedDevicesSection />}
+        </div>
       </div>
     </section>
   );
