@@ -848,4 +848,28 @@ describe('Settings API', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body).toEqual({ old_device_id: '100', new_device_id: '200' });
   });
+
+  it('deleteDevice sends DELETE to /devices/{cloudId} and returns the response', async () => {
+    // Arrange
+    vi.resetModules();
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.test');
+    vi.stubEnv('VITE_DISABLE_AUTH', 'true');
+    globalThis.fetch = vi.fn();
+    await setupAuth();
+    const deleteResult = { device_id: '5488', readings_deleted: 12345 };
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: () => Promise.resolve(deleteResult),
+    });
+    const { deleteDevice } = await import('../../src/api');
+
+    // Act
+    const result = await deleteDevice('5488');
+
+    // Assert
+    expect(result).toEqual(deleteResult);
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    const calledUrl = fetchMock.mock.calls[0][0] as string;
+    expect(calledUrl).toContain('/devices/5488');
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+  });
 });

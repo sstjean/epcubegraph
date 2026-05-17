@@ -13,6 +13,7 @@ import type {
   PanelHierarchyInputEntry,
   PendingReplacement,
   DismissResponse,
+  DeleteDeviceResponse,
   MergePreviewResponse,
   MergeResponse,
 } from './types';
@@ -216,4 +217,36 @@ export async function mergeDevices(
     { old_device_id: oldDeviceId, new_device_id: newDeviceId },
   );
   return response.json();
+}
+
+export async function deleteDevice(cloudId: string): Promise<DeleteDeviceResponse> {
+  const response = await authFetchDelete(`${getBaseUrl()}/devices/${encodeURIComponent(cloudId)}`);
+  return response.json();
+}
+
+async function authFetchDelete(url: string): Promise<Response> {
+  const headers: Record<string, string> = {};
+  if (!authDisabled) {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Authentication in progress');
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { method: 'DELETE', headers });
+
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json();
+      errorMessage = errorBody.error || errorMessage;
+    } catch {
+      // Empty or non-JSON response body
+    }
+    trackApiError(url, response.status);
+    throw new ApiError(errorMessage, response.status);
+  }
+
+  return response;
 }

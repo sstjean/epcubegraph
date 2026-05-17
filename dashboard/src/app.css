@@ -138,11 +138,177 @@ section > h2 {
   box-shadow: var(--shadow-card), var(--shadow-glow);
 }
 
+.device-removed {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+
+.removed-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Replacement banner */
+.replacement-banner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.replacement-banner__item {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 1.5rem 1.5rem;
+  margin: 0.75rem 0;
+  text-align: center;
+}
+
+.replacement-banner__message {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+  margin-bottom: 1.25rem;
+}
+
+.replacement-banner__title {
+  display: block;
+  font-size: 1.05rem;
+  margin-bottom: 0.75rem;
+  color: var(--error);
+}
+
+.replacement-banner__detail {
+  display: block;
+  margin-top: 0.35rem;
+}
+
+.replacement-banner__table {
+  width: auto;
+  border-collapse: collapse;
+  margin: 0.75rem auto 0;
+  font-size: 0.9rem;
+}
+
+.replacement-banner__table th,
+.replacement-banner__table td {
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-card);
+}
+
+.replacement-banner__table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.replacement-banner__table td {
+  color: var(--text-primary);
+}
+
+.replacement-banner__row-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.replacement-banner__note {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.replacement-banner__message strong {
+  color: var(--error);
+}
+
+.replacement-banner__message code {
+  background: var(--bg-secondary);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+.replacement-banner__actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.replacement-banner__confirm {
+  color: var(--accent);
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.replacement-banner__actions button {
+  padding: 0.4rem 1.25rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.replacement-banner__actions button:first-child {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.replacement-banner__actions button:first-child:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+.replacement-banner__actions button:last-child {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border-card);
+}
+
+.replacement-banner__actions button:last-child:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}
+
+.replacement-banner__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.replacement-banner__hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 1rem;
+}
+
+.replacement-banner__hint a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .device-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.device-card-title-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1rem;
 }
 
 .device-card-header h3 {
@@ -150,6 +316,14 @@ section > h2 {
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+}
+
+.device-card-pending-note {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin: 0;
+  font-style: italic;
 }
 
 /* Badges */
@@ -702,6 +876,147 @@ section > h2 {
   margin-bottom: 1rem;
   color: var(--text-primary);
   font-size: 1rem;
+}
+
+/* Settings page tab layout */
+.settings-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.settings-tab {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 0.625rem 0.875rem;
+  text-align: left;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-tab:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-tab--active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-card);
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-content .settings-section {
+  margin-bottom: 0;
+}
+
+/* Removed Devices table */
+.removed-devices-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.removed-devices-table th,
+.removed-devices-table td {
+  text-align: left;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border-card);
+  vertical-align: middle;
+}
+
+.removed-devices-table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.removed-devices-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.removed-devices-device-cell {
+  min-width: 200px;
+}
+
+.removed-devices-alias {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-top: 0.125rem;
+}
+
+.removed-devices-actions-col {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.removed-devices-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.removed-devices-trash {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.4rem 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.removed-devices-trash:hover {
+  background: var(--bg-card);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.removed-devices-trash:focus-visible {
+  outline: 2px solid #ef4444;
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+  .settings-tabs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 .settings-fields {

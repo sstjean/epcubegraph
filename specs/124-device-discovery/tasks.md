@@ -61,17 +61,17 @@
 
 ### Tests (Red) for User Story 1
 
-- [ ] T015 [US1] Test new device detection in `local/epcube-exporter/test_exporter.py` — mock cloud API returning a new device, verify it's registered in DB, logged, and included in `self._devices`
-- [ ] T016 [US1] Test discovery interval timing in `local/epcube-exporter/test_exporter.py` — verify discovery runs when interval elapses, does not run before interval, reads interval from DB each cycle
-- [ ] T017 [US1] Test startup discovery in `local/epcube-exporter/test_exporter.py` — verify cloud-vs-DB comparison on first auth, new devices registered, changes logged
-- [ ] T018 [US1] Test empty cloud device list guard (FR-007) in `local/epcube-exporter/test_exporter.py` — verify empty list is treated as error, current devices retained, warning logged
+- [X] T015 [US1] Test new device detection in `local/epcube-exporter/test_exporter.py` — mock cloud API returning a new device, verify it's registered in DB, logged, and included in `self._devices`
+- [X] T016 [US1] Test discovery interval timing in `local/epcube-exporter/test_exporter.py` — verify discovery runs when interval elapses, does not run before interval, reads interval from DB each cycle
+- [X] T017 [US1] Test startup discovery in `local/epcube-exporter/test_exporter.py` — verify cloud-vs-DB comparison on first auth, new devices registered, changes logged
+- [X] T018 [US1] Test empty cloud device list guard (FR-007) in `local/epcube-exporter/test_exporter.py` — verify empty list is treated as error, current devices retained, warning logged
 
 ### Implementation (Green) for User Story 1
 
-- [ ] T019 [US1] Implement `_read_known_device_ids_from_db()` in `local/epcube-exporter/exporter.py` — queries `devices` table for active EP Cube device IDs (raw cloud IDs, extracted from `epcube{id}_*` pattern)
-- [ ] T020 [US1] Refactor `_discover_devices()` on `EpCubeCollector` in `local/epcube-exporter/exporter.py` to compare cloud list against known DB devices using `compare_device_lists()`, log additions, register new devices in DB with status `active`
-- [ ] T021 [US1] Add discovery interval check to `poll_loop()` in `local/epcube-exporter/exporter.py` — read `discovery_interval_seconds` from DB, track `_last_discovery_time`, call `_discover_devices()` with `retry_with_backoff()` when interval elapsed
-- [ ] T022 [US1] Implement startup discovery (FR-024) in `local/epcube-exporter/exporter.py` — on first `_ensure_auth()`, compare cloud device list against active devices in DB to catch changes during downtime
+- [X] T019 [US1] Implement `_read_known_device_ids_from_db()` in `local/epcube-exporter/exporter.py` — queries `devices` table for active EP Cube device IDs (raw cloud IDs, extracted from `epcube{id}_*` pattern)
+- [X] T020 [US1] Refactor `_discover_devices()` on `EpCubeCollector` in `local/epcube-exporter/exporter.py` to compare cloud list against known DB devices using `compare_device_lists()`, log additions, register new devices in DB with status `active`
+- [X] T021 [US1] Add discovery interval check to `poll_loop()` in `local/epcube-exporter/exporter.py` — read `discovery_interval_seconds` from DB, track `_last_discovery_time`, call `_discover_devices()` with `retry_with_backoff()` when interval elapsed
+- [X] T022 [US1] Implement startup discovery (FR-024) in `local/epcube-exporter/exporter.py` — on first `_ensure_auth()`, compare cloud device list against active devices in DB to catch changes during downtime
 
 **Checkpoint**: Exporter discovers new devices hourly and on startup. New devices are polled automatically.
 
@@ -85,13 +85,13 @@
 
 ### Tests (Red) for User Story 2
 
-- [ ] T023 [US2] Test removed device detection in `local/epcube-exporter/test_exporter.py` — mock cloud API no longer returning a known device, verify device removed from poll list, status updated in DB, logged
-- [ ] T024 [US2] Test historical data preservation (FR-004) in `local/epcube-exporter/test_exporter.py` — verify readings and device records are NOT deleted when a device is removed
+- [X] T023 [US2] Test removed device detection in `local/epcube-exporter/test_exporter.py` — mock cloud API no longer returning a known device, verify device removed from poll list, status updated in DB, logged
+- [X] T024 [US2] Test historical data preservation (FR-004) in `local/epcube-exporter/test_exporter.py` — verify readings and device records are NOT deleted when a device is removed
 
 ### Implementation (Green) for User Story 2
 
-- [ ] T025 [US2] Add `update_device_status()` method to `PostgresWriter` in `local/epcube-exporter/exporter.py` — updates `devices.status` for both `_battery` and `_solar` sub-devices given a raw cloud device ID
-- [ ] T026 [US2] Extend `_discover_devices()` in `local/epcube-exporter/exporter.py` to handle removed devices — call `update_device_status(id, 'removed')`, remove from `self._devices`, log removal event
+- [X] T025 [US2] Add `update_device_status()` method to `PostgresWriter` in `local/epcube-exporter/exporter.py` — updates `devices.status` for both `_battery` and `_solar` sub-devices given a raw cloud device ID
+- [X] T026 [US2] Extend `_discover_devices()` in `local/epcube-exporter/exporter.py` to handle removed devices — call `update_device_status(id, 'removed')`, remove from `self._devices`, log removal event
 
 **Checkpoint**: Exporter detects removed devices, stops polling them, marks status as `removed`.
 
@@ -107,50 +107,50 @@
 
 #### Tests (Red)
 
-- [ ] T027 [US3] Test pending replacement creation in `local/epcube-exporter/test_exporter.py` — same-cycle add+remove creates record; add-only or remove-only does NOT create record; multiple removals+additions create one record per removed device
+- [X] T027 [US3] Test pending replacement creation in `local/epcube-exporter/test_exporter.py` — same-cycle add+remove creates record; add-only or remove-only does NOT create record; multiple removals+additions create one record per removed device
 
 #### Implementation (Green)
 
-- [ ] T028 [US3] Add `insert_pending_replacement()` method to `PostgresWriter` in `local/epcube-exporter/exporter.py` — inserts into `pending_replacements` table
-- [ ] T029 [US3] Extend `_discover_devices()` in `local/epcube-exporter/exporter.py` to detect same-cycle removal+addition (FR-010) and call `insert_pending_replacement()` for each removed+added pair
+- [X] T028 [US3] Add `insert_pending_replacement()` method to `PostgresWriter` in `local/epcube-exporter/exporter.py` — inserts into `pending_replacements` table
+- [X] T029 [US3] Extend `_discover_devices()` in `local/epcube-exporter/exporter.py` to detect same-cycle removal+addition (FR-010) and call `insert_pending_replacement()` for each removed+added pair
 
 ### API: Pending Replacement & Dismiss Endpoints
 
 #### Tests (Red)
 
-- [ ] T030 [US3] Test pending replacements API endpoints in `api/tests/EpCubeGraph.Api.Tests/Integration/` — list returns pending records; dismiss deletes record and marks old device removed; dismiss on 404 returns error
+- [X] T030 [US3] Test pending replacements API endpoints in `api/tests/EpCubeGraph.Api.Tests/Integration/` — list returns pending records; dismiss deletes record and marks old device removed; dismiss on 404 returns error
 
 #### Implementation (Green)
 
-- [ ] T031 [P] [US3] Add `GetPendingReplacementsAsync()` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — queries `pending_replacements` table
-- [ ] T032 [P] [US3] Add `DismissPendingReplacementAsync(id)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — deletes record, marks old device as `removed`
-- [ ] T033 [US3] Add `GET /devices/pending-replacements` and `POST /devices/pending-replacements/{id}/dismiss` endpoints in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs`
+- [X] T031 [P] [US3] Add `GetPendingReplacementsAsync()` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — queries `pending_replacements` table
+- [X] T032 [P] [US3] Add `DismissPendingReplacementAsync(id)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — deletes record, marks old device as `removed`
+- [X] T033 [US3] Add `GET /devices/pending-replacements` and `POST /devices/pending-replacements/{id}/dismiss` endpoints in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs`
 
 ### Dashboard: Replacement Banner
 
 #### Tests (Red)
 
-- [ ] T034 [P] [US3] Test `ReplacementBanner` component in `dashboard/tests/component/` — renders banner with device names, shows dropdown for multiple new devices, shows label for single, shows reading count from merge-preview, calls dismiss on No, shows Settings page message on dismiss
-- [ ] T035 [P] [US3] Test `useDeviceDiscovery` hook in `dashboard/tests/unit/` — polls pending-replacements on 30s cycle, fetches merge-preview for each pending item to get reading counts, returns pending list with counts, handles empty list
+- [X] T034 [P] [US3] Test `ReplacementBanner` component in `dashboard/tests/component/` — renders banner with device names, shows dropdown for multiple new devices, shows label for single, shows reading count from merge-preview, calls dismiss on No, shows Settings page message on dismiss
+- [X] T035 [P] [US3] Test `useDeviceDiscovery` hook in `dashboard/tests/unit/` — polls pending-replacements on 30s cycle, fetches merge-preview for each pending item to get reading counts, returns pending list with counts, handles empty list
 
 #### Implementation (Green)
 
-- [ ] T036 [US3] Add `fetchPendingReplacements()`, `dismissPendingReplacement(id)`, `fetchMergePreview(oldId, newId)` functions to `dashboard/src/api.ts`
-- [ ] T037 [P] [US3] Create `ReplacementBanner.tsx` component in `dashboard/src/components/` — displays banner for each pending replacement, dropdown for multiple new devices (label if single), reading count from merge-preview, confirm/dismiss buttons
-- [ ] T038 [P] [US3] Create `useDeviceDiscovery.ts` hook in `dashboard/src/hooks/` — polls `GET /devices/pending-replacements` on 30s cycle, calls `merge-preview` for each pending item to populate reading counts, provides pending list and action handlers
-- [ ] T039 [US3] Mount `ReplacementBanner` in `dashboard/src/App.tsx` between `</nav>` and `<Router>`
+- [X] T036 [US3] Add `fetchPendingReplacements()`, `dismissPendingReplacement(id)`, `fetchMergePreview(oldId, newId)` functions to `dashboard/src/api.ts`
+- [X] T037 [P] [US3] Create `ReplacementBanner.tsx` component in `dashboard/src/components/` — displays banner for each pending replacement, dropdown for multiple new devices (label if single), reading count from merge-preview, confirm/dismiss buttons
+- [X] T038 [P] [US3] Create `useDeviceDiscovery.ts` hook in `dashboard/src/hooks/` — polls `GET /devices/pending-replacements` on 30s cycle, calls `merge-preview` for each pending item to populate reading counts, provides pending list and action handlers
+- [X] T039 [US3] Mount `ReplacementBanner` in `dashboard/src/App.tsx` between `</nav>` and `<Router>`
 
 ### Dashboard: Settings Page Manual Merge UI
 
 #### Tests (Red)
 
-- [ ] T040 [US3] Test `DeviceMerge` component in `dashboard/tests/component/` — shows removed devices in source dropdown, active devices in target dropdown, shows confirmation dialog with reading count from merge-preview, calls merge API on confirm
+- [X] T040 [US3] Test `DeviceMerge` component in `dashboard/tests/component/` — shows removed devices in source dropdown, active devices in target dropdown, shows confirmation dialog with reading count from merge-preview, calls merge API on confirm
 
 #### Implementation (Green)
 
-- [ ] T041 [US3] Add `fetchDevicesByStatus(status)` function to `dashboard/src/api.ts`
-- [ ] T042 [US3] Create `DeviceMerge.tsx` component in `dashboard/src/components/` — select removed device first, then active target, confirmation dialog with reading count + irreversibility warning, merge button
-- [ ] T043 [US3] Mount `DeviceMerge` section in Settings page in `dashboard/src/components/SettingsPage.tsx`
+- [X] T041 [US3] Add `fetchDevicesByStatus(status)` function to `dashboard/src/api.ts`
+- [X] T042 [US3] Create `DeviceMerge.tsx` component in `dashboard/src/components/` — select removed device first, then active target, confirmation dialog with reading count + irreversibility warning, merge button
+- [X] T043 [US3] Mount `DeviceMerge` section in Settings page in `dashboard/src/components/SettingsPage.tsx`
 
 **Checkpoint**: Pending replacements flow end-to-end. Banner prompt and Settings page merge UI both functional.
 
@@ -166,27 +166,27 @@
 
 #### Tests (Red)
 
-- [ ] T044 [US4] Test merge preview in `api/tests/EpCubeGraph.Api.Tests/Integration/` — returns correct counts for readings and conflicts; 404 for unknown devices; 422 for wrong status
-- [ ] T045 [US4] Test merge execution in `api/tests/EpCubeGraph.Api.Tests/Integration/` — readings re-attributed for both sub-devices, conflicts discarded (new takes precedence), conflict count logged, `vue_device_mapping` key renamed, old device marked `merged`, pending replacement deleted, transaction rolls back on failure
-- [ ] T046 [US4] Test merge atomicity in `api/tests/EpCubeGraph.Api.Tests/Integration/` — simulate failure mid-transaction, verify no partial changes
+- [X] T044 [US4] Test merge preview in `api/tests/EpCubeGraph.Api.Tests/Integration/` — returns correct counts for readings and conflicts; 404 for unknown devices; 422 for wrong status
+- [X] T045 [US4] Test merge execution in `api/tests/EpCubeGraph.Api.Tests/Integration/` — readings re-attributed for both sub-devices, conflicts discarded (new takes precedence), conflict count logged, `vue_device_mapping` key renamed, old device marked `merged`, pending replacement deleted, transaction rolls back on failure
+- [X] T046 [US4] Test merge atomicity in `api/tests/EpCubeGraph.Api.Tests/Integration/` — simulate failure mid-transaction, verify no partial changes
 
 #### Implementation (Green)
 
-- [ ] T047 [US4] Add `GetMergePreviewAsync(oldCloudId, newCloudId)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — counts readings to transfer and conflicts to skip for both `_battery` and `_solar` sub-devices
-- [ ] T048 [US4] Add `ExecuteMergeAsync(oldCloudId, newCloudId)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — single transaction: validate statuses, delete conflicting old readings, UPDATE remaining old readings device_id, update `vue_device_mapping` JSON key, set old device status to `merged`, delete pending_replacement if exists
-- [ ] T049 [US4] Add `GET /devices/merge-preview` and `POST /devices/merge` endpoints in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs`
+- [X] T047 [US4] Add `GetMergePreviewAsync(oldCloudId, newCloudId)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — counts readings to transfer and conflicts to skip for both `_battery` and `_solar` sub-devices
+- [X] T048 [US4] Add `ExecuteMergeAsync(oldCloudId, newCloudId)` method to `PostgresMetricsStore` in `api/src/EpCubeGraph.Api/Services/PostgresMetricsStore.cs` — single transaction: validate statuses, delete conflicting old readings, UPDATE remaining old readings device_id, update `vue_device_mapping` JSON key, set old device status to `merged`, delete pending_replacement if exists
+- [X] T049 [US4] Add `GET /devices/merge-preview` and `POST /devices/merge` endpoints in `api/src/EpCubeGraph.Api/Endpoints/DevicesEndpoints.cs`
 
 ### Dashboard: Merge Feedback
 
 #### Tests (Red)
 
-- [ ] T050 [US4] Test merge success/error feedback in `dashboard/tests/component/` for both `ReplacementBanner` and `DeviceMerge` — success toast content, error toast content, banner removal on success, banner retention on failure
+- [X] T050 [US4] Test merge success/error feedback in `dashboard/tests/component/` for both `ReplacementBanner` and `DeviceMerge` — success toast content, error toast content, banner removal on success, banner retention on failure
 
 #### Implementation (Green)
 
-- [ ] T051 [US4] Add `mergeDevices(oldId, newId)` function to `dashboard/src/api.ts`
-- [ ] T052 [US4] Wire merge confirm in `ReplacementBanner.tsx` — call merge API, show success toast with summary (device names, reading count, conflict count), remove banner on success; show error toast and keep banner on failure
-- [ ] T053 [US4] Wire merge confirm in `DeviceMerge.tsx` — call merge API, show success toast, reset form on success; show error toast on failure
+- [X] T051 [US4] Add `mergeDevices(oldId, newId)` function to `dashboard/src/api.ts`
+- [X] T052 [US4] Wire merge confirm in `ReplacementBanner.tsx` — call merge API, show success toast with summary (device names, reading count, conflict count), remove banner on success; show error toast and keep banner on failure
+- [X] T053 [US4] Wire merge confirm in `DeviceMerge.tsx` — call merge API, show success toast, reset form on success; show error toast on failure
 
 **Checkpoint**: End-to-end merge flow works. Readings re-attributed, charts show continuous timeline.
 
@@ -198,16 +198,16 @@
 
 ### Tests (Red)
 
-- [ ] T054 [P] Test removed-device toggle in `dashboard/tests/component/` — toggle visible only when removed devices exist, defaults to true, persists in localStorage, grayed-out styling applied, hidden when toggled off
-- [ ] T055 Test discovery retry with backoff integration in `local/epcube-exporter/test_exporter.py` — verify `_discover_devices()` uses `retry_with_backoff()`, retries on network error, gives up after 5 attempts
-- [ ] T056 Test metadata update for unchanged devices in `local/epcube-exporter/test_exporter.py` — verify `upsert_device()` called for unchanged devices (alias/metadata may have changed)
-- [ ] T057 Test chained merge scenario in `api/tests/EpCubeGraph.Api.Tests/Integration/` — device A merged into B, then B gets replaced by C, verify merge B→C works and includes A's original readings
+- [X] T054 [P] Test removed-device toggle in `dashboard/tests/component/` — toggle visible only when removed devices exist, defaults to true, persists in localStorage, grayed-out styling applied, hidden when toggled off
+- [X] T055 Test discovery retry with backoff integration in `local/epcube-exporter/test_exporter.py` — verify `_discover_devices()` uses `retry_with_backoff()`, retries on network error, gives up after 5 attempts
+- [X] T056 Test metadata update for unchanged devices in `local/epcube-exporter/test_exporter.py` — verify `upsert_device()` called for unchanged devices (alias/metadata may have changed)
+- [X] T057 Test chained merge scenario in `api/tests/EpCubeGraph.Api.Tests/Integration/` — device A merged into B, then B gets replaced by C, verify merge B→C works and includes A's original readings
 
 ### Implementation (Green)
 
-- [ ] T058 [P] Add removed-device visibility toggle to dashboard — localStorage key `showRemovedDevices`, default `true`, toggle visible only when removed devices exist, grayed-out styling in `dashboard/src/app.css`
-- [ ] T059 [P] Implement toggle logic in `dashboard/src/components/CurrentReadings.tsx` — fetch removed devices when toggle is on, apply grayed-out CSS class
-- [ ] T060 Run `specs/124-device-discovery/quickstart.md` validation against local stack
+- [X] T058 [P] Add removed-device visibility toggle to dashboard — localStorage key `showRemovedDevices`, default `true`, toggle visible only when removed devices exist, grayed-out styling in `dashboard/src/app.css`
+- [X] T059 [P] Implement toggle logic in `dashboard/src/components/CurrentReadings.tsx` — fetch removed devices when toggle is on, apply grayed-out CSS class
+- [X] T060 Run `specs/124-device-discovery/quickstart.md` validation against local stack
 
 ---
 
