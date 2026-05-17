@@ -16,4 +16,18 @@ public class PostgresMetricsStoreTests
 
         Assert.Null(exception);
     }
+
+    [Fact]
+    public void MergeCommandTimeoutSeconds_IsGenerousEnoughForRealisticData()
+    {
+        // Regression test: Npgsql's default CommandTimeout (30s) is too short for
+        // merging the readings of a long-lived device (~475k rows observed in staging
+        // mirrored from production). Reverting this constant to the default would
+        // re-introduce the timeout failure observed at staging 2026-05-17 19:49 UTC.
+        // 5 minutes is the floor at which a single-pass UPDATE/DELETE across hundreds
+        // of thousands of rows reliably completes on Azure Postgres Flexible Server.
+        Assert.True(
+            PostgresMetricsStore.MergeCommandTimeoutSeconds >= 300,
+            $"MergeCommandTimeoutSeconds={PostgresMetricsStore.MergeCommandTimeoutSeconds}s is too short; expected >= 300s");
+    }
 }

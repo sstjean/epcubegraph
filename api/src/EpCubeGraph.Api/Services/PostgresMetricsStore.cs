@@ -6,6 +6,12 @@ namespace EpCubeGraph.Api.Services;
 
 public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 {
+    // Long-running merge queries (UPDATE/DELETE/COUNT across the readings table) can
+    // touch hundreds of thousands of rows. Npgsql's default CommandTimeout (30s) is too
+    // short for realistic data volumes (~475k rows observed in production). Bump to
+    // 10 minutes for the merge path only.
+    public const int MergeCommandTimeoutSeconds = 600;
+
     private readonly NpgsqlDataSource _dataSource;
     private readonly ILogger<PostgresMetricsStore> _logger;
 
@@ -331,7 +337,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             WHERE r.device_id IN ($1, $2)
             """;
 
-        await using var cmd = new NpgsqlCommand(countSql, conn);
+        await using var cmd = new NpgsqlCommand(countSql, conn)
+        {
+            CommandTimeout = MergeCommandTimeoutSeconds,
+        };
         cmd.Parameters.AddWithValue(oldBattery);
         cmd.Parameters.AddWithValue(oldSolar);
         cmd.Parameters.AddWithValue(newBattery);
@@ -404,7 +413,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             WHERE device_id IN ($1, $2)
               AND (SELECT ts FROM cutoff) IS NOT NULL
               AND timestamp >= (SELECT ts FROM cutoff)
-            """, conn, tx);
+            """, conn, tx)
+        {
+            CommandTimeout = MergeCommandTimeoutSeconds,
+        };
         conflictCmd.Parameters.AddWithValue(oldBattery);
         conflictCmd.Parameters.AddWithValue(oldSolar);
         conflictCmd.Parameters.AddWithValue(newBattery);
@@ -416,7 +428,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
             UPDATE readings
             SET device_id = REPLACE(device_id, $3, $4)
             WHERE device_id IN ($1, $2)
-            """, conn, tx);
+            """, conn, tx)
+        {
+            CommandTimeout = MergeCommandTimeoutSeconds,
+        };
         transferCmd.Parameters.AddWithValue(oldBattery);
         transferCmd.Parameters.AddWithValue(oldSolar);
         transferCmd.Parameters.AddWithValue($"epcube{oldDeviceId}_");
