@@ -49,3 +49,22 @@ export function getDisplayName(devices: Device[]): string {
   }
   return getGroupName(devices[0]);
 }
+
+/**
+ * Derive the same display name as getDisplayName, but from raw metadata fields
+ * (used when only product_code + alias are known, e.g. for pending replacement
+ * records where the underlying Device rows may no longer exist).
+ */
+export function getDisplayNameFromMeta(
+  productCode: string | null | undefined,
+  alias: string | null | undefined,
+): string {
+  if (productCode) {
+    const match = productCode.match(/devType=(\d+)/);
+    if (match && DEV_TYPE_LABELS[match[1]]) {
+      return DEV_TYPE_LABELS[match[1]];
+    }
+  }
+  if (alias) return alias.replace(/\s*(Battery|Solar)$/i, '').trim();
+  return '';
+}

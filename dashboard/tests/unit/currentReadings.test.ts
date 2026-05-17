@@ -84,4 +84,54 @@ describe('buildDeviceGroups', () => {
     // Assert
     expect(groups).toEqual([]);
   });
+
+  it('zeros all metrics when the group is offline (no live data should display)', async () => {
+    // Arrange — devices are offline; current_readings API returns the last-known
+    // values from when they WERE online. Since the device is offline, those
+    // values are stale and must not be shown.
+    const { buildDeviceGroups } = await import('../../src/components/CurrentReadings');
+    const devices: Device[] = [
+      { device: 'epcube5488_battery', class: 'storage_battery', online: false, alias: 'Old Cube', product_code: 'EP Cube (devType=2)' },
+      { device: 'epcube5488_solar', class: 'home_solar', online: false, alias: 'Old Cube', product_code: 'EP Cube (devType=2)' },
+    ];
+    const batterySOC: CurrentReadingsResponse = {
+      metric: 'battery_state_of_capacity_percent',
+      readings: [{ device_id: 'epcube5488_battery', value: 56, timestamp: 1000 }],
+    };
+    const batteryPower: CurrentReadingsResponse = {
+      metric: 'battery_power_watts',
+      readings: [{ device_id: 'epcube5488_battery', value: -2930, timestamp: 1000 }],
+    };
+    const solar: CurrentReadingsResponse = {
+      metric: 'solar_instantaneous_generation_watts',
+      readings: [{ device_id: 'epcube5488_solar', value: 1500, timestamp: 1000 }],
+    };
+    const grid: CurrentReadingsResponse = {
+      metric: 'grid_power_watts',
+      readings: [{ device_id: 'epcube5488_battery', value: -500, timestamp: 1000 }],
+    };
+    const homeLoad: CurrentReadingsResponse = {
+      metric: 'home_load_power_watts',
+      readings: [{ device_id: 'epcube5488_battery', value: 2930, timestamp: 1000 }],
+    };
+    const batteryStored: CurrentReadingsResponse = {
+      metric: 'battery_stored_kwh',
+      readings: [{ device_id: 'epcube5488_battery', value: 11.24, timestamp: 1000 }],
+    };
+
+    // Act
+    const groups = buildDeviceGroups(devices, {
+      batterySOC, batteryPower, solar, grid, homeLoad, batteryStored,
+    });
+
+    // Assert — offline group, all metrics zero regardless of last known values
+    expect(groups).toHaveLength(1);
+    expect(groups[0].online).toBe(false);
+    expect(groups[0].metrics.batteryPercent).toBe(0);
+    expect(groups[0].metrics.batteryWatts).toBe(0);
+    expect(groups[0].metrics.batteryStoredKwh).toBe(0);
+    expect(groups[0].metrics.solarWatts).toBe(0);
+    expect(groups[0].metrics.gridWatts).toBe(0);
+    expect(groups[0].metrics.homeLoadWatts).toBe(0);
+  });
 });
