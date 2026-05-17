@@ -6342,5 +6342,101 @@ class TestDiscoverDevicesCloudError(unittest.TestCase):
         self.assertEqual(len(c._devices), 0)
 
 
+# ---------------------------------------------------------------------------
+# Regression: aborted-transaction recovery for VuePostgresWriter writes
+# ---------------------------------------------------------------------------
+
+class TestVuePostgresWriterRollback(unittest.TestCase):
+    """Regression tests for the staging Vue InFailedSqlTransaction incident.
+
+    Prior to the fix, a failed write on VuePostgresWriter's long-lived
+    connection (e.g., upsert_device after a prod→staging mirror left the
+    schema mismatched) propagated the exception to the caller without
+    rolling back the connection. The next write on the same connection
+    then failed with psycopg2.errors.InFailedSqlTransaction, poisoning the
+    entire Vue poll loop until the container restarted."""
+
+    def _make_writer(self, mock_pg):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.VuePostgresWriter("postgresql://test"), mock_conn, mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_device_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        # Schema init already ran in __init__ before side_effect was set; the
+        # next cursor.execute belongs to upsert_device → make it fail.
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_device(device_gid=12345, device_name="Test")
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_channel_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_channel(device_gid=12345, channel_num="1,2,3")
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_write_readings_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        mock_pg.extras.execute_values.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.write_readings([(12345, "1,2,3", "2026-05-17T19:00:00Z", 1.5)])
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_upsert_daily_readings_rolls_back_on_failure(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        mock_pg.extras.execute_values.side_effect = RuntimeError("simulated SQL failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_daily_readings([(12345, "1,2,3", "2026-05-17", 12.5)])
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_rollback_failure_drops_connection(self, mock_pg):
+        """If rollback itself raises (connection already broken), drop the
+        cached connection so the next _get_conn() reconnects from scratch."""
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SQL failure")
+        conn.rollback.side_effect = RuntimeError("rollback failure")
+
+        # Act
+        with self.assertRaises(RuntimeError):
+            writer.upsert_device(device_gid=12345, device_name="Test")
+
+        # Assert — cached connection cleared so the next call reconnects
+        self.assertIsNone(writer._conn)
+
+
 if __name__ == "__main__":
     unittest.main()

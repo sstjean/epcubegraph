@@ -388,6 +388,22 @@ class VuePostgresWriter:
             self._conn.autocommit = False
         return self._conn
 
+    def _rollback_safe(self):
+        """Roll back the current transaction so the connection is reusable.
+
+        psycopg2 leaves a connection in an aborted-transaction state after
+        any failed query; subsequent queries on the same connection then
+        raise InFailedSqlTransaction. Call this in every write method's
+        except-block. If rollback itself fails, drop the connection so the
+        next _get_conn() reconnects from scratch.
+        """
+        try:
+            if self._conn is not None and not self._conn.closed:
+                self._conn.rollback()
+        except Exception:
+            log.warning("Vue connection rollback failed; dropping connection", exc_info=True)
+            self._conn = None
+
     def _ensure_schema(self):
         """Create Vue tables and indexes if they don't exist."""
         conn = self._get_conn()
@@ -400,37 +416,45 @@ class VuePostgresWriter:
                       firmware=None, connected=True):
         """Insert or update a Vue device record."""
         conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO vue_devices (device_gid, device_name, model, firmware, connected, last_seen)
-                   VALUES (%s, %s, %s, %s, %s, NOW())
-                   ON CONFLICT (device_gid) DO UPDATE SET
-                       device_name = EXCLUDED.device_name,
-                       model = EXCLUDED.model,
-                       firmware = EXCLUDED.firmware,
-                       connected = EXCLUDED.connected,
-                       last_seen = NOW(),
-                       updated_at = NOW()""",
-                (device_gid, device_name, model, firmware, connected),
-            )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO vue_devices (device_gid, device_name, model, firmware, connected, last_seen)
+                       VALUES (%s, %s, %s, %s, %s, NOW())
+                       ON CONFLICT (device_gid) DO UPDATE SET
+                           device_name = EXCLUDED.device_name,
+                           model = EXCLUDED.model,
+                           firmware = EXCLUDED.firmware,
+                           connected = EXCLUDED.connected,
+                           last_seen = NOW(),
+                           updated_at = NOW()""",
+                    (device_gid, device_name, model, firmware, connected),
+                )
+            conn.commit()
+        except Exception:
+            self._rollback_safe()
+            raise
 
     def upsert_channel(self, device_gid, channel_num, name=None,
                        channel_multiplier=None, channel_type=None):
         """Insert or update a Vue channel record."""
         conn = self._get_conn()
-        with conn.cursor() as cur:
-            cur.execute(
-                """INSERT INTO vue_channels (device_gid, channel_num, name, channel_multiplier, channel_type)
-                   VALUES (%s, %s, %s, %s, %s)
-                   ON CONFLICT (device_gid, channel_num) DO UPDATE SET
-                       name = EXCLUDED.name,
-                       channel_multiplier = EXCLUDED.channel_multiplier,
-                       channel_type = EXCLUDED.channel_type,
-                       updated_at = NOW()""",
-                (device_gid, channel_num, name, channel_multiplier, channel_type),
-            )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """INSERT INTO vue_channels (device_gid, channel_num, name, channel_multiplier, channel_type)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (device_gid, channel_num) DO UPDATE SET
+                           name = EXCLUDED.name,
+                           channel_multiplier = EXCLUDED.channel_multiplier,
+                           channel_type = EXCLUDED.channel_type,
+                           updated_at = NOW()""",
+                    (device_gid, channel_num, name, channel_multiplier, channel_type),
+                )
+            conn.commit()
+        except Exception:
+            self._rollback_safe()
+            raise
 
     def write_readings(self, readings):
         """Batch-insert Vue readings. Each reading is (device_gid, channel_num, timestamp, value).
@@ -440,17 +464,21 @@ class VuePostgresWriter:
         if not readings:
             return
         conn = self._get_conn()
-        with conn.cursor() as cur:
-            psycopg2.extras.execute_values(
-                cur,
-                """INSERT INTO vue_readings (device_gid, channel_num, timestamp, value)
-                   VALUES %s
-                   ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
-                       value = EXCLUDED.value""",
-                readings,
-                template="(%s, %s, %s, %s)",
-            )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """INSERT INTO vue_readings (device_gid, channel_num, timestamp, value)
+                       VALUES %s
+                       ON CONFLICT (device_gid, channel_num, timestamp) DO UPDATE SET
+                           value = EXCLUDED.value""",
+                    readings,
+                    template="(%s, %s, %s, %s)",
+                )
+            conn.commit()
+        except Exception:
+            self._rollback_safe()
+            raise
 
     def close(self):
         """Close the database connection."""
@@ -465,18 +493,22 @@ class VuePostgresWriter:
         if not readings:
             return
         conn = self._get_conn()
-        with conn.cursor() as cur:
-            psycopg2.extras.execute_values(
-                cur,
-                """INSERT INTO vue_readings_daily (device_gid, channel_num, date, kwh)
-                   VALUES %s
-                   ON CONFLICT (device_gid, channel_num, date) DO UPDATE SET
-                       kwh = EXCLUDED.kwh,
-                       updated_at = NOW()""",
-                readings,
-                template="(%s, %s, %s, %s)",
-            )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """INSERT INTO vue_readings_daily (device_gid, channel_num, date, kwh)
+                       VALUES %s
+                       ON CONFLICT (device_gid, channel_num, date) DO UPDATE SET
+                           kwh = EXCLUDED.kwh,
+                           updated_at = NOW()""",
+                    readings,
+                    template="(%s, %s, %s, %s)",
+                )
+            conn.commit()
+        except Exception:
+            self._rollback_safe()
+            raise
 
 
 # ---------------------------------------------------------------------------
