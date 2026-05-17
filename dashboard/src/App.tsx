@@ -5,6 +5,7 @@ import { HistoryView } from './components/HistoryView';
 import { CircuitsPage } from './components/CircuitsPage';
 import { SettingsPage } from './components/SettingsPage';
 import { ReplacementBanner } from './components/ReplacementBanner';
+import { DeviceDiscoveryProvider } from './hooks/useDeviceDiscovery';
 import { trackPageLoad } from './telemetry';
 
 function handleRouteChange() {
@@ -14,7 +15,8 @@ function handleRouteChange() {
 export function App() {
   return (
     <ErrorBoundary>
-      <nav>
+      <DeviceDiscoveryProvider>
+        <nav>
         <span class="nav-brand">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
           EP Cube
@@ -33,6 +35,7 @@ export function App() {
         <CircuitsPage path="/circuits" />
         <SettingsPage path="/settings" />
       </Router>
+      </DeviceDiscoveryProvider>
     </ErrorBoundary>
   );
 }

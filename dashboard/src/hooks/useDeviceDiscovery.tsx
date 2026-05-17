@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'preact/hooks';
+import { createContext } from 'preact';
+import { useContext } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
 import {
   fetchPendingReplacements,
   dismissPendingReplacement,
@@ -78,4 +81,24 @@ export function useDeviceDiscovery(): UseDeviceDiscoveryResult {
   }, [load]);
 
   return { pending, dismiss, merge, refresh: load };
+}
+
+// ── Shared context so multiple components see the same pending state and
+//    coordinated dismiss/merge updates without polling lag. ──
+
+const DeviceDiscoveryContext = createContext<UseDeviceDiscoveryResult | null>(null);
+
+export function DeviceDiscoveryProvider({ children }: { children: ComponentChildren }) {
+  const value = useDeviceDiscovery();
+  return (
+    <DeviceDiscoveryContext.Provider value={value}>{children}</DeviceDiscoveryContext.Provider>
+  );
+}
+
+export function useDeviceDiscoveryContext(): UseDeviceDiscoveryResult {
+  const ctx = useContext(DeviceDiscoveryContext);
+  if (!ctx) {
+    throw new Error('useDeviceDiscoveryContext must be used within DeviceDiscoveryProvider');
+  }
+  return ctx;
 }

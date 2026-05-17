@@ -10,6 +10,7 @@ export interface Device {
   online: boolean;
   alias?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface DeviceListResponse {
@@ -152,12 +153,23 @@ export interface PendingReplacement {
   old_device_id: string;
   new_device_id: string;
   detected_at: string;
+  old_product_code?: string | null;
+  old_alias?: string | null;
+  new_product_code?: string | null;
+  new_alias?: string | null;
+  old_last_seen?: string | null;
+  new_last_seen?: string | null;
 }
 
 export interface DismissResponse {
   dismissed: boolean;
   old_device_id: string;
   new_device_id: string;
+}
+
+export interface DeleteDeviceResponse {
+  device_id: string;
+  readings_deleted: number;
 }
 
 export interface MergePreviewResponse {

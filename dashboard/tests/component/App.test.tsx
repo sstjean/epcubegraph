@@ -19,6 +19,16 @@ vi.mock('../../src/components/ReplacementBanner', () => ({
   ReplacementBanner: () => <div data-testid="replacement-banner" />,
 }));
 
+vi.mock('../../src/hooks/useDeviceDiscovery', () => ({
+  DeviceDiscoveryProvider: ({ children }: { children: any }) => <>{children}</>,
+  useDeviceDiscoveryContext: () => ({
+    pending: [],
+    dismiss: vi.fn(),
+    merge: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
 import { App } from '../../src/App';
 
 describe('App', () => {
