@@ -6213,6 +6213,110 @@ class TestPostgresWriterReadSettingInt(unittest.TestCase):
         # Assert
         self.assertEqual(result, 60)
 
+    @patch.object(db, "psycopg2")
+    def test_rolls_back_connection_when_select_fails(self, mock_pg):
+        """Regression: a failed SELECT must NOT leave the conn in an aborted
+        transaction state — otherwise the next query (e.g., upsert_device)
+        fails with psycopg2.errors.InFailedSqlTransaction."""
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert — connection must have been rolled back
+        writer._conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_logs_warning_with_traceback_when_select_fails(self, mock_pg):
+        """Regression: silent log.debug hides the underlying SQL error.
+        Failures MUST be logged at WARNING level with traceback so they
+        surface in container logs at the default INFO level."""
+        # Arrange
+        writer, cursor = self._make_writer(mock_pg, [("3600",)])
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        with patch.object(db.log, "warning") as mock_warning, \
+                patch.object(db.log, "debug") as mock_debug:
+            writer.read_setting_int("k", 60, 60, 86400)
+
+        # Assert — warning is called with exc_info=True; debug is NOT used to
+        # hide the failure
+        self.assertTrue(mock_warning.called, "Expected log.warning to surface the failure")
+        _, kwargs = mock_warning.call_args
+        self.assertTrue(kwargs.get("exc_info"), "Expected exc_info=True so the traceback is logged")
+        mock_debug.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Regression: aborted-transaction recovery for read_active_epcube_ids
+# ---------------------------------------------------------------------------
+
+class TestReadActiveEpcubeIdsRecoverConnection(unittest.TestCase):
+    """Regression tests for the staging InFailedSqlTransaction incident.
+
+    Prior to the fix, a swallowed exception inside read_active_epcube_ids
+    left the psycopg2 connection in an aborted-transaction state, which
+    poisoned every subsequent query in the same discovery cycle (e.g.,
+    upsert_device → psycopg2.errors.InFailedSqlTransaction)."""
+
+    def _make_writer(self, mock_pg):
+        mock_cursor = MagicMock()
+        mock_cursor.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_cursor.__exit__ = MagicMock(return_value=False)
+        mock_conn = MagicMock()
+        mock_conn.closed = False
+        mock_conn.cursor.return_value = mock_cursor
+        mock_pg.connect.return_value = mock_conn
+        mock_pg.extras = MagicMock()
+        return db.PostgresWriter("postgresql://test"), mock_conn, mock_cursor
+
+    @patch.object(db, "psycopg2")
+    def test_rolls_back_connection_when_select_fails(self, mock_pg):
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        writer.read_active_epcube_ids()
+
+        # Assert
+        conn.rollback.assert_called()
+
+    @patch.object(db, "psycopg2")
+    def test_logs_warning_with_traceback_when_select_fails(self, mock_pg):
+        # Arrange
+        writer, _, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("simulated SELECT failure")
+
+        # Act
+        with patch.object(db.log, "warning") as mock_warning, \
+                patch.object(db.log, "debug") as mock_debug:
+            writer.read_active_epcube_ids()
+
+        # Assert
+        self.assertTrue(mock_warning.called, "Expected log.warning to surface the failure")
+        _, kwargs = mock_warning.call_args
+        self.assertTrue(kwargs.get("exc_info"), "Expected exc_info=True so the traceback is logged")
+        mock_debug.assert_not_called()
+
+    @patch.object(db, "psycopg2")
+    def test_rollback_failure_drops_connection(self, mock_pg):
+        """If rollback itself raises (connection already broken), drop the
+        cached connection so the next _get_conn() reconnects from scratch."""
+        # Arrange
+        writer, conn, cursor = self._make_writer(mock_pg)
+        cursor.execute.side_effect = RuntimeError("SELECT failure")
+        conn.rollback.side_effect = RuntimeError("rollback failure")
+
+        # Act
+        writer.read_active_epcube_ids()
+
+        # Assert — cached connection must be cleared so the next call reconnects
+        self.assertIsNone(writer._conn)
+
 
 # ---------------------------------------------------------------------------
 # Coverage gap: EpCubeCollector._discover_devices non-200 cloud response

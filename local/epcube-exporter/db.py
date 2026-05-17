@@ -25,7 +25,7 @@ def read_setting_int_from_db(key, default, min_val, max_val):
         finally:
             conn.close()
     except Exception:
-        log.debug("Could not read %s from DB, using default %d", key, default)
+        log.warning("Could not read %s from DB, using default %d", key, default, exc_info=True)
     return default
 
 
@@ -85,6 +85,22 @@ class PostgresWriter:
             self._conn = psycopg2.connect(self._dsn)
             self._conn.autocommit = False
         return self._conn
+
+    def _rollback_safe(self):
+        """Roll back the current transaction so the connection is reusable.
+
+        psycopg2 leaves a connection in an aborted-transaction state after
+        any failed query; subsequent queries on the same connection then
+        raise InFailedSqlTransaction. Call this in every except-block that
+        swallows a query exception. If rollback itself fails, drop the
+        connection so the next _get_conn() reconnects from scratch.
+        """
+        try:
+            if self._conn is not None and not self._conn.closed:
+                self._conn.rollback()
+        except Exception:
+            log.warning("Connection rollback failed; dropping connection", exc_info=True)
+            self._conn = None
 
     def _ensure_schema(self):
         """Create tables and indexes if they don't exist."""
@@ -268,7 +284,8 @@ class PostgresWriter:
                     ids.add(raw)
                 return ids
         except Exception:
-            log.debug("Could not read device IDs from DB")
+            log.warning("Could not read device IDs from DB", exc_info=True)
+            self._rollback_safe()
             return set()
 
     def read_setting_int(self, key, default, min_val, max_val):
@@ -283,7 +300,8 @@ class PostgresWriter:
                     if min_val <= val <= max_val:
                         return val
         except Exception:
-            log.debug("Could not read %s from DB, using default %d", key, default)
+            log.warning("Could not read %s from DB, using default %d", key, default, exc_info=True)
+            self._rollback_safe()
         return default
 
 
