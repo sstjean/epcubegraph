@@ -1,9 +1,9 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-17
+**Last Updated**: 2026-05-18
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main` (working tree clean)
-**Last merged**: PR #137 — Feature 124: Automatic device discovery (merged 2026-05-17)
+**Last merged**: PR #138 — docs: post-Feature-124-merge cleanup (merged 2026-05-18)
 **Open PR**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
@@ -31,6 +31,29 @@ Issue #134 closed.
 - Bug fix: `vue_device_mapping` rename in merge now uses proper `epcube{id}` prefix (was previously a silent no-op on key mismatch; now logged via new `ILogger<PostgresMetricsStore>`).
 - Bug fix: `DismissPendingReplacementAsync` closes the lookup reader before rollback (was raising `NpgsqlOperationInProgressException` when the pending row didn't exist).
 - Constitution Section IV: new "Bug Fix Regression Tests (NON-NEGOTIABLE)" rule — every bug fix must start with one or more failing tests.
+
+### Session 2026-05-18 — Post-Feature-124 cleanup
+
+**Cleanup completed:**
+- PR #137 (Feature 124) merged to `main` and deployed to production.
+- PR #138 (post-merge docs cleanup) opened, reviewed, merged to `main`.
+- Local feature branch `124-device-discovery` deleted; remote deleted.
+- Local cleanup branch `docs/post-124-cleanup` deleted; remote deleted.
+- Staging environment `epcubegraph-b124-dev` destroyed (run #26008216055,
+  completed in 33m35s). Resource groups `epcubegraph-b124-dev-rg` and
+  `epcubegraph-b124-dev-bootstrap-rg` confirmed gone via `az group exists`.
+- Stale staging envs `b123-def` and `b093-exp` also confirmed destroyed.
+- Runner VNet has zero ephemeral peerings (mirror-script trap cleanup left
+  no orphans).
+- Local dev servers (ports 5062, 5173) stopped. Local `prod-against-real-data`
+  Docker stack (`local-postgres-1`, `local-epcube-exporter-1`) left running
+  intentionally as the persistent dev environment.
+
+**Discipline note:**
+- Initially committed the cleanup docs directly to `main` (rule violation).
+- Recovered by branching to `docs/post-124-cleanup`, resetting `main`, and
+  opening PR #138 properly. Going forward: GitHub branch protection now
+  enforces "no direct commits to main" — always work on a branch and PR.
 
 ### Session 2026-05-17 — Feature 124 shipped + PR #137 review remediation
 **Production deployment confirmed.** The cross-cycle replacement detection caught the real
@@ -129,9 +152,10 @@ the merge prompt, and the merge executed successfully against ~475k readings row
 - See Copilot repo memory `postgres-auto-stop-runbook.md`
 
 ### Staging Environments
-- `b124-dev`: Destroy workflow dispatched (run #26008216055) — confirm completion
-- `b123-def`: Destroy workflow triggered (run #25572637307) — verify completion
-- `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
+All prior staging branch environments destroyed and verified gone:
+- `b124-dev`: destroyed (run #26008216055)
+- `b123-def`: destroyed (run #25572637307)
+- `b093-exp`: destroyed (run #25588799137)
 
 ### Tests (as of 2026-05-17)
 - Dashboard: 686 tests, 100% all metrics
@@ -152,10 +176,7 @@ the merge prompt, and the merge executed successfully against ~475k readings row
 Awaiting next feature direction.
 
 ### Pending
-- Confirm staging destroy run #26008216055 (`b124-dev`) completes; then delete remote
-  `124-device-discovery` branch if not auto-deleted by GitHub.
-- Staging destroy for b123-def (run #25572637307) — check completion
-- Staging destroy for b093-exp (run #25588799137) — check completion
+Nothing pending. Repo, environments, and issues all at baseline.
 
 ### Production Services
 | Service | URL |
