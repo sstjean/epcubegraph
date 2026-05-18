@@ -164,13 +164,13 @@ npm install && npm run dev          # http://localhost:5173
 ### Testing
 
 ```bash
-# API — 391 tests, 100% line + branch coverage
+# API — 486 tests, 100% line + branch coverage
 cd api && dotnet test EpCubeGraph.sln
 
-# Dashboard — 544 tests, 100% statement/branch/function/line coverage
+# Dashboard — 686 tests, 100% statement/branch/function/line coverage
 cd dashboard && npm run typecheck && npm run test:coverage
 
-# Exporter — 177 tests
+# Exporter — 349 tests, 100% line coverage
 cd local/epcube-exporter && python -m pytest test_exporter.py
 ```
 

@@ -1,38 +1,22 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-16
+**Last Updated**: 2026-05-17
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `124-device-discovery` (complete — ready for PR)
-**Last merged**: PR #136 — Refactor exporter monolith + enforce 100% coverage
-**Open PR**: #137 — Test isolation refactor: every test self-contained (Phases 0–5)
+**Branch**: `main` (working tree clean)
+**Last merged**: PR #137 — Feature 124: Automatic device discovery (merged 2026-05-17)
+**Open PR**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-15)
+## ⚡ Current State (2026-05-17)
 
-### Test Isolation Refactor (COMPLETE ✅)
-Full history in Copilot repo memory: `test-isolation-refactor.md`
-
-All 1,340 tests across C#, TypeScript, and Python are fully self-contained.
-Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
-
-- **Phase 0** — Preflight (commit `f76a96a`)
-- **Phase 1** — Split 4 large C# test files into 20 (commits `cfffac8`→`1a6b0f4`)
-- **Phase 2** — Schema extraction (commit `81dd556`)
-- **Phase 3** — All 28 C# tests self-contained (commit `b3a7ceb`)
-- **Phase 4** — All 30 dashboard tests self-contained (commits `f1c3b3a`, `cf868d8`)
-  - Global `afterEach(cleanup)` added to `tests/setup.ts`
-  - `setupMocks()` helpers in DeviceMerge, HistoricalGraph, SettingsPage
-- **Phase 5** — All 115 Python tests self-contained (commit `c82fd57`)
-
-### Feature 124: Device Discovery (COMPLETE ✅)
-- **Issue #134** — Automatic device discovery with hourly re-scan and device merge
-- **Branch**: `124-device-discovery` (9 commits ahead of origin — push pending)
-- **Spec**: Complete (4 user stories, 26 FRs, 30 clarifications, 9 edge cases)
-- **All 60 tasks done across 7 phases.**
-- Quickstart end-to-end verified locally (banner appears → telemetry collected on same cycle → Yes flow merges history → No flow keeps both devices → Remove flow hard-deletes).
+### Feature 124: Device Discovery (SHIPPED ✅)
+Merged via PR #137 and deployed to production 2026-05-17. End-to-end behaviour validated
+first in staging (prod→staging DB mirror surfaced the real prior hardware swap, replacement
+banner appeared, merge executed within the bumped command timeout), then in production.
+Issue #134 closed.
 
 **Beyond original spec, also delivered on this branch:**
 - Cross-cycle replacement detection (alias matching between newly-added and previously-removed devices, not just same-cycle)
@@ -47,6 +31,38 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 - Bug fix: `vue_device_mapping` rename in merge now uses proper `epcube{id}` prefix (was previously a silent no-op on key mismatch; now logged via new `ILogger<PostgresMetricsStore>`).
 - Bug fix: `DismissPendingReplacementAsync` closes the lookup reader before rollback (was raising `NpgsqlOperationInProgressException` when the pending row didn't exist).
 - Constitution Section IV: new "Bug Fix Regression Tests (NON-NEGOTIABLE)" rule — every bug fix must start with one or more failing tests.
+
+### Session 2026-05-17 — Feature 124 shipped + PR #137 review remediation
+**Production deployment confirmed.** The cross-cycle replacement detection caught the real
+prior hardware swap immediately on first prod-deploy discovery cycle, dashboard surfaced
+the merge prompt, and the merge executed successfully against ~475k readings rows.
+
+**Notable mid-session work captured:**
+- **Silent-error swallow fix (exporter)** — `read_active_epcube_ids` and `read_setting_int`
+  in `PostgresWriter` were swallowing exceptions via `log.debug` without rolling back the
+  psycopg2 connection, poisoning every subsequent write with `InFailedSqlTransaction`.
+  Fixed via new `_rollback_safe()` helper + visible WARNING logs with `exc_info=True`.
+  Vue's `VuePostgresWriter` had the same gap; fixed in a follow-up commit with the same
+  pattern. Constitution rule 6 ("No silent error swallowing") materially enforced.
+- **Merge query CommandTimeout** — Npgsql default 30s timeout was too short for the
+  ~475k-row UPDATE in `ExecuteMergeAsync`. Bumped to `MergeCommandTimeoutSeconds = 600`
+  (10 min) on the three heavy commands (count, conflict delete, transfer update).
+- **Ephemeral prod→staging DB mirror tooling** — new Terraform module
+  `infra/runner-pg-access/` + `scripts/mirror-db.sh` that peers the self-hosted runner
+  VNet into a target env's VNet for one phase at a time (CIDRs collide so sequential is
+  required), runs `pg_dump | gzip` on the runner, swaps the peering to the target,
+  restores via `psql`, and destroys everything via `trap EXIT`. Used to mirror prod data
+  into the 124 staging env for realistic-volume validation.
+- **PR #137 review remediation** — 7 review threads from the Copilot reviewer addressed:
+  - `cbb19b4` fix(exporter): raise on non-200 cloud response so `retry_with_backoff` retries
+  - `1f5aada` fix(api): validate `/devices` `status` param, 400 on unknown values
+  - `8311f2e` feat(api): include `status` field on `DeviceInfo` response
+  - `03c817f` docs(124): contract + cross-cycle alignment
+
+**New process rules added to constitution + copilot-instructions:**
+- **5-Minute Debug Limit (NON-NEGOTIABLE)** — after 5 minutes of unsuccessful debugging,
+  STOP and brief Steve with what was checked, known vs. unknown, candidate hypotheses.
+- Constitution clarification on Bug Fix Regression Tests already in place.
 
 ### Session 2026-05-16 — Feature 124 wrap + branch ready for PR
 **Work completed (9 new commits on `124-device-discovery`, not yet pushed):**
@@ -113,19 +129,19 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 - See Copilot repo memory `postgres-auto-stop-runbook.md`
 
 ### Staging Environments
+- `b124-dev`: Destroy workflow dispatched (run #26008216055) — confirm completion
 - `b123-def`: Destroy workflow triggered (run #25572637307) — verify completion
 - `b093-exp`: Destroy workflow triggered (run #25588799137) — verify completion
 
-### Tests
-- Dashboard: 664 tests, 100% all metrics
-- API: 452 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
-- Exporter: 331 tests, 100% coverage
-- **Total: 1447 tests**
+### Tests (as of 2026-05-17)
+- Dashboard: 686 tests, 100% all metrics
+- API: 486 tests, 100% line + 100% branch (self-contained; Testcontainers per test)
+- Exporter: 349 tests, 100% coverage
+- **Total: 1521 tests**
 
 ### Open Issues
 | # | Title | Label | Status |
 |---|-------|-------|--------|
-| 134 | Automatic device discovery | feature | Implementation complete on `124-device-discovery` (push pending) |
 | 115 | Separate Application Insights per environment | enhancement | Open |
 | 66 | Calendar-aware time range selector | enhancement | Open |
 | 52 | Port exporter Python→C# | enhancement | Open |
@@ -133,14 +149,11 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 | 5 | iPhone App | feature | Spec only |
 
 ### What's Next
-1. **Push `124-device-discovery` to origin** (9 new commits, user approval required)
-2. **Open / update PR for Feature 124** (or fold into PR #137 — see Pending)
-3. **Merge PR after CI passes** → close Issue #134
-4. **Next feature**
+Awaiting next feature direction.
 
 ### Pending
-- 9 commits on `124-device-discovery` awaiting push approval
-- Decide: extend PR #137 to cover the full Feature 124 scope, or open a fresh PR (#137 currently scoped as "Test isolation refactor"; this branch now also delivers 124 implementation)
+- Confirm staging destroy run #26008216055 (`b124-dev`) completes; then delete remote
+  `124-device-discovery` branch if not auto-deleted by GitHub.
 - Staging destroy for b123-def (run #25572637307) — check completion
 - Staging destroy for b093-exp (run #25588799137) — check completion
 
@@ -216,7 +229,7 @@ Zero shared fixtures, zero beforeEach/setUp, zero constructor injection.
 ### Feature 007: Dashboard Vue Circuits (COMPLETE ✅, PR #108)
 ### Feature 010: Simplify Vue Mapping (COMPLETE ✅, PR #124)
 ### Feature 093: Remove Vestigial Metrics (COMPLETE ✅)
-### Feature 124: Automatic Device Discovery (COMPLETE ✅, push pending)
+### Feature 124: Automatic Device Discovery (SHIPPED ✅, PR #137)
 ### Feature 003: iPhone App (SPEC ONLY)
 ### Feature 004: iPad App (SPEC ONLY)
 
