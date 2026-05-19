@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 // Mock MSAL browser module
 vi.mock('@azure/msal-browser', () => {
@@ -29,12 +29,16 @@ vi.mock('@azure/msal-browser', () => {
 });
 
 describe('auth', () => {
-  it('initializes MSAL PublicClientApplication', async () => {
-    // Arrange
+  beforeEach(() => {
     vi.resetModules();
+    vi.clearAllMocks();
     vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
     vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
     vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
+  });
+
+  it('initializes MSAL PublicClientApplication', async () => {
+    // Arrange
     const { initializeMsal } = await import('../../src/auth');
 
     // Act
@@ -159,9 +163,6 @@ describe('auth', () => {
   it('getAccessToken throws when MSAL not initialized', async () => {
     // Arrange
     vi.resetModules();
-    vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
-    vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
-    vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
     const { getAccessToken } = await import('../../src/auth');
 
     // Act & Assert
@@ -171,9 +172,6 @@ describe('auth', () => {
   it('isAuthenticated returns false when MSAL not initialized', async () => {
     // Arrange
     vi.resetModules();
-    vi.stubEnv('VITE_ENTRA_CLIENT_ID', 'test-client-id');
-    vi.stubEnv('VITE_ENTRA_TENANT_ID', 'test-tenant-id');
-    vi.stubEnv('VITE_ENTRA_API_SCOPE', 'api://test/user_impersonation');
     const { isAuthenticated } = await import('../../src/auth');
 
     // Act & Assert
@@ -208,6 +206,96 @@ describe('auth', () => {
     // Assert
     expect(replaceStateSpy).not.toHaveBeenCalled();
     replaceStateSpy.mockRestore();
+  });
+
+  it('falls back to loginRedirect on monitor_window_timeout BrowserAuthError', async () => {
+    // Arrange
+    const { mockAcquireTokenSilent, mockGetAllAccounts, mockLoginRedirect } =
+      await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([{ username: 'user@test.com' }]);
+    const timeoutError = new Error('monitor_window_timeout: iframe timeout');
+    (timeoutError as Error & { errorCode: string }).errorCode = 'monitor_window_timeout';
+    mockAcquireTokenSilent.mockRejectedValue(timeoutError);
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act
+    await getAccessToken();
+
+    // Assert
+    expect(mockLoginRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null on interaction_in_progress errors without redirect', async () => {
+    // Arrange
+    const { mockAcquireTokenSilent, mockGetAllAccounts, mockLoginRedirect } =
+      await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([{ username: 'user@test.com' }]);
+    const inProgressError = new Error('interaction already in progress');
+    (inProgressError as Error & { errorCode: string }).errorCode = 'interaction_in_progress';
+    mockAcquireTokenSilent.mockRejectedValue(inProgressError);
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act
+    const token = await getAccessToken();
+
+    // Assert
+    expect(token).toBeNull();
+    expect(mockLoginRedirect).not.toHaveBeenCalled();
+  });
+
+  it('does not trigger duplicate redirect while login redirect is already in flight', async () => {
+    // Arrange
+    const { mockGetAllAccounts, mockLoginRedirect } = await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([]);
+    mockLoginRedirect.mockResolvedValue(undefined);
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act
+    const first = await getAccessToken();
+    const second = await getAccessToken();
+
+    // Assert
+    expect(first).toBeNull();
+    expect(second).toBeNull();
+    expect(mockLoginRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-throws non-Error silent token failures unchanged', async () => {
+    // Arrange
+    const { mockAcquireTokenSilent, mockGetAllAccounts } = await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([{ username: 'user@test.com' }]);
+    mockAcquireTokenSilent.mockRejectedValue('plain_failure');
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act & Assert
+    await expect(getAccessToken()).rejects.toBe('plain_failure');
+  });
+
+  it('deduplicates concurrent getAccessToken calls into one silent token request', async () => {
+    // Arrange
+    const { mockAcquireTokenSilent, mockGetAllAccounts } = await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([{ username: 'user@test.com' }]);
+    let resolveToken: ((value: { accessToken: string }) => void) | undefined;
+    mockAcquireTokenSilent.mockImplementation(() => new Promise((resolve) => {
+      resolveToken = resolve;
+    }));
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act
+    const tokenPromiseA = getAccessToken();
+    const tokenPromiseB = getAccessToken();
+    resolveToken?.({ accessToken: 'shared-token' });
+    const [tokenA, tokenB] = await Promise.all([tokenPromiseA, tokenPromiseB]);
+
+    // Assert
+    expect(mockAcquireTokenSilent).toHaveBeenCalledTimes(1);
+    expect(tokenA).toBe('shared-token');
+    expect(tokenB).toBe('shared-token');
   });
 
 });
