@@ -25,10 +25,15 @@ async function triggerLoginRedirect(): Promise<null> {
   if (loginRedirectInFlight) return null;
 
   loginRedirectInFlight = true;
-  await msalInstance!.loginRedirect({
-    scopes: [import.meta.env.VITE_ENTRA_API_SCOPE],
-    state: currentRouteState(),
-  });
+  try {
+    await msalInstance!.loginRedirect({
+      scopes: [import.meta.env.VITE_ENTRA_API_SCOPE],
+      state: currentRouteState(),
+    });
+  } catch (err) {
+    loginRedirectInFlight = false;
+    throw err;
+  }
   return null;
 }
 

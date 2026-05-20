@@ -298,4 +298,23 @@ describe('auth', () => {
     expect(tokenB).toBe('shared-token');
   });
 
+  it('clears loginRedirectInFlight when loginRedirect rejects so retry is possible', async () => {
+    // Arrange
+    const { mockGetAllAccounts, mockLoginRedirect } = await import('@azure/msal-browser') as any;
+    mockGetAllAccounts.mockReturnValue([]);
+    mockLoginRedirect
+      .mockRejectedValueOnce(new Error('redirect_failed'))
+      .mockResolvedValueOnce(undefined);
+    const { getAccessToken, initializeMsal } = await import('../../src/auth');
+    await initializeMsal();
+
+    // Act
+    await expect(getAccessToken()).rejects.toThrow('redirect_failed');
+    const second = await getAccessToken();
+
+    // Assert
+    expect(second).toBeNull();
+    expect(mockLoginRedirect).toHaveBeenCalledTimes(2);
+  });
+
 });
