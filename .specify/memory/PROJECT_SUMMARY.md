@@ -1,10 +1,10 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-18
+**Last Updated**: 2026-05-19
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main` (working tree clean)
 **Last merged**: PR #138 — docs: post-Feature-124-merge cleanup (merged 2026-05-18)
-**Open PR**: none
+**Open PR**: #141 — fix(dashboard): break MSAL monitor_window_timeout auth loop
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
@@ -54,6 +54,45 @@ Issue #134 closed.
 - Recovered by branching to `docs/post-124-cleanup`, resetting `main`, and
   opening PR #138 properly. Going forward: GitHub branch protection now
   enforces "no direct commits to main" — always work on a branch and PR.
+
+### Session 2026-05-19 — Production dashboard auth timeout incident + hotfix prepared
+
+**Incident summary (production):**
+- Dashboard rendered auth errors with `BrowserAuthError: monitor_window_timeout`
+  (`Token acquisition in iframe failed due to timeout`) and blocked data loading.
+- User confirmed issue was already present before hard refresh; closing the tab,
+  opening a new tab, and re-authenticating restored normal behavior.
+
+**Telemetry evidence collected (Azure App Insights, `epcubegraph-appinsights`):**
+- Signature: `monitor_window_timeout` only.
+- Window: first seen `2026-05-19T12:46:54.757Z`, last seen `2026-05-19T13:28:10.841Z`.
+- Volume: ~2.4k exceptions in that window.
+- Scope: single user/session/browser fingerprint (Edge 148 on Mac OS X 10.15).
+- Later check (`ago(90m)`) returned zero new `monitor_window_timeout` exceptions.
+
+**Root-cause conclusion (based on telemetry + behavior):**
+- Session-scoped client auth loop in MSAL silent iframe token acquisition.
+- Not a backend/API/platform outage.
+
+**Hotfix implemented locally (dashboard):**
+- `dashboard/src/auth.ts`
+  - Added single-flight token acquisition (`accessTokenRequestInFlight`) so
+    concurrent API calls share one silent token request.
+  - Added explicit `monitor_window_timeout` handling to escalate to one
+    controlled `loginRedirect`.
+  - Added redirect de-duplication guard (`loginRedirectInFlight`) to prevent
+    repeated redirect loops.
+- `dashboard/tests/unit/auth.test.ts`
+  - Added regression tests for timeout fallback, in-progress handling,
+    redirect de-dupe, and concurrent token request dedupe.
+
+**Verification:**
+- `dashboard` typecheck: pass.
+- Focused tests (`auth` + `api`): pass.
+- Full dashboard coverage suite: pass at 100% lines/branches/statements/functions.
+
+**Status:**
+- Fix is implemented and validated locally; deploy pending.
 
 ### Session 2026-05-17 — Feature 124 shipped + PR #137 review remediation
 **Production deployment confirmed.** The cross-cycle replacement detection caught the real
