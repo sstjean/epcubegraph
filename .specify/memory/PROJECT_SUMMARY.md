@@ -1,10 +1,10 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-18
+**Last Updated**: 2026-05-19
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main` (working tree clean)
 **Last merged**: PR #138 — docs: post-Feature-124-merge cleanup (merged 2026-05-18)
-**Open PR**: none
+**Open PR**: #141 — fix(dashboard): break MSAL monitor_window_timeout auth loop
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
