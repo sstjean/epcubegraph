@@ -350,15 +350,19 @@ jobs:
               --name "$APP_NAME" \
               --resource-group "$RG" \
               --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
-            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
-              echo "✓ API revision ready: $REVISION_STATUS"
-              exit 0
-            fi
+            # Container Apps reports runningState as either "Running" or "RunningAtMaxScale"
+            # (when replicas == maxReplicas). Both indicate a healthy, serving revision.
+            case "$REVISION_STATUS" in
+              Provisioned\|Running\|Healthy|Provisioned\|RunningAtMaxScale\|Healthy)
+                echo "✓ API revision ready: $REVISION_STATUS"
+                exit 0
+                ;;
+            esac
             echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
             sleep 15
           done
 
-          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          echo "::error::API revision did not reach Provisioned/Running(AtMaxScale)/Healthy in time"
           az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
           az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
           az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
@@ -734,15 +738,19 @@ jobs:
               --name "$APP_NAME" \
               --resource-group "$RG" \
               --output json | jq -r '.[0] | "\(.properties.provisioningState)|\(.properties.runningState)|\(.properties.healthState)"')
-            if [ "$REVISION_STATUS" = "Provisioned|Running|Healthy" ]; then
-              echo "✓ API revision ready: $REVISION_STATUS"
-              exit 0
-            fi
+            # Container Apps reports runningState as either "Running" or "RunningAtMaxScale"
+            # (when replicas == maxReplicas). Both indicate a healthy, serving revision.
+            case "$REVISION_STATUS" in
+              Provisioned\|Running\|Healthy|Provisioned\|RunningAtMaxScale\|Healthy)
+                echo "✓ API revision ready: $REVISION_STATUS"
+                exit 0
+                ;;
+            esac
             echo "Attempt $i/20: API revision state $REVISION_STATUS — waiting 15s..."
             sleep 15
           done
 
-          echo "::error::API revision did not reach Provisioned/Running/Healthy in time"
+          echo "::error::API revision did not reach Provisioned/Running(AtMaxScale)/Healthy in time"
           az containerapp revision list --name "$APP_NAME" --resource-group "$RG" --output json || true
           az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --type system --tail 100 || true
           az containerapp logs show --name "$APP_NAME" --resource-group "$RG" --tail 100 || true
