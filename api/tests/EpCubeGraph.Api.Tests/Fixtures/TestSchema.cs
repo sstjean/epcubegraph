@@ -70,6 +70,9 @@ public static class TestSchema
         CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
             ON readings (device_id, metric_name, timestamp DESC);
 
+        CREATE INDEX IF NOT EXISTS idx_readings_device_time
+            ON readings (device_id, timestamp DESC);
+
         CREATE TABLE IF NOT EXISTS vue_devices (
             device_gid BIGINT PRIMARY KEY,
             device_name TEXT,
