@@ -1,0 +1,83 @@
+name: PostgreSQL Watchdog
+
+# `epcubegraph-postgres` is occasionally stopped by an out-of-band subscription-level
+# process we can't opt out of. This workflow polls every 10 minutes and restarts the
+# server if it is Stopped, so production recovers automatically.
+
+on:
+  schedule:
+    # Every 10 minutes
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: postgres-watchdog
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  check-and-start:
+    name: Check PG state and start if stopped
+    runs-on: ubuntu-latest
+    env:
+      PG_SERVER: epcubegraph-postgres
+      PG_RG: epcubegraph-rg
+    steps:
+      - name: Azure login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check PostgreSQL state
+        id: check
+        run: |
+          set -euo pipefail
+          state=$(az postgres flexible-server show \
+            --name "$PG_SERVER" \
+            --resource-group "$PG_RG" \
+            --query state -o tsv)
+          echo "Current state: $state"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Start PostgreSQL if Stopped
+        if: steps.check.outputs.state == 'Stopped'
+        run: |
+          set -euo pipefail
+          echo "::warning::PostgreSQL was Stopped — starting now."
+          az postgres flexible-server start \
+            --name "$PG_SERVER" \
+            --resource-group "$PG_RG"
+          echo "Start command completed."
+
+      - name: Verify state after start
+        if: steps.check.outputs.state == 'Stopped'
+        run: |
+          set -euo pipefail
+          state=$(az postgres flexible-server show \
+            --name "$PG_SERVER" \
+            --resource-group "$PG_RG" \
+            --query state -o tsv)
+          echo "Post-start state: $state"
+          if [[ "$state" != "Ready" ]]; then
+            echo "::error::PostgreSQL did not reach Ready state after start (got: $state)"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## PostgreSQL Watchdog" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Server: \`$PG_SERVER\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Resource group: \`$PG_RG\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Observed state: \`${{ steps.check.outputs.state }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ steps.check.outputs.state }}" == "Stopped" ]]; then
+            echo "- Action: **started**" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Action: none" >> "$GITHUB_STEP_SUMMARY"
+          fi
