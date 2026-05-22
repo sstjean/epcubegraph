@@ -30,16 +30,22 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
     {
         var filterStatus = string.IsNullOrEmpty(status) ? "active" : status;
 
+        // Issue #146: previous implementation used `LEFT JOIN readings ... GROUP BY ... MAX(timestamp)`
+        // which scanned the entire readings table per request (~5s on prod). The EXISTS subquery
+        // short-circuits on the first reading in the last 3 minutes per device, using the
+        // (device_id, metric_name, timestamp DESC) index for an index-only lookup.
         string sql;
         if (filterStatus == "all")
         {
             sql = """
                 SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
-                       CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
+                       EXISTS (
+                           SELECT 1 FROM readings r
+                           WHERE r.device_id = d.device_id
+                             AND r.timestamp > NOW() - INTERVAL '3 minutes'
+                       ) AS online,
                        d.created_at, d.updated_at, d.status
                 FROM devices d
-                LEFT JOIN readings r ON d.device_id = r.device_id
-                GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at, d.status
                 ORDER BY d.device_id
                 """;
             await using var cmdAll = _dataSource.CreateCommand(sql);
@@ -49,12 +55,14 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 
         sql = """
             SELECT d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid,
-                   CASE WHEN MAX(r.timestamp) > NOW() - INTERVAL '3 minutes' THEN true ELSE false END AS online,
+                   EXISTS (
+                       SELECT 1 FROM readings r
+                       WHERE r.device_id = d.device_id
+                         AND r.timestamp > NOW() - INTERVAL '3 minutes'
+                   ) AS online,
                    d.created_at, d.updated_at, d.status
             FROM devices d
-            LEFT JOIN readings r ON d.device_id = r.device_id
             WHERE d.status = $1
-            GROUP BY d.device_id, d.device_class, d.alias, d.manufacturer, d.product_code, d.uid, d.created_at, d.updated_at, d.status
             ORDER BY d.device_id
             """;
         await using var cmd = _dataSource.CreateCommand(sql);
@@ -102,12 +110,27 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 
     public async Task<IReadOnlyList<Reading>> GetCurrentReadingsAsync(string metricName, CancellationToken ct = default)
     {
-        // For each device, get the latest reading for the given metric
+        // Issue #146: the previous `SELECT DISTINCT ON (device_id) ... WHERE metric_name = $1`
+        // read every reading row for the metric (~27k rows / 13.5k pages in prod) and sorted
+        // them in memory — ~4s per call on prod. The LATERAL join below does a top-1 index
+        // lookup per device using idx_readings_device_metric_time (device_id, metric_name,
+        // timestamp DESC). With a small device count this is sub-millisecond regardless of
+        // how many historical rows exist.
+        //
+        // Behaviour difference vs. the old query: only returns readings for devices that
+        // exist in the devices table. The previous query would have surfaced "orphan"
+        // readings whose device_id was no longer registered. This is an acceptable and
+        // desirable narrowing — the dashboard joins against /devices anyway.
         const string sql = """
-            SELECT DISTINCT ON (device_id) device_id, EXTRACT(EPOCH FROM timestamp)::bigint, value
-            FROM readings
-            WHERE metric_name = $1
-            ORDER BY device_id, timestamp DESC
+            SELECT d.device_id, EXTRACT(EPOCH FROM r.timestamp)::bigint, r.value
+            FROM devices d
+            JOIN LATERAL (
+                SELECT timestamp, value FROM readings
+                WHERE device_id = d.device_id AND metric_name = $1
+                ORDER BY timestamp DESC
+                LIMIT 1
+            ) r ON true
+            ORDER BY d.device_id
             """;
 
         await using var cmd = _dataSource.CreateCommand(sql);
