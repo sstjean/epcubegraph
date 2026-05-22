@@ -61,6 +61,14 @@ CREATE TABLE IF NOT EXISTS readings (
 CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
     ON readings (device_id, metric_name, timestamp DESC);
 
+-- Issue #146: supports the EXISTS subquery in /api/v1/devices that checks
+-- whether a device has ANY reading in the last 3 minutes (any metric). The
+-- existing (device_id, metric_name, timestamp DESC) index can't satisfy this
+-- because metric_name sits between the two filter columns, forcing PG to a
+-- Seq Scan. This (device_id, timestamp DESC) index enables an Index Only Scan.
+CREATE INDEX IF NOT EXISTS idx_readings_device_time
+    ON readings (device_id, timestamp DESC);
+
 CREATE TABLE IF NOT EXISTS pending_replacements (
     id SERIAL PRIMARY KEY,
     old_device_id TEXT NOT NULL,

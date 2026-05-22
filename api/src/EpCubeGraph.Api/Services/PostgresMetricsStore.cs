@@ -32,8 +32,10 @@ public sealed class PostgresMetricsStore : IMetricsStore, IDisposable
 
         // Issue #146: previous implementation used `LEFT JOIN readings ... GROUP BY ... MAX(timestamp)`
         // which scanned the entire readings table per request (~5s on prod). The EXISTS subquery
-        // short-circuits on the first reading in the last 3 minutes per device, using the
-        // (device_id, metric_name, timestamp DESC) index for an index-only lookup.
+        // short-circuits on the first reading in the last 3 minutes per device. The lookup is
+        // satisfied by idx_readings_device_time (device_id, timestamp DESC) — the existing
+        // (device_id, metric_name, timestamp DESC) index cannot be used here because metric_name
+        // sits between the two filter columns, so PG would otherwise fall back to Seq Scan.
         string sql;
         if (filterStatus == "all")
         {
