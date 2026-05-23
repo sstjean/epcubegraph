@@ -509,3 +509,170 @@ describe('formatDateLabel', () => {
     expect(label).toMatch(/2026/);
   });
 });
+
+describe('TimeRangeSelector — custom range calendar pill (#66)', () => {
+  it('renders Start as a date pill with formatted label', () => {
+    // Arrange
+    const onChange = vi.fn();
+
+    // Act
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+
+    // Assert — pill exists for Start, and its display text matches the formatted date.
+    const pills = document.querySelectorAll('.date-pill');
+    expect(pills.length).toBe(2);
+    const startPill = pills[0];
+    const startDisplay = startPill.querySelector('.date-pill-display');
+    expect(startDisplay).toBeTruthy();
+    expect(startDisplay!.textContent).toBe(formatDateLabel(customValue.start));
+  });
+
+  it('renders End as a date pill with formatted label', () => {
+    // Arrange
+    const onChange = vi.fn();
+
+    // Act
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+
+    // Assert
+    const pills = document.querySelectorAll('.date-pill');
+    expect(pills.length).toBe(2);
+    const endPill = pills[1];
+    const endDisplay = endPill.querySelector('.date-pill-display');
+    expect(endDisplay).toBeTruthy();
+    expect(endDisplay!.textContent).toBe(formatDateLabel(customValue.end));
+  });
+
+  it('each pill contains a visible calendar icon', () => {
+    // Arrange
+    const onChange = vi.fn();
+
+    // Act
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+
+    // Assert
+    const icons = document.querySelectorAll('.date-pill-icon');
+    expect(icons.length).toBe(2);
+    for (const icon of Array.from(icons)) {
+      expect(icon.textContent?.trim().length).toBeGreaterThan(0);
+      // Icon must be aria-hidden so screen readers don't announce decoration.
+      expect(icon.getAttribute('aria-hidden')).toBe('true');
+    }
+  });
+
+  it('underlying date inputs remain accessible by label and still emit onChange', () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+
+    // Assert — labels still resolve (existing contract preserved)
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+    const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
+    expect(startInput.type).toBe('date');
+    expect(endInput.type).toBe('date');
+
+    // Inputs are visually hidden (overlay pattern) but functional
+    expect(startInput.classList.contains('date-pill-input')).toBe(true);
+    expect(endInput.classList.contains('date-pill-input')).toBe(true);
+
+    // Act — value change still propagates
+    fireEvent.change(startInput, { target: { value: '2026-03-20' } });
+    fireEvent.change(endInput, { target: { value: '2026-03-23' } });
+
+    // Assert
+    const lastCall = onChange.mock.calls[onChange.mock.calls.length - 1];
+    expect(lastCall).toBeTruthy();
+    expect(lastCall[1].start).toBeLessThan(lastCall[1].end);
+  });
+
+  it('pill display updates when value changes', () => {
+    // Arrange
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />
+    );
+
+    const newStart = Math.floor(new Date(2026, 0, 10).getTime() / 1000);
+    const newEnd = Math.floor(new Date(2026, 0, 20).getTime() / 1000);
+    const newValue: TimeRangeValue = { start: newStart, end: newEnd, step: 86400 };
+
+    // Act
+    rerender(<TimeRangeSelector selected="custom" value={newValue} onChange={onChange} />);
+
+    // Assert — pill text reflects the new value
+    const pills = document.querySelectorAll('.date-pill');
+    expect(pills[0].querySelector('.date-pill-display')!.textContent).toBe(formatDateLabel(newStart));
+    expect(pills[1].querySelector('.date-pill-display')!.textContent).toBe(formatDateLabel(newEnd));
+  });
+
+  it('clicking either custom pill input opens the native picker via showPicker()', () => {
+    // Arrange
+    const onChange = vi.fn();
+    const showPicker = vi.fn();
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+    const endInput = screen.getByLabelText(/end/i) as HTMLInputElement;
+    // jsdom doesn't implement showPicker; install a spy on each input instance.
+    (startInput as unknown as { showPicker: () => void }).showPicker = showPicker;
+    (endInput as unknown as { showPicker: () => void }).showPicker = showPicker;
+
+    // Act
+    fireEvent.click(startInput);
+    fireEvent.click(endInput);
+
+    // Assert
+    expect(showPicker).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TimeRangeSelector — day picker showPicker affordance (#66)', () => {
+  it('clicking the day-picker input opens the native picker via showPicker()', () => {
+    // Arrange
+    const onChange = vi.fn();
+    const showPicker = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    (dateInput as unknown as { showPicker: () => void }).showPicker = showPicker;
+
+    // Act
+    fireEvent.click(dateInput);
+
+    // Assert
+    expect(showPicker).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when showPicker is unavailable (older browsers / jsdom default)', () => {
+    // Arrange — leave input without a showPicker implementation
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="today" value={todayValue} onChange={onChange} />);
+    const dateInput = screen.getByLabelText('Select date') as HTMLInputElement;
+    // Explicitly ensure undefined
+    (dateInput as unknown as { showPicker?: () => void }).showPicker = undefined;
+
+    // Act + Assert — must not throw
+    expect(() => fireEvent.click(dateInput)).not.toThrow();
+  });
+
+  it('focusing the custom-range input puts the pill container into :focus-within (a11y)', () => {
+    // Arrange — opacity:0 on the input means its own focus ring is invisible;
+    // we expose focus via :focus-within on the pill container so keyboard users
+    // see a visible indicator (see app.css `.date-pill:focus-within`).
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+    const pill = startInput.closest('.date-pill') as HTMLElement;
+    expect(pill).toBeTruthy();
+
+    // Act
+    startInput.focus();
+
+    // Assert — pill contains the focused element, so the CSS :focus-within
+    // selector applied in app.css will match and render the outline.
+    // (We assert containment rather than `.matches(':focus-within')` because
+    // jsdom's selector engine does not implement the `:focus-within` pseudo.)
+    expect(document.activeElement).toBe(startInput);
+    expect(pill.contains(document.activeElement)).toBe(true);
+  });
+});

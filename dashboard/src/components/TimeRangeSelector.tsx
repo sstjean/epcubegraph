@@ -64,6 +64,18 @@ export function formatDateLabel(epochSec: number): string {
   });
 }
 
+/** Open the native date picker on click.
+ *  Native <input type="date"> only opens the picker when its built-in indicator
+ *  glyph is clicked; clicking the input body does nothing. With our overlay
+ *  pattern (transparent input on top of a visible pill) we have to invoke
+ *  showPicker() explicitly so the whole pill becomes a click target. */
+function openPicker(e: Event) {
+  const input = e.currentTarget as HTMLInputElement & { showPicker?: () => void };
+  if (typeof input.showPicker === 'function') {
+    input.showPicker();
+  }
+}
+
 /** Compute a single-day TimeRangeValue for a given date string (YYYY-MM-DD). */
 function computeDayValue(dateStr: string): TimeRangeValue {
   const dayStart = new Date(dateStr + 'T00:00:00');
@@ -171,6 +183,7 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
               aria-label="Select date"
               value={toDateString(value.start)}
               max={toDateString(Math.floor(getNowMs() / 1000))}
+              onClick={openPicker}
               onChange={(e) => handleDayPickerChange((e.target as HTMLInputElement).value)}
             />
           </label>
@@ -186,23 +199,35 @@ export function TimeRangeSelector({ selected, value, onChange }: TimeRangeSelect
       )}
       {selected === 'custom' && (
         <div class="time-range-custom">
-          <label>
+          <label class="date-pill-label">
             Start date
-            <input
-              type="date"
-              aria-label="Start date"
-              value={customStart}
-              onChange={(e) => handleCustomChange('start', (e.target as HTMLInputElement).value)}
-            />
+            <span class="date-pill">
+              <span class="date-pill-icon" aria-hidden="true">📅</span>
+              <span class="date-pill-display">{formatDateLabel(value.start)}</span>
+              <input
+                type="date"
+                class="date-pill-input"
+                aria-label="Start date"
+                value={customStart}
+                onClick={openPicker}
+                onChange={(e) => handleCustomChange('start', (e.target as HTMLInputElement).value)}
+              />
+            </span>
           </label>
-          <label>
+          <label class="date-pill-label">
             End date
-            <input
-              type="date"
-              aria-label="End date"
-              value={customEnd}
-              onChange={(e) => handleCustomChange('end', (e.target as HTMLInputElement).value)}
-            />
+            <span class="date-pill">
+              <span class="date-pill-icon" aria-hidden="true">📅</span>
+              <span class="date-pill-display">{formatDateLabel(value.end)}</span>
+              <input
+                type="date"
+                class="date-pill-input"
+                aria-label="End date"
+                value={customEnd}
+                onClick={openPicker}
+                onChange={(e) => handleCustomChange('end', (e.target as HTMLInputElement).value)}
+              />
+            </span>
           </label>
         </div>
       )}
