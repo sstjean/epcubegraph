@@ -536,6 +536,7 @@ describe('TimeRangeSelector — custom range calendar pill (#66)', () => {
 
     // Assert
     const pills = document.querySelectorAll('.date-pill');
+    expect(pills.length).toBe(2);
     const endPill = pills[1];
     const endDisplay = endPill.querySelector('.date-pill-display');
     expect(endDisplay).toBeTruthy();
@@ -652,5 +653,26 @@ describe('TimeRangeSelector — day picker showPicker affordance (#66)', () => {
 
     // Act + Assert — must not throw
     expect(() => fireEvent.click(dateInput)).not.toThrow();
+  });
+
+  it('focusing the custom-range input puts the pill container into :focus-within (a11y)', () => {
+    // Arrange — opacity:0 on the input means its own focus ring is invisible;
+    // we expose focus via :focus-within on the pill container so keyboard users
+    // see a visible indicator (see app.css `.date-pill:focus-within`).
+    const onChange = vi.fn();
+    render(<TimeRangeSelector selected="custom" value={customValue} onChange={onChange} />);
+    const startInput = screen.getByLabelText(/start/i) as HTMLInputElement;
+    const pill = startInput.closest('.date-pill') as HTMLElement;
+    expect(pill).toBeTruthy();
+
+    // Act
+    startInput.focus();
+
+    // Assert — pill contains the focused element, so the CSS :focus-within
+    // selector applied in app.css will match and render the outline.
+    // (We assert containment rather than `.matches(':focus-within')` because
+    // jsdom's selector engine does not implement the `:focus-within` pseudo.)
+    expect(document.activeElement).toBe(startInput);
+    expect(pill.contains(document.activeElement)).toBe(true);
   });
 });

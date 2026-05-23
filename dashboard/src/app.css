@@ -685,9 +685,10 @@ section > h2 {
   color: var(--text-secondary);
 }
 
-/* Shared date pill (used by day-picker and custom range Start/End).
-   Visible pill with calendar icon; transparent native <input type="date">
-   overlay opens the picker when the pill is clicked. */
+/* Date pill (used by Custom range Start/End). Visible pill with calendar
+   icon; a transparent native <input type="date"> sits on top so clicking
+   the pill opens the picker. Mirrors the day-picker overlay pattern above
+   (`.day-picker-label` / `.day-picker-input`). */
 .date-pill-label {
   display: flex;
   flex-direction: column;
@@ -713,6 +714,14 @@ section > h2 {
 
 .date-pill:hover {
   border-color: var(--text-muted);
+}
+
+/* Keyboard a11y: the underlying <input> is opacity:0 so its own focus ring
+   is invisible. Surface the focus indicator on the pill container instead. */
+.date-pill:focus-within,
+.day-picker-label:focus-within .day-date-display {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .date-pill-icon {
