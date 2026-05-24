@@ -20,7 +20,7 @@ All option names below reference Chart.js 4.x API. Some option names changed fro
 
 **Why this fixes #149**: The original bug — day-of-month numbers on the 1y view — happened because uPlot's tick generator emitted a fixed count of ticks regardless of unit, and the formatter only saw the raw epoch number. Chart.js's `time` scale is unit-aware: when the visible span is ~1 year it picks `unit: 'month'` and emits one tick per month, then formats each tick through `displayFormats.month` (default `'MMM yyyy'`). The "bare day number" failure mode is structurally impossible: the scale knows what unit the tick represents.
 
-**Configuration pattern** (used by `buildChartConfig`):
+**Configuration pattern** (used by `buildBarConfig` / `buildLineConfig` via `buildBaseOptions`):
 
 ```ts
 import 'chartjs-adapter-date-fns';        // side-effect registers the adapter
@@ -140,7 +140,7 @@ ticks: {
 
 ## 5. `displayFormats` per unit + `tooltipFormat`
 
-`displayFormats` is the map of date-fns format strings per time unit. The settings above (§1) are the final values used by `buildChartConfig`. Mapping to spec acceptance criteria:
+`displayFormats` is the map of date-fns format strings per time unit. The settings above (§1) are the final values used by `buildBaseOptions` (and inherited by both `buildBarConfig` and `buildLineConfig`). Mapping to spec acceptance criteria:
 
 | Preset | Auto-picked `time.unit` | `displayFormats[unit]` | Sample label |
 |---|---|---|---|
@@ -208,7 +208,7 @@ scales: {
 }
 ```
 
-For sub-day ranges (`step < 86400`), all three power datasets are also `type: 'line'` and the chart-level `type` is `'line'`. The same `buildChartConfig` function chooses based on `shouldUseBars(step)`.
+For sub-day ranges (`step < 86400`), all three power datasets are also `type: 'line'` and the chart-level `type` is `'line'` (produced by `buildLineConfig`, which calls `buildPowerDatasets(data, 'line')`). The lifecycle dispatches: `shouldUseBars(step) ? buildBarConfig(...) : buildLineConfig(...)`.
 
 ---
 
@@ -295,7 +295,9 @@ useEffect(() => {
     setError('Chart context unavailable');
     return;
   }
-  const config = buildChartConfig(timeRange.step, chart.data, chart.name);
+  const config = shouldUseBars(timeRange.step)
+    ? buildBarConfig(timeRange.step, chart.data, chart.name)
+    : buildLineConfig(timeRange.step, chart.data, chart.name);
   chartRef.current = new Chart(ctx, config);
   return () => {
     chartRef.current?.destroy();

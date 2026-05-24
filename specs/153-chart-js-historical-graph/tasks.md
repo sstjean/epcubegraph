@@ -25,8 +25,9 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 - [ ] T001 [Setup] Add `chart.js@^4.5.1`, `chartjs-adapter-date-fns@^3.0.0`, and `date-fns@^4.3.0` to `dashboard/package.json` `dependencies` (do NOT remove `uplot` yet — keep both installed during migration so intermediate test runs stay green) and run `cd dashboard && npm install` to update `package-lock.json`.
 - [ ] T002 [P] [Setup] Confirm `cd dashboard && npm run test:coverage` and `npm run typecheck` are green against the existing uPlot implementation BEFORE any code change (baseline gate; protects against pre-existing failures being misattributed to the migration).
 - [ ] T003 [P] [Setup] Confirm the persistent local stack is up: `docker ps --filter name=local-postgres-1 --filter name=local-epcube-exporter-1` shows both Up, and `curl -fsS http://localhost:5173 >/dev/null` succeeds. Record the resulting container IDs in your scratch notes for the later visual-verification phase.
+- [ ] T003a [Setup] Constitution “GitHub Issue Discipline” gate: ensure 7 User Story sub-issues exist under parent #153, one per US1–US7. Title convention from prior features: `F153-US{n}: {short story title}`. Body MUST include `Parent: #153` and a one-line summary. Verify with `gh issue list --search "F153-US in:title" --state all --limit 10` returns 7 rows. Sub-issue → parent linkage created via `gh api repos/sstjean/epcubegraph/issues/{child}/sub_issues -f sub_issue_id=<child_node_id>` (or via the web UI).
 
-**Checkpoint**: Dependencies installed; baseline green; live stack reachable.
+**Checkpoint**: Dependencies installed; baseline green; live stack reachable; 7 US sub-issues exist under #153.
 
 ---
 
@@ -45,9 +46,17 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 
 - [ ] T006 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: remove `import uPlot from 'uplot'` and `import 'uplot/dist/uPlot.min.css'`. Remove the `computeAxisSize`, `powerAxisSize`, `formatAxisDates`, and `BAR_STEP_THRESHOLD` exports. Add the new imports + `Chart.register(...)` block from [research.md §9](research.md) at the top of the file, and the `import 'chartjs-adapter-date-fns'` side-effect import.
 - [ ] T007 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: update `buildDeviceChartData` signature & return type so each series is `{ x: number, y: number | null }[]` in **milliseconds** (Chart.js `time` scale expects ms), keeping the existing 2× step gap-null insertion logic. Add a small TS interface `DeviceChartDatasets { solar: Point[]; homeLoad: Point[]; grid: Point[]; battery: Point[] }`. Update the per-device loop in the data-fetch `useEffect` to consume the new shape. Pure helpers (`shouldUseBars`, `getAggregationLabel`, `formatTooltipTimestamp`) remain exported, unchanged in signature.
-- [ ] T008 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: add a new exported pure helper `buildChartConfig(step: number, data: DeviceChartDatasets, deviceName: string): ChartConfiguration<'bar' | 'line'>` returning the Chart.js config shape (skeleton only — empty `datasets: []`, minimal `scales.x` time scale, no plugins yet). Per-story phases below populate `datasets`, `scales.y` / `y1`, and plugin options.
-- [ ] T009 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: replace the second `useEffect` (currently building uPlot instances) with the Chart.js lifecycle pattern from [research.md §10](research.md): `useRef<HTMLCanvasElement[]>`, a `useRef<Chart[]>` for instances, `getContext('2d')` check that calls `setError('Chart context unavailable')` on null (NFR-006), one `new Chart(ctx, buildChartConfig(...))` per device, cleanup destroys all. Replace the `<div data-chart />` per device with `<canvas ref={...} aria-label={...} />`. Keep `.device-chart` wrapper, `<h3>` heading, and `aria-label="... energy chart"` per US-6 / FR-008.
-- [ ] T010 [Foundation] Run `cd dashboard && npm run test:coverage` and `npm run typecheck`. The Foundation-touched tests (T005 list) MUST now pass; per-story behavior tests added below will still be missing. Typecheck MUST be clean.
+- [ ] T008 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: add small **single-responsibility** exported pure helpers per the SRP+DRY decision (Q1):
+  - `buildBaseOptions(step: number): ChartOptions` — shared options: `responsive: true`, `maintainAspectRatio: false`, `animation: false`, `scales.x` time-scale config (per US1 / T014), tooltip callbacks (per T019), legend defaults (per T032). No datasets, no `scales.y` / `y1` (those are series-specific).
+  - `buildPowerDatasets(data: DeviceChartDatasets, type: 'bar' | 'line'): ChartDataset[]` — returns the Solar / Home Load / Grid datasets with `yAxisID: 'y'` and the requested per-dataset `type`. Internal gradient policy lives here: Grid uses gradient when `type === 'line'`, solid color when `type === 'bar'`; Solar and Home Load use solid color in both modes (preserves current uPlot look — Q2).
+  - `buildBatteryDataset(data: DeviceChartDatasets): ChartDataset<'line'>` — returns the Battery dataset (always a line on `yAxisID: 'y1'`).
+  - `buildBarConfig(step: number, data: DeviceChartDatasets, deviceName: string): ChartConfiguration<'bar'>` — composes: `type: 'bar'`, `data.datasets = [...buildPowerDatasets(data, 'bar'), buildBatteryDataset(data)]`, `options = { ...buildBaseOptions(step), scales: { x: { ...inherits..., offset: true, bounds: 'ticks' }, y: ..., y1: ... } }`. Sets `aria-label`-bearing wrapper details in the component (not in the helper).
+  - `buildLineConfig(step: number, data: DeviceChartDatasets, deviceName: string): ChartConfiguration<'line'>` — composes: `type: 'line'`, `data.datasets = [...buildPowerDatasets(data, 'line'), buildBatteryDataset(data)]`, `options = { ...buildBaseOptions(step), scales: { x: { ...inherits..., offset: false }, y: ..., y1: ... } }`.
+
+  All five helpers are exported for individual unit testing. Skeleton in this task: helpers exist with stubbed empty datasets/options; per-story phases below populate the per-feature pieces.
+- [ ] T009 [Foundation] In `dashboard/src/components/HistoricalGraph.tsx`: replace the second `useEffect` (currently building uPlot instances) with the Chart.js lifecycle pattern from [research.md §10](research.md): `useRef<HTMLCanvasElement[]>`, a `useRef<Chart[]>` for instances, `getContext('2d')` check that calls `setError('Chart context unavailable')` on null (NFR-006), one `new Chart(ctx, shouldUseBars(step) ? buildBarConfig(...) : buildLineConfig(...))` per device, cleanup destroys all. Replace the `<div data-chart />` per device with `<canvas ref={...} aria-label={...} />`. Keep `.device-chart` wrapper, `<h3>` heading, and `aria-label="... energy chart"` per US-6 / FR-008.
+- [ ] T009a [Foundation] (Red) In `dashboard/tests/component/HistoricalGraph.test.tsx`: add `'surfaces an error when canvas 2D context is unavailable (FR — NFR-006)'`. Stub `HTMLCanvasElement.prototype.getContext` to return `null`, render the component with valid data, assert (a) the error UI shows `'Chart context unavailable'`, (b) `Chart` constructor was NOT called (`capturedConfigs.length === 0`), (c) Application Insights `trackException` is invoked (per quickstart §debugging). Restore the prototype in a try/finally. Must fail initially.
+- [ ] T009b [Foundation] (Green) Confirm T009's `getContext` null-branch wiring satisfies T009a. If trackException is not yet wired, add a minimal call inside the `setError('Chart context unavailable')` path. T009a must pass.
 
 **Checkpoint**: Component compiles, mock harness captures `ChartConfiguration`s, multi-device + lifecycle + loading/empty/error/retry behavior is verified, no `uplot` imports remain in source. Per-story phases can now layer config behavior incrementally.
 
@@ -67,7 +76,7 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 
 ### Implementation for User Story 1 (Green)
 
-- [ ] T014 [US1] In `buildChartConfig` (`dashboard/src/components/HistoricalGraph.tsx`): populate `options.scales.x` per [research.md §1](research.md) — `type: 'time'`, `adapters.date.locale: enUS` (`import { enUS } from 'date-fns/locale'`), the full `displayFormats` map, `tooltipFormat: 'PPpp'`, `ticks: { autoSkip: true, autoSkipPadding: 16, maxRotation: 0, source: 'auto' }`. Tests T011–T013 MUST go green.
+- [ ] T014 [US1] In `buildBaseOptions` (`dashboard/src/components/HistoricalGraph.tsx`): populate `options.scales.x` per [research.md §1](research.md) — `type: 'time'`, `adapters.date.locale: enUS` (`import { enUS } from 'date-fns/locale'`), the full `displayFormats` map, `tooltipFormat: 'PPpp'`, `ticks: { autoSkip: true, autoSkipPadding: 16, maxRotation: 0, source: 'auto' }`. Both `buildBarConfig` and `buildLineConfig` inherit this via `buildBaseOptions(step)` and only override `scales.x.offset` / `bounds` as their type requires (T033). Tests T011–T013 MUST go green for both bar and line passes.
 
 **Checkpoint**: SC-001 covered by mock-level assertion. Live-stack visual verification deferred to Phase 9.
 
@@ -87,8 +96,8 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 
 ### Implementation for User Story 2 (Green)
 
-- [ ] T018 [US2] In `buildChartConfig`: add the three power datasets (Solar / Home Load / Grid) with `type: shouldUseBars(step) ? 'bar' : 'line'`, the colors from the existing `SERIES_COLORS` constants, `yAxisID: 'y'`, `barPercentage: 0.9`, `categoryPercentage: 0.8`, `spanGaps: false`, and the gradient fill for Grid (matching today's look — declare a `backgroundColor` callback receiving the chart context per [research.md §7](research.md)'s `Filler` plugin pattern; for bars use solid `backgroundColor: SERIES_COLORS[i]`). T015 + T016 go green.
-- [ ] T019 [US2] In `buildChartConfig`: add `options.plugins.tooltip.callbacks.title` returning `formatTooltipTimestamp(ms/1000, step)` and `callbacks.label` dispatching on `dataset.label` to `formatWatts` or `formatPercent`. T017 goes green.
+- [ ] T018 [US2] In `buildPowerDatasets` (`dashboard/src/components/HistoricalGraph.tsx`): emit the three power datasets (Solar / Home Load / Grid) with the passed-in `type` (`'bar'` or `'line'`), colors from `SERIES_COLORS`, `yAxisID: 'y'`, `barPercentage: 0.9`, `categoryPercentage: 0.8`, `spanGaps: false`. **Grid gradient policy (Q2 — preserve current uPlot look)**: when `type === 'line'`, Grid uses a vertical gradient `backgroundColor` callback receiving the chart context per [research.md §7](research.md)'s `Filler` plugin pattern, **reusing the exact color stops currently in `HistoricalGraph.tsx`'s uPlot Grid fill** (read them out of the current source, port verbatim); when `type === 'bar'`, Grid uses solid `backgroundColor: SERIES_COLORS.grid`. Solar and Home Load use solid color in both modes. T015 + T016 go green.
+- [ ] T019 [US2] In `buildBaseOptions`: add `options.plugins.tooltip.callbacks.title` returning `formatTooltipTimestamp(ms/1000, step)` and `callbacks.label` dispatching on `dataset.label` to `formatWatts` or `formatPercent`. Both bar and line configs inherit this. T017 goes green.
 
 **Checkpoint**: Bar/line switching and tooltip behavior verified at mock level.
 
@@ -108,8 +117,8 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 
 ### Implementation for User Story 3 (Green)
 
-- [ ] T023 [US3] In `buildChartConfig`: append the Battery dataset (line, `yAxisID: 'y1'`, gradient fill via `Filler` plugin, properties from [research.md §7](research.md)). T020 goes green.
-- [ ] T024 [US3] In `buildChartConfig`: add `options.scales.y` (left, linear, `formatWattsAxis` tick callback, faint grid) and `options.scales.y1` (right, linear, 0..100, `%` tick callback, `grid.drawOnChartArea: false`, green title) per [research.md §6](research.md). T021 + T022 go green.
+- [ ] T023 [US3] In `buildBatteryDataset`: return the Battery line dataset (`type: 'line'`, `yAxisID: 'y1'`, gradient fill via `Filler` plugin, properties from [research.md §7](research.md)). Both `buildBarConfig` and `buildLineConfig` append the result of this helper to their `datasets` array. T020 goes green.
+- [ ] T024 [US3] In `buildBarConfig` and `buildLineConfig`: add `options.scales.y` (left, linear, `formatWattsAxis` tick callback, faint grid) and `options.scales.y1` (right, linear, 0..100, `%` tick callback, `grid.drawOnChartArea: false`, green title) per [research.md §6](research.md). Both configs use identical y/y1 definitions — if duplication grows, extract `buildPowerAxis()` / `buildBatteryAxis()` helpers (defer until needed; YAGNI). T021 + T022 go green.
 
 **Checkpoint**: Dual-axis battery overlay verified.
 
@@ -129,7 +138,7 @@ This migration is a **single-component rewrite** (`HistoricalGraph.tsx`) plus it
 ### Implementation for User Story 4 (Green)
 
 - [ ] T027 [US4] In `dashboard/src/components/HistoricalGraph.tsx`: confirm/preserve the existing 2× step gap-null logic inside `buildDeviceChartData` (already refactored in T007 to emit `{x,y}` objects); ensure null y-values survive the object form. T025 goes green.
-- [ ] T028 [US4] In `buildChartConfig`: confirm `spanGaps: false` is set on every line dataset (Solar/HomeLoad/Grid for `step < 86400`, plus Battery always). T026 goes green.
+- [ ] T028 [US4] In `buildPowerDatasets` and `buildBatteryDataset`: confirm `spanGaps: false` is set on every line dataset (Solar/HomeLoad/Grid when `type === 'line'`, plus Battery always). T026 goes green.
 
 **Checkpoint**: Gap behavior preserved end-to-end.
 
@@ -147,14 +156,14 @@ These three stories share `buildChartConfig` plus the multi-device render loop a
 
 ### Tests (Red)
 
-- [ ] T029 [US5] In `dashboard/tests/component/HistoricalGraph.test.tsx`: add `'legend plugin is enabled and onClick uses Chart.js default toggle behavior (US-5, FR-007)'` — assert `capturedConfigs[0].options.plugins.legend.display === true` and that `plugins.legend.onClick` is either `undefined` (Chart.js default = toggle) or explicitly set to `Chart.defaults.plugins.legend.onClick`.
+- [ ] T029 [US5] In `dashboard/tests/component/HistoricalGraph.test.tsx`: add `'legend plugin is enabled and onClick is left unset for Chart.js default toggle behavior (US-5, FR-007)'` — assert `capturedConfigs[0].options.plugins.legend.display === true` and that `plugins.legend.onClick === undefined` (Chart.js default toggle behavior is reached precisely when this is unset; per Q3 decision we explicitly do NOT set this).
 - [ ] T030 [US6] In `dashboard/tests/component/HistoricalGraph.test.tsx`: extend the existing two-device test (already updated in T005) with an explicit assertion `expect(capturedConfigs.length).toBe(2)` after the `waitFor`, and assert each config's first dataset references that device's data (use device-specific values from `makeRangeResponse` fixtures to discriminate). Covers FR-008.
 - [ ] T031 [US7] In `dashboard/tests/component/HistoricalGraph.test.tsx`: add `'scales.x.offset is true and bounds is ticks when step >= 86400 (US-7, FR-006)'` — set `step: 86400`, assert `scales.x.offset === true` and `scales.x.bounds === 'ticks'`. Add a complementary `'scales.x.offset is false when step < 86400'` for the line case.
 
 ### Implementation (Green)
 
-- [ ] T032 [US5] In `buildChartConfig`: set `options.plugins.legend.display = true` and leave `onClick` unset (Chart.js default toggles dataset visibility, which also affects tooltip per FR-007). T029 goes green.
-- [ ] T033 [US7] In `buildChartConfig`: when `shouldUseBars(step)` is true, set `options.scales.x.offset = true` and `options.scales.x.bounds = 'ticks'`; otherwise both fall back to defaults (`offset: false`, `bounds: 'data'`). T031 goes green.
+- [ ] T032 [US5] In `buildBaseOptions`: set `options.plugins.legend.display = true` and leave `onClick` unset (Chart.js default toggles dataset visibility, which also affects tooltip per FR-007). T029 goes green.
+- [ ] T033 [US7] In `buildBarConfig`: set `options.scales.x.offset = true` and `options.scales.x.bounds = 'ticks'` on top of the inherited base options. `buildLineConfig` leaves these at the Chart.js defaults (`offset: false`, `bounds: 'data'`). T031 goes green.
 - [ ] T034 [US6] No code change required (multi-device loop already implemented in T009). T030 goes green as a verification-only assertion.
 
 **Checkpoint**: All seven user stories verified at the mock-config level.
@@ -178,16 +187,17 @@ These three stories share `buildChartConfig` plus the multi-device render loop a
 
 - [ ] T039 [Verify] Run `cd dashboard && npm run test:coverage`. Both pass criteria MUST hold: (a) all tests green; (b) **100% line coverage** for `dashboard/src/components/HistoricalGraph.tsx` (NFR-001, constitution non-negotiable, SC-005). If any line is uncovered, add a targeted test that invokes that code path before proceeding.
 - [ ] T040 [Verify] Run `cd dashboard && npm run typecheck`. MUST be clean — no `tsc` errors.
-- [ ] T041 [Verify] Run `cd dashboard && npm run build`. Capture the printed asset table. Compute gzipped delta vs. the baseline in [plan.md § Bundle Audit](plan.md): `delta_gzipped = new_index_js_gz + new_index_css_gz − (121.45 + 4.63) KB`. Record raw + gzipped pre/post numbers and the delta in scratch notes (will go into the PR description per T045). NFR-002 / SC-006.
+- [ ] T041 [Verify] Run `cd dashboard && npm run build`. Capture the printed asset table. Compute `delta_gzipped_total = (new_index_js_gz + new_index_css_gz) − (121.45 + 4.63) KB`. Record raw + gzipped pre/post numbers and the delta in scratch notes (will go into the PR description per T045). NFR-002 / SC-006.
+- [ ] T041a [Verify] (NFR-003 render performance) In the running dev server at <http://localhost:5173>, open DevTools Console and time a single 1y-preset chart render: `const t0 = performance.now(); /* trigger preset change to 1y */; await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); const dt = performance.now() - t0; console.log('1y render ms:', dt);`. Assert `dt < 200`. Record the measured ms for the PR description. (Constitution: NFR-003 — 200 ms ceiling on ~400-bucket render.)
 - [ ] T042 [Verify] At <http://localhost:5173> against the persistent local prod-like stack (verified up in T003), visually verify each range preset and capture a screenshot per device per preset (10 screenshots if 2 devices × 5 presets):
   - **1d**: axis shows hours (e.g., `09:00`, `12:00`), three series render as lines, battery on right axis 0–100.
   - **7d**: axis shows day-of-week + day-of-month, three series render as lines (step=3600 < 86400 → lines per FR-001).
   - **30d**: axis shows day-with-month at month boundaries, three series render as **grouped bars** with visible inter-bucket gaps and visible padding from plot edges (US-7).
   - **1y**: axis shows **month + year** (`Jun 2025`, `Sep 2025`, …) — **never** bare day-of-month numbers (US-1 / SC-001 / closes #149). Grouped bars.
   - **Custom (~6 weeks)**: axis auto-picks readable granularity; no label overlap.
-  Verify tooltips show all visible series, legend clicks toggle series without changing the preset, and resizing the window re-flows the charts cleanly. Save screenshots to a local folder (e.g., `/tmp/153-screenshots/`) for upload to the PR.
+  Verify tooltips show all visible series, legend clicks toggle series without changing the preset, and resizing the window re-flows the charts cleanly. **A11y check (NFR-004)**: tab-focus into one legend entry per device chart and press Enter or Space — the corresponding series MUST toggle. Save screenshots to a local folder (e.g., `/tmp/153-screenshots/`) for upload to the PR.
 - [ ] T043 [P] [Verify] Inspect the rendered DOM at <http://localhost:5173>: confirm `<canvas>` elements exist inside each `.device-chart`, no `.uplot` elements remain, and `Chart.getChart(document.querySelector('canvas'))` returns a real Chart instance in the devtools console (proves the Chart.js lifecycle is live, not just compiling).
-- [ ] T044 [P] [Verify] Run `grep -rn uplot dashboard/src dashboard/tests dashboard/package.json dashboard/package-lock.json | grep -v node_modules` — must return **only** transitive lockfile references that have been removed (ideally zero hits). Confirms SC-004.
+- [ ] T044 [P] [Verify] Run `grep -rn uplot dashboard/src dashboard/tests dashboard/package.json dashboard/package-lock.json | grep -v node_modules` — must return **only** transitive lockfile references that have been removed (ideally zero hits). Confirms SC-004. Additionally run `grep -rn react-chartjs-2 dashboard/` — must be empty (FR-011: no React wrapper).
 - [ ] T045 [Verify] Draft the PR description in a scratch file (NOT committed): include the 10 screenshots from T042, the bundle delta table from T041, the line-coverage % from T039, an explicit "Closes #149" and "Closes #153" footer (FR-013 / SC-008), and — IF the gzipped delta exceeds +120 KB — a user-impact summary covering initial-load delta on broadband, cache amortization, and mobile cellular cost (NFR-002).
 
 **Checkpoint**: Ready for `/speckit.analyze`, then implementation kickoff, then PR.

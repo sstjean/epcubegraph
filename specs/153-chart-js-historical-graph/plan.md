@@ -30,7 +30,7 @@ The migration is presentation-only: no API, schema, or data-contract changes. Th
 |---|---|---|
 | I. Simplicity | PASS | Net simpler: Chart.js handles grouped bars, x-padding, tick density, and time labels natively — deletes hand-rolled bar-offset math and `formatAxisDates` dedupe helper. |
 | II. YAGNI | PASS | No speculative features. Only register the Chart.js components actually used (`LineController`, `BarController`, `LineElement`, `PointElement`, `BarElement`, `LinearScale`, `TimeScale`, `Tooltip`, `Legend`, `Filler`). No `react-chartjs-2` wrapper. |
-| III. Single Responsibility | PASS | Refactor preserves the existing split: pure data helpers (`buildDeviceChartData`, `shouldUseBars`, `getAggregationLabel`, `formatTooltipTimestamp`) stay independently testable. New tiny helper `buildChartConfig(step, datasetData, deviceName) → ChartConfiguration` extracted so the test can assert config shape without invoking the (mocked) constructor. |
+| III. Single Responsibility | PASS | Refactor preserves the existing split: pure data helpers (`buildDeviceChartData`, `shouldUseBars`, `getAggregationLabel`, `formatTooltipTimestamp`) stay independently testable. New SRP+DRY helper set: `buildBaseOptions(step)`, `buildPowerDatasets(data, type)`, `buildBatteryDataset(data)`, `buildBarConfig(step, data, name)`, `buildLineConfig(step, data, name)` — each does one thing; shared concerns extracted into helpers per the user's design rule (SRP ≠ duplication). |
 | IV. TDD (NON-NEGOTIABLE) | PASS | TDD enforced in tasks phase: each behavior test rewritten (Red) before the corresponding Chart.js config wired up (Green). 100% line coverage required by CI. |
 | Local type-check parity | PASS | `npm run typecheck` already runs `tsc --noEmit`; Chart.js ships first-class TS types. |
 | Platform constraints | PASS | Frontend-only; no Azure surface affected. |
@@ -95,7 +95,7 @@ dashboard/
 ├── package.json                                # Add chart.js + chartjs-adapter-date-fns + date-fns; remove uplot
 ├── src/
 │   ├── components/
-│   │   └── HistoricalGraph.tsx                 # REWRITTEN — Chart.js lifecycle, buildChartConfig helper
+│   │   └── HistoricalGraph.tsx                 # REWRITTEN — Chart.js lifecycle, buildBarConfig + buildLineConfig + shared helpers
 │   └── app.css                                 # Remove .uplot-* rules; .chart-tooltip rules retained (classname stable)
 └── tests/
     └── component/
@@ -104,7 +104,7 @@ dashboard/
 
 No other dashboard file references `uplot` — verified by `grep -r uplot dashboard/src dashboard/tests`; only the three touch points above appear.
 
-**Structure Decision**: The dashboard already follows a flat `src/components` / `tests/component` layout. No new directories. Pure data helpers stay co-located in `HistoricalGraph.tsx` (existing pattern) and remain individually `export`ed for unit testing. The new pure helper `buildChartConfig(step, datasetData, deviceName): ChartConfiguration<'bar' | 'line'>` is added in the same file so the test can assert config shape without driving a (mocked) `Chart` constructor.
+**Structure Decision**: The dashboard already follows a flat `src/components` / `tests/component` layout. No new directories. Pure data helpers stay co-located in `HistoricalGraph.tsx` (existing pattern) and remain individually `export`ed for unit testing. Two new SRP-aligned config builders are added in the same file — `buildBarConfig(step, data, name): ChartConfiguration<'bar'>` and `buildLineConfig(step, data, name): ChartConfiguration<'line'>` — each composing shared helpers (`buildBaseOptions`, `buildPowerDatasets(type)`, `buildBatteryDataset`) so the test can assert config shape per-chart-type without driving a (mocked) `Chart` constructor.
 
 ## Phase 0 — Outline & Research
 
@@ -129,13 +129,13 @@ See [research.md](research.md). All NEEDS CLARIFICATION items are resolved there
 
 1. **Data model** — N/A (see Project Structure note). Runtime types continue to use `RangeReadingsResponse` / `TimeSeries` from `dashboard/src/types.ts` unchanged.
 
-2. **Interface contracts** — N/A. No external interface changes. The only "contract" introduced is the Chart.js `ChartConfiguration` object shape returned by the new `buildChartConfig` helper, which is exercised directly by the test file (assert on captured config) rather than a separate contract artifact. The contract surface a developer needs is documented in [research.md](research.md) and [quickstart.md](quickstart.md).
+2. **Interface contracts** — N/A. No external interface changes. The only "contract" introduced is the Chart.js `ChartConfiguration<'bar'>` / `ChartConfiguration<'line'>` shapes returned by `buildBarConfig` / `buildLineConfig`, exercised directly by the test file (assert on captured config) rather than a separate contract artifact. The contract surface a developer needs is documented in [research.md](research.md) and [quickstart.md](quickstart.md).
 
 3. **Quickstart** — see [quickstart.md](quickstart.md). Covers: where Chart.js is registered, how to add or modify a series, how to enable/disable a Chart.js plugin, how to debug rendering issues, and how to re-run the bundle-size measurement.
 
 4. **Agent context update** — run `.specify/scripts/bash/update-agent-context.sh copilot` to record `chart.js` / `chartjs-adapter-date-fns` / `date-fns` in `.github/copilot-instructions.md` Active Technologies.
 
-**Re-evaluated Constitution Check (post-design)**: still PASS on all gates. No new abstractions introduced; the one new helper (`buildChartConfig`) is a pure config-shape function justified by SRP (separates config construction from `new Chart(...)` invocation so the test can assert shape directly).
+**Re-evaluated Constitution Check (post-design)**: still PASS on all gates. No new abstractions introduced; the SRP-split config builders (`buildBarConfig`, `buildLineConfig`) with shared helpers (`buildBaseOptions`, `buildPowerDatasets`, `buildBatteryDataset`) are pure functions justified by SRP+DRY (each builder does one chart type; common code is extracted, not duplicated).
 
 ## Complexity Tracking
 

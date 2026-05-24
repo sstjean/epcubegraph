@@ -30,11 +30,11 @@ Do **not** switch to `import { Chart } from 'chart.js/auto'`. That auto-register
 
 ## How to add or modify a series
 
-A series corresponds to a Chart.js `dataset`. All datasets are built inside `buildChartConfig(step, deviceData, deviceName)`. To add a new series:
+A series corresponds to a Chart.js `dataset`. Power datasets (Solar / Home Load / Grid) are built inside `buildPowerDatasets(data, type)`; the Battery overlay is built inside `buildBatteryDataset(data)`. Both are composed by `buildBarConfig` and `buildLineConfig` (which select the chart type based on `shouldUseBars(step)`). To add a new series:
 
 1. Add the metric to the parallel fetches inside the data `useEffect` (mirror `solar` / `homeLoad` / `grid` / `batterySoc`).
 2. Extend `buildDeviceChartData` so the new metric becomes another `{x, y}[]` array in the returned shape.
-3. In `buildChartConfig`, append a new entry to `datasets`:
+3. In the relevant helper (`buildPowerDatasets` for a watts-series on the left y-axis, `buildBatteryDataset` for a percent-series on the right y-axis, or a new helper if neither fits), append a new entry to the returned `datasets` array:
 
 ```ts
 {
@@ -53,7 +53,7 @@ A series corresponds to a Chart.js `dataset`. All datasets are built inside `bui
 
 4. Update `tests/component/HistoricalGraph.test.tsx`: the captured `ChartConfiguration` will now have one more dataset — assert label/`yAxisID`/`type` and add a fixture entry to the mocked range responses.
 
-To modify an existing series (color, axis assignment, gradient fill, etc.), edit the entry directly in `buildChartConfig`. The grouped-bar geometry is controlled by `barPercentage` × `categoryPercentage`; the time-axis label format by `scales.x.time.displayFormats[unit]`.
+To modify an existing series (color, axis assignment, gradient fill, etc.), edit the entry directly in `buildPowerDatasets` or `buildBatteryDataset`. The grouped-bar geometry is controlled by `barPercentage` × `categoryPercentage` (in `buildPowerDatasets` when `type === 'bar'`); the time-axis label format by `scales.x.time.displayFormats[unit]` (in `buildBaseOptions`).
 
 ## How to debug rendering issues
 
