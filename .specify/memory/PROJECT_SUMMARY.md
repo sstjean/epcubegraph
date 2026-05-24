@@ -1,16 +1,36 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-19
+**Last Updated**: 2026-05-23
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main` (working tree clean)
-**Last merged**: PR #138 — docs: post-Feature-124-merge cleanup (merged 2026-05-18)
-**Open PR**: #141 — fix(dashboard): break MSAL monitor_window_timeout auth loop
+**Last merged**: PR #151 — chore: drop iPhone/iPad feature specs (#5, #6 closed)
+**Active handoff**: see `.specify/memory/SESSION_HANDOFF.md` for in-flight work
+(Chart.js migration to replace uPlot in `HistoricalGraph.tsx`, supersedes #149).
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## ⚡ Current State (2026-05-17)
+## Recent sessions (2026-05-23)
+
+- PR #150 merged — issue #66 calendar picker affordance, deployed to staging cleanly
+- PR #151 merged — dropped specs 003 (iPhone app) and 004 (iPad app); closed #5, #6
+- Cleaned up local + remote branches; only `origin/main` plus active work branches
+- Dispatched staging-destroy workflow to remove vestigial staging env
+- **Issue #149 attempted but pivoted**: uPlot proved too limited for grouped
+  bars + x-axis padding + month/year tick labels. Decision: swap uPlot for
+  Chart.js. Branch `149-axis-month-year-labels` abandoned; WIP stashed.
+  See `SESSION_HANDOFF.md` for the full plan.
+
+## Open issues
+
+- **#149** — historical graph axis labels (will be closed by Chart.js PR)
+- **#115** — Separate Application Insights per environment
+- **#52**  — Port epcube-exporter from Python to C# (low priority)
+
+---
+
+## ⚡ Prior State (2026-05-17)
 
 ### Feature 124: Device Discovery (SHIPPED ✅)
 Merged via PR #137 and deployed to production 2026-05-17. End-to-end behaviour validated
