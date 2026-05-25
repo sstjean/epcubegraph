@@ -25,8 +25,7 @@
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^4.3.0",
     "preact": "^10.25.0",
-    "preact-router": "^4.1.2",
-    "uplot": "^1.6.31"
+    "preact-router": "^4.1.2"
   },
   "devDependencies": {
     "@preact/preset-vite": "~2.9.4",

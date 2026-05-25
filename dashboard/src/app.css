@@ -775,6 +775,14 @@ section > h2 {
   margin: 0 0 0.5rem 0;
 }
 
+/* Fixed-height wrapper required by Chart.js when maintainAspectRatio: false,
+ * otherwise the ResizeObserver loop continuously grows the canvas height. */
+.device-chart-canvas {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+
 .chart-tooltip {
   position: absolute;
   z-index: 10;
@@ -892,15 +900,6 @@ section > h2 {
   font-size: 0.85rem;
   color: var(--text-muted);
   padding: 0.5rem 0;
-}
-
-/* uPlot legend — clickable series toggle */
-.uplot .u-legend .u-label {
-  cursor: pointer;
-}
-
-.uplot .u-legend .u-label:hover {
-  text-decoration: underline;
 }
 
 /* Settings Page */

@@ -59,3 +59,13 @@ PHILLIP-RULES.md
 # Python coverage
 .coverage
 *.coverage
+
+# Playwright MCP scratch
+.playwright-mcp/
+
+# Visual-verification scratch (kept out of git; generate on demand with
+# scripts/inspect-swatch.py + scripts/dump-swatch.py)
+verify-*.png
+swatch-*.png
+strip-*.png
+legend*-zoom.png
