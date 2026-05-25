@@ -1,15 +1,39 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-23
+**Last Updated**: 2026-05-24
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `main` (working tree clean)
+**Branch**: `153-chart-js-historical-graph` (PR #161 open, awaiting review + CI)
 **Last merged**: PR #151 — chore: drop iPhone/iPad feature specs (#5, #6 closed)
-**Active handoff**: see `.specify/memory/SESSION_HANDOFF.md` for in-flight work
-(Chart.js migration to replace uPlot in `HistoricalGraph.tsx`, supersedes #149).
+**Active PR**: #161 (closes #149 + #153) — Chart.js migration of `HistoricalGraph.tsx`
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
+
+## Recent sessions (2026-05-24)
+
+- **PR #161 opened** (`153-chart-js-historical-graph`): Chart.js 4.5 replaces
+  uPlot in `HistoricalGraph.tsx` and `HistoryView.tsx`. Phases 2-8 of the spec
+  complete plus visual/UX polish discovered during Playwright verification:
+  - `getTimeUnit(step)` decouples tick granularity from data density:
+    hour/day/month picked from API aggregation step (closes #149).
+  - `shouldShowBattery(step)` keeps SoC overlay on line views only.
+  - Per-bar grid coloring by sign (red pull / green export); border color
+    matches fill.
+  - Diagonal red/green legend swatch (`createGridSplitSwatch` via
+    `legend.pointStyle`) so the swatch reflects per-bar coloring without the
+    `CanvasPattern` tile-seam artifact.
+  - Display timezone pinned to `America/New_York` via explicit
+    `ticks.callback` (`formatAxisTick`) and `formatTooltipTimestamp` —
+    `chartjs-adapter-date-fns` has no native TZ support.
+- New tooling: `scripts/inspect-swatch.py` and `scripts/dump-swatch.py`
+  (Pillow) — crop/zoom + ASCII-dump a Chart.js legend swatch from a
+  `verify-*.png` to verify pixel-accurate colors/orientation.
+- Verification: typecheck clean, 36 test files, 100% coverage on all metrics,
+  Playwright Chrome sweep of 1d/7d/30d/1y presets.
+- New memory rule (`/memories/end-to-end-verification.md`): always dump
+  pixels before describing visual output — never describe what I *intended*
+  to draw.
 
 ## Recent sessions (2026-05-23)
 
@@ -21,6 +45,13 @@
   bars + x-axis padding + month/year tick labels. Decision: swap uPlot for
   Chart.js. Branch `149-axis-month-year-labels` abandoned; WIP stashed.
   See `SESSION_HANDOFF.md` for the full plan.
+
+## What's Next
+
+1. Check PR #161 status (CI rollup, Copilot/human review notes) at next start-up.
+2. Address review feedback or merge if green.
+3. After merge: delete `153-chart-js-historical-graph` branch (local + remote),
+   confirm #149 + #153 auto-close, check for any vestigial staging envs.
 
 ## Open issues
 
