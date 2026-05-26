@@ -17,6 +17,7 @@ import type {
   ChartConfiguration,
   ChartDataset,
   ChartOptions,
+  Plugin,
   ScriptableContext,
   TooltipItem,
 } from 'chart.js';
@@ -43,6 +44,151 @@ Chart.register(
   Filler,
   Decimation,
 );
+
+/**
+ * Chart.js plugin that mirrors the chart's legend into a sibling HTML
+ * `<ul data-chart-legend>` inside the same `.device-chart` container. The
+ * native Chart.js legend renders inside the canvas and is therefore not
+ * keyboard-reachable; NFR-004 requires tab focus + Enter/Space activation,
+ * so we hide the canvas legend (`plugins.legend.display = false` in
+ * `buildBaseOptions`) and render real `<button role="switch">` elements
+ * instead. The buttons reuse the chart's `generateLabels` (so the diagonal
+ * red/green Grid swatch on bar views still appears via `pointStyle`
+ * canvases, surfaced here as `<img>` `data:` URLs).
+ */
+export const htmlLegendPlugin: Plugin = {
+  id: 'htmlLegend',
+  afterUpdate(chart) {
+    renderHtmlLegend(chart);
+  },
+};
+
+/** Find the `<ul data-chart-legend>` for the given chart (sibling of the
+ *  chart canvas inside `.device-chart`). Exported for testing. */
+export function findLegendContainer(chart: Chart): HTMLUListElement | null {
+  const canvas = chart.canvas as HTMLCanvasElement | null;
+  if (!canvas) return null;
+  const root = canvas.closest('.device-chart') ?? canvas.parentElement?.parentElement ?? null;
+  if (!root) return null;
+  return root.querySelector('[data-chart-legend]') as HTMLUListElement | null;
+}
+
+/** Build legend items directly from `chart.data.datasets` when no
+ *  `generateLabels` override is configured. One item per dataset; the
+ *  swatch color comes from the dataset's `borderColor` if it's a string
+ *  (the scriptable functions used by bar configs are bypassed here \u2014
+ *  bar configs always go through `generateLabels` anyway). Exported for
+ *  testing. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function defaultLegendItems(chart: Chart): Array<any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const datasets = (chart.data?.datasets ?? []) as Array<any>;
+  return datasets.map((ds, i) => {
+    const colorCandidate =
+      typeof ds.borderColor === 'string' ? ds.borderColor :
+      typeof ds.backgroundColor === 'string' ? ds.backgroundColor :
+      undefined;
+    return {
+      text: ds.label ?? `Series ${i + 1}`,
+      fillStyle: colorCandidate,
+      strokeStyle: colorCandidate,
+      datasetIndex: i,
+      hidden: typeof chart.isDatasetVisible === 'function' ? !chart.isDatasetVisible(i) : false,
+    };
+  });
+}
+
+/** Populate (or refresh) the HTML legend `<ul>` for `chart`. Exported so
+ *  the plugin behavior can be unit-tested without a real Chart.js lifecycle. */
+export function renderHtmlLegend(chart: Chart): void {
+  const legendEl = findLegendContainer(chart);
+  if (!legendEl) return;
+
+  // Bar configs override `legend.labels.generateLabels` to install the
+  // per-bar red/green diagonal Grid swatch. Read that override from the raw
+  // user config (`chart.config._config`) rather than `chart.options`, which
+  // is a resolver-backed proxy that can throw on incomplete state when the
+  // canvas legend is hidden (display:false). For line configs that don't
+  // override `generateLabels`, fall back to building items directly from
+  // `chart.data.datasets` so the HTML legend still renders.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cfg = (chart as any).config;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawOptions = (cfg && (cfg._config?.options ?? cfg.options)) as any;
+  const generateLabels = rawOptions?.plugins?.legend?.labels?.generateLabels;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let items: Array<any>;
+  if (typeof generateLabels === 'function') {
+    try {
+      items = generateLabels(chart);
+    } catch {
+      items = defaultLegendItems(chart);
+    }
+  } else {
+    items = defaultLegendItems(chart);
+  }
+  if (!Array.isArray(items)) return;
+
+  // Preserve focus across rebuild so keyboard users don't get bumped.
+  const active = document.activeElement;
+  const oldButtons = legendEl.querySelectorAll('button');
+  let focusedIndex = -1;
+  for (let i = 0; i < oldButtons.length; i++) {
+    if (oldButtons[i] === active) { focusedIndex = i; break; }
+  }
+
+  legendEl.replaceChildren();
+
+  items.forEach((item, idx) => {
+    const li = document.createElement('li');
+    li.className = 'chart-legend-row';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chart-legend-item';
+    button.setAttribute('role', 'switch');
+    button.setAttribute('aria-checked', item.hidden ? 'false' : 'true');
+    if (item.hidden) button.classList.add('chart-legend-item--hidden');
+
+    const swatch = document.createElement('span');
+    swatch.className = 'chart-legend-swatch';
+    swatch.setAttribute('aria-hidden', 'true');
+    if (item.pointStyle instanceof HTMLCanvasElement) {
+      try {
+        const img = document.createElement('img');
+        img.src = item.pointStyle.toDataURL();
+        img.alt = '';
+        swatch.appendChild(img);
+      } catch {
+        swatch.style.backgroundColor = String(item.fillStyle ?? 'transparent');
+      }
+    } else {
+      swatch.style.backgroundColor = String(item.fillStyle ?? 'transparent');
+    }
+
+    const label = document.createElement('span');
+    label.className = 'chart-legend-label';
+    label.textContent = item.text ?? '';
+
+    button.appendChild(swatch);
+    button.appendChild(label);
+
+    button.addEventListener('click', () => {
+      const datasetIndex = item.datasetIndex;
+      if (datasetIndex == null) return;
+      const visible = chart.isDatasetVisible(datasetIndex);
+      chart.setDatasetVisibility(datasetIndex, !visible);
+      chart.update();
+    });
+
+    li.appendChild(button);
+    legendEl.appendChild(li);
+
+    if (idx === focusedIndex) button.focus();
+  });
+}
+
+Chart.register(htmlLegendPlugin);
 
 interface HistoricalGraphProps {
   timeRange: TimeRangeValue;
@@ -224,12 +370,14 @@ export function gridBarBackgroundColor(context: ScriptableContext<'bar'>): strin
   return y != null && y < 0 ? SERIES_COLORS.gridExport : SERIES_COLORS.grid;
 }
 
-/** Build a small HTMLCanvasElement with a diagonal split (red top-right,
- *  green bottom-left) used as the legend `pointStyle` for the Grid dataset
- *  on bar views, signalling that bars are colored per-bar by sign. Returns
- *  the canvas (or null if 2D context unavailable). Using pointStyle avoids
- *  the CanvasPattern tile-alignment artifact that shows a seam across the
- *  swatch. */
+/** Build a small HTMLCanvasElement with a diagonal split — green in the
+ *  top-left triangle (grid export / negative y) and red in the bottom-right
+ *  triangle (grid pull / positive y), with the split running from the
+ *  upper-right corner to the lower-left corner. Used as the legend
+ *  `pointStyle` for the Grid dataset on bar views, signalling that bars are
+ *  colored per-bar by sign. Returns the canvas (or null if 2D context
+ *  unavailable). Using pointStyle avoids the CanvasPattern tile-alignment
+ *  artifact that shows a seam across the swatch. */
 export function createGridSplitSwatch(size = 14): HTMLCanvasElement | null {
   const canvas = document.createElement('canvas');
   canvas.width = size;
@@ -325,7 +473,13 @@ export function buildBaseOptions(step: number): ChartOptions {
         samples: 500,
       },
       legend: {
-        display: true,
+        // Canvas legend is hidden — NFR-004 requires keyboard-activatable
+        // entries, which Chart.js' canvas-rendered legend cannot provide. The
+        // `htmlLegendPlugin` (registered at module init) mirrors this config
+        // into a sibling `<ul data-chart-legend>` with real `<button>`s, and
+        // reads `labels.generateLabels` from here to keep the per-bar Grid
+        // diagonal swatch.
+        display: false,
         labels: { color: '#e2e8f0', boxWidth: 12, padding: 12 },
       },
       tooltip: {
@@ -470,7 +624,6 @@ function buildBatteryAxis(): any {
 export function buildBarConfig(
   step: number,
   data: DeviceChartDatasets,
-  deviceName: string,
 ): ChartConfiguration<'bar'> {
   const base = buildBaseOptions(step);
   const baseScales = base.scales as Record<string, unknown>;
@@ -504,8 +657,29 @@ export function buildBarConfig(
           // Render the Grid swatch as a red/green diagonal-split image so it
           // signals that bars are colored per-bar by sign. Other entries get
           // a solid square canvas to keep the visual style consistent.
+          //
+          // We build items directly from `chart.data.datasets` rather than
+          // delegating to `Chart.defaults.plugins.legend.labels.generateLabels`,
+          // because the default implementation reads `chart.legend.options`
+          // and resolves scriptable dataset colors (e.g., our
+          // `gridLineGradient`). When the canvas legend is hidden
+          // (`display: false`) the legend may not be initialized and that
+          // resolution path throws. Building items ourselves bypasses the
+          // resolver entirely \u2014 we know our schema (Solar / Home Load /
+          // Grid / Battery %) and which datasets back each item.
           generateLabels: (chart: Chart) => {
-            const items = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const datasets = ((chart as any).data?.datasets ?? []) as Array<any>;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const items: Array<any> = datasets.map((ds, i) => ({
+              text: ds.label,
+              fillStyle: typeof ds.backgroundColor === 'string' ? ds.backgroundColor : undefined,
+              strokeStyle: typeof ds.borderColor === 'string' ? ds.borderColor : undefined,
+              datasetIndex: i,
+              hidden: typeof chart.isDatasetVisible === 'function'
+                ? !chart.isDatasetVisible(i)
+                : false,
+            }));
             for (const item of items) {
               switch (item.text) {
                 case 'Grid':
@@ -537,15 +711,12 @@ export function buildBarConfig(
       ] as ChartDataset<'bar'>[],
     },
     options,
-    // @ts-expect-error — custom marker, not part of Chart.js types
-    _deviceName: deviceName,
   };
 }
 
 export function buildLineConfig(
   step: number,
   data: DeviceChartDatasets,
-  deviceName: string,
 ): ChartConfiguration<'line'> {
   const base = buildBaseOptions(step);
   const baseScales = base.scales as Record<string, unknown>;
@@ -567,8 +738,6 @@ export function buildLineConfig(
       ] as ChartDataset<'line'>[],
     },
     options,
-    // @ts-expect-error — custom marker
-    _deviceName: deviceName,
   };
 }
 
@@ -666,8 +835,8 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
         return;
       }
       const config = useBars
-        ? buildBarConfig(timeRange.step, chart.data, chart.name)
-        : buildLineConfig(timeRange.step, chart.data, chart.name);
+        ? buildBarConfig(timeRange.step, chart.data)
+        : buildLineConfig(timeRange.step, chart.data);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const instance = new Chart(ctx, config as any);
       chartRefs.current.push(instance);
@@ -704,6 +873,12 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
                 aria-label={`${chart.name} energy chart canvas`}
               />
             </div>
+            <ul
+              class="chart-html-legend"
+              data-chart-legend
+              role="list"
+              aria-label={`${chart.name} chart legend`}
+            />
           </div>
         ))}
       </div>

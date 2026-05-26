@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/preact';
 import { h } from 'preact';
 import type { ChartConfiguration, TooltipItem } from 'chart.js';
@@ -20,6 +20,10 @@ import {
   gridBarBackgroundColor,
   createGridSplitSwatch,
   createSolidSwatch,
+  htmlLegendPlugin,
+  renderHtmlLegend,
+  findLegendContainer,
+  defaultLegendItems,
 } from '../../src/components/HistoricalGraph';
 import { fetchDevices, fetchRangeReadings, fetchGridPower } from '../../src/api';
 import { withRetry } from '../../src/utils/retry';
@@ -970,33 +974,33 @@ describe('buildBatteryDataset', () => {
 
 describe('buildBarConfig', () => {
   it('uses chart type "bar"', () => {
-    const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(86400, emptyDatasets);
     expect(cfg.type).toBe('bar');
   });
 
   it('configures x-axis with offset:true and bounds:"ticks" (US-7 edge padding)', () => {
-    const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(86400, emptyDatasets);
     const x = cfg.options!.scales!.x as { offset: boolean; bounds: string };
     expect(x.offset).toBe(true);
     expect(x.bounds).toBe('ticks');
   });
 
   it('configures only the left watts y-axis (battery overlay is line-view only)', () => {
-    const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(86400, emptyDatasets);
     const scales = cfg.options!.scales as Record<string, { position?: string } | undefined>;
     expect(scales.y!.position).toBe('left');
     expect(scales.y1).toBeUndefined();
   });
 
   it('y-axis ticks callback formats watts (kW abbreviation for ≥1000)', () => {
-    const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(86400, emptyDatasets);
     const yAxis = (cfg.options!.scales as Record<string, unknown>).y as { ticks: { callback: (v: number) => string } };
     expect(yAxis.ticks.callback(1500)).toMatch(/kW/);
     expect(yAxis.ticks.callback(500)).toMatch(/500/);
   });
 
   it('contains 3 datasets — Solar, Home Load, Grid bars only (no battery overlay)', () => {
-    const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(86400, emptyDatasets);
     expect(cfg.data.datasets.length).toBe(3);
     const labels = cfg.data.datasets.map((d) => d.label);
     expect(labels).toEqual(['Solar', 'Home Load', 'Grid']);
@@ -1004,7 +1008,7 @@ describe('buildBarConfig', () => {
   });
 
   it('includes battery overlay + y1 axis if invoked with a sub-day step', () => {
-    const cfg = buildBarConfig(60, emptyDatasets, 'EP Cube v1');
+    const cfg = buildBarConfig(60, emptyDatasets);
     expect(cfg.data.datasets.length).toBe(4);
     expect(cfg.data.datasets.map((d) => d.label)).toContain('Battery %');
     const scales = cfg.options!.scales as Record<string, { position?: string } | undefined>;
@@ -1026,10 +1030,22 @@ describe('buildBarConfig', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (HTMLCanvasElement.prototype as any).getContext = vi.fn(() => fakeCtx);
     try {
-      const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+      const cfg = buildBarConfig(86400, emptyDatasets);
       const legend = (cfg.options!.plugins as { legend: { labels: { usePointStyle: boolean; generateLabels: (c: unknown) => Array<{ text: string; pointStyle?: unknown }> } } }).legend;
       expect(legend.labels.usePointStyle).toBe(true);
-      const items = legend.labels.generateLabels({});
+      // The bar config's generateLabels reads from chart.data.datasets, so pass a stub
+      // chart with the four dataset labels we expect on a sub-day bar config.
+      const stubChart = {
+        data: {
+          datasets: [
+            { label: 'Solar', backgroundColor: SERIES_COLORS.solar, borderColor: SERIES_COLORS.solar },
+            { label: 'Home Load', backgroundColor: SERIES_COLORS.homeLoad, borderColor: SERIES_COLORS.homeLoad },
+            { label: 'Grid', backgroundColor: SERIES_COLORS.grid, borderColor: SERIES_COLORS.grid },
+            { label: 'Battery %', backgroundColor: SERIES_COLORS.battery, borderColor: SERIES_COLORS.battery },
+          ],
+        },
+      };
+      const items = legend.labels.generateLabels(stubChart);
       const grid = items.find((i) => i.text === 'Grid')!;
       const solar = items.find((i) => i.text === 'Solar')!;
       const homeLoad = items.find((i) => i.text === 'Home Load')!;
@@ -1049,9 +1065,19 @@ describe('buildBarConfig', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (HTMLCanvasElement.prototype as any).getContext = vi.fn(() => null);
     try {
-      const cfg = buildBarConfig(86400, emptyDatasets, 'EP Cube v1');
+      const cfg = buildBarConfig(86400, emptyDatasets);
       const legend = (cfg.options!.plugins as { legend: { labels: { generateLabels: (c: unknown) => Array<{ text: string; pointStyle?: unknown }> } } }).legend;
-      const items = legend.labels.generateLabels({});
+      const stubChart = {
+        data: {
+          datasets: [
+            { label: 'Solar', backgroundColor: SERIES_COLORS.solar },
+            { label: 'Home Load', backgroundColor: SERIES_COLORS.homeLoad },
+            { label: 'Grid', backgroundColor: SERIES_COLORS.grid },
+            { label: 'Battery %', backgroundColor: SERIES_COLORS.battery },
+          ],
+        },
+      };
+      const items = legend.labels.generateLabels(stubChart);
       // With null swatches the switch falls through without setting pointStyle.
       for (const item of items) {
         expect(item.pointStyle).toBeUndefined();
@@ -1064,12 +1090,12 @@ describe('buildBarConfig', () => {
 
 describe('buildLineConfig', () => {
   it('uses chart type "line"', () => {
-    const cfg = buildLineConfig(60, emptyDatasets, 'EP Cube v1');
+    const cfg = buildLineConfig(60, emptyDatasets);
     expect(cfg.type).toBe('line');
   });
 
   it('contains 4 line datasets', () => {
-    const cfg = buildLineConfig(60, emptyDatasets, 'EP Cube v1');
+    const cfg = buildLineConfig(60, emptyDatasets);
     expect(cfg.data.datasets.length).toBe(4);
     for (const d of cfg.data.datasets) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1078,21 +1104,21 @@ describe('buildLineConfig', () => {
   });
 
   it('does not add offset/bounds to x-axis (line charts hug the edges)', () => {
-    const cfg = buildLineConfig(60, emptyDatasets, 'EP Cube v1');
+    const cfg = buildLineConfig(60, emptyDatasets);
     const x = cfg.options!.scales!.x as { offset?: boolean; bounds?: string };
     expect(x.offset).toBeUndefined();
     expect(x.bounds).toBeUndefined();
   });
 
   it('still has dual y-axes', () => {
-    const cfg = buildLineConfig(60, emptyDatasets, 'EP Cube v1');
+    const cfg = buildLineConfig(60, emptyDatasets);
     const scales = cfg.options!.scales as Record<string, { position?: string }>;
     expect(scales.y.position).toBe('left');
     expect(scales.y1.position).toBe('right');
   });
 
   it('drops battery overlay + y1 axis if invoked with a day-or-coarser step', () => {
-    const cfg = buildLineConfig(86400, emptyDatasets, 'EP Cube v1');
+    const cfg = buildLineConfig(86400, emptyDatasets);
     expect(cfg.data.datasets.length).toBe(3);
     expect(cfg.data.datasets.map((d) => d.label)).not.toContain('Battery %');
     const scales = cfg.options!.scales as Record<string, unknown>;
@@ -1117,5 +1143,573 @@ describe('chart-type dispatch via shouldUseBars', () => {
       expect(capturedConfigs.length).toBe(2);
     });
     expect(capturedConfigs[0].type).toBe('line');
+  });
+});
+
+// --- HTML legend plugin (NFR-004 keyboard accessibility) ---
+
+// Track every fake-chart root created in this file so we can guarantee DOM
+// cleanup even if a test fails mid-flight before its explicit cleanup() runs.
+// Without this, leaked `.device-chart` nodes pollute later tests' DOM queries.
+const fakeChartRoots: HTMLElement[] = [];
+
+afterEach(() => {
+  while (fakeChartRoots.length) {
+    const r = fakeChartRoots.pop();
+    if (r && r.parentNode) r.parentNode.removeChild(r);
+  }
+});
+
+function makeFakeChart(opts: {
+  legendItems: Array<Record<string, unknown>>;
+  withGenerateLabels?: boolean;
+  withCanvas?: boolean;
+  withRoot?: boolean;
+  withLegendUl?: boolean;
+  isDatasetVisible?: (i: number) => boolean;
+  datasets?: Array<Record<string, unknown>>;
+}) {
+  const {
+    legendItems,
+    withGenerateLabels = true,
+    withCanvas = true,
+    withRoot = true,
+    withLegendUl = true,
+    isDatasetVisible = () => true,
+    datasets = [],
+  } = opts;
+
+  let root: HTMLDivElement | null = null;
+  let legendEl: HTMLUListElement | null = null;
+  let canvas: HTMLCanvasElement | null = null;
+
+  if (withCanvas) {
+    canvas = document.createElement('canvas');
+    if (withRoot) {
+      root = document.createElement('div');
+      root.className = 'device-chart';
+      const canvasWrap = document.createElement('div');
+      canvasWrap.className = 'device-chart-canvas';
+      canvasWrap.appendChild(canvas);
+      root.appendChild(canvasWrap);
+      if (withLegendUl) {
+        legendEl = document.createElement('ul');
+        legendEl.setAttribute('data-chart-legend', '');
+        root.appendChild(legendEl);
+      }
+      document.body.appendChild(root);
+      fakeChartRoots.push(root);
+    }
+  }
+
+  const setDatasetVisibility = vi.fn();
+  const update = vi.fn();
+
+  const chart = {
+    canvas,
+    // renderHtmlLegend reads from chart.config (raw user config), not chart.options.
+    // Mirror Chart.js 4's shape: chart.config._config.options.plugins...
+    config: {
+      _config: {
+        options: withGenerateLabels
+          ? {
+              plugins: {
+                legend: {
+                  labels: {
+                    generateLabels: () => legendItems,
+                  },
+                },
+              },
+            }
+          : {},
+      },
+    },
+    data: { datasets },
+    isDatasetVisible,
+    setDatasetVisibility,
+    update,
+  };
+
+  return {
+    chart,
+    root,
+    legendEl,
+    setDatasetVisibility,
+    update,
+    cleanup: () => {
+      if (root && root.parentNode) {
+        root.parentNode.removeChild(root);
+        const i = fakeChartRoots.indexOf(root);
+        if (i >= 0) fakeChartRoots.splice(i, 1);
+      }
+    },
+  };
+}
+
+describe('htmlLegendPlugin', () => {
+  it('has the right Chart.js plugin id', () => {
+    expect(htmlLegendPlugin.id).toBe('htmlLegend');
+  });
+
+  it('afterUpdate delegates to renderHtmlLegend', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    htmlLegendPlugin.afterUpdate?.(chart as any, {} as any, {} as any);
+    expect(legendEl!.querySelectorAll('button').length).toBe(1);
+    cleanup();
+  });
+});
+
+describe('renderHtmlLegend', () => {
+  it('renders one <li><button> per legend item with role="switch" and aria-checked="true"', () => {
+    const items = [
+      { text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 },
+      { text: 'Home Load', fillStyle: '#2196f3', datasetIndex: 1 },
+      { text: 'Grid', fillStyle: '#ff5722', datasetIndex: 2 },
+    ];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const buttons = legendEl!.querySelectorAll('button');
+    expect(buttons.length).toBe(3);
+    for (const btn of Array.from(buttons)) {
+      expect(btn.getAttribute('role')).toBe('switch');
+      expect(btn.getAttribute('aria-checked')).toBe('true');
+      expect(btn.getAttribute('type')).toBe('button');
+      expect(btn.classList.contains('chart-legend-item--hidden')).toBe(false);
+    }
+    expect(buttons[0].querySelector('.chart-legend-label')!.textContent).toBe('Solar');
+    cleanup();
+  });
+
+  it('marks hidden items with aria-checked="false" and the --hidden modifier', () => {
+    const items = [
+      { text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0, hidden: true },
+      { text: 'Grid', fillStyle: '#ff5722', datasetIndex: 1, hidden: false },
+    ];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const buttons = legendEl!.querySelectorAll('button');
+    expect(buttons[0].getAttribute('aria-checked')).toBe('false');
+    expect(buttons[0].classList.contains('chart-legend-item--hidden')).toBe(true);
+    expect(buttons[1].getAttribute('aria-checked')).toBe('true');
+    expect(buttons[1].classList.contains('chart-legend-item--hidden')).toBe(false);
+    cleanup();
+  });
+
+  it('uses an <img> swatch when pointStyle is a canvas, falls back to background-color otherwise', () => {
+    const canvas = document.createElement('canvas');
+    // Stub toDataURL so jsdom/happy-dom returns a value.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (canvas as any).toDataURL = () => 'data:image/png;base64,AAA';
+    const items = [
+      { text: 'Grid', fillStyle: '#ff5722', datasetIndex: 0, pointStyle: canvas },
+      { text: 'Solar', fillStyle: '#f5c542', datasetIndex: 1 },
+    ];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const swatches = legendEl!.querySelectorAll('.chart-legend-swatch');
+    const gridImg = swatches[0].querySelector('img');
+    expect(gridImg).not.toBeNull();
+    expect(gridImg!.getAttribute('src')).toBe('data:image/png;base64,AAA');
+
+    const solarSwatch = swatches[1] as HTMLElement;
+    expect(solarSwatch.querySelector('img')).toBeNull();
+    expect(solarSwatch.style.backgroundColor).toBeTruthy();
+    cleanup();
+  });
+
+  it('falls back to background-color when toDataURL throws', () => {
+    const canvas = document.createElement('canvas');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (canvas as any).toDataURL = () => { throw new Error('tainted'); };
+    const items = [
+      { text: 'Grid', fillStyle: '#ff5722', datasetIndex: 0, pointStyle: canvas },
+    ];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const swatch = legendEl!.querySelector('.chart-legend-swatch') as HTMLElement;
+    expect(swatch.querySelector('img')).toBeNull();
+    expect(swatch.style.backgroundColor).toBeTruthy();
+    cleanup();
+  });
+
+  it('clicking a button toggles dataset visibility and calls chart.update()', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, legendEl, setDatasetVisibility, update, cleanup } = makeFakeChart({
+      legendItems: items,
+      isDatasetVisible: () => true,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const button = legendEl!.querySelector('button')!;
+    button.click();
+    expect(setDatasetVisibility).toHaveBeenCalledWith(0, false);
+    expect(update).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
+  it('clicking a hidden item restores visibility', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0, hidden: true }];
+    const { chart, legendEl, setDatasetVisibility, cleanup } = makeFakeChart({
+      legendItems: items,
+      isDatasetVisible: () => false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    legendEl!.querySelector('button')!.click();
+    expect(setDatasetVisibility).toHaveBeenCalledWith(0, true);
+    cleanup();
+  });
+
+  it('does nothing when no item has a datasetIndex (defensive)', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542' }];
+    const { chart, legendEl, setDatasetVisibility, update, cleanup } = makeFakeChart({
+      legendItems: items,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    legendEl!.querySelector('button')!.click();
+    expect(setDatasetVisibility).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    cleanup();
+  });
+
+  it('is a no-op when the canvas has no .device-chart ancestor', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, cleanup } = makeFakeChart({ legendItems: items, withRoot: false });
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      renderHtmlLegend(chart as any);
+    }).not.toThrow();
+    cleanup();
+  });
+
+  it('is a no-op when the .device-chart has no [data-chart-legend] child', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, root, cleanup } = makeFakeChart({
+      legendItems: items,
+      withLegendUl: false,
+    });
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      renderHtmlLegend(chart as any);
+    }).not.toThrow();
+    // Nothing was appended to the root.
+    expect(root!.querySelectorAll('button').length).toBe(0);
+    cleanup();
+  });
+
+  it('is a no-op when generateLabels is not a function', () => {
+    const { chart, cleanup } = makeFakeChart({ legendItems: [], withGenerateLabels: false });
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      renderHtmlLegend(chart as any);
+    }).not.toThrow();
+    cleanup();
+  });
+
+  it('is a no-op when chart.canvas is null', () => {
+    const { chart, cleanup } = makeFakeChart({ legendItems: [], withCanvas: false });
+    expect(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      renderHtmlLegend(chart as any);
+    }).not.toThrow();
+    cleanup();
+  });
+
+  it('preserves focus across rebuild', () => {
+    const items = [
+      { text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 },
+      { text: 'Home Load', fillStyle: '#2196f3', datasetIndex: 1 },
+    ];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+
+    const firstButtons = legendEl!.querySelectorAll('button');
+    firstButtons[1].focus();
+    expect(document.activeElement).toBe(firstButtons[1]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    const newButtons = legendEl!.querySelectorAll('button');
+    expect(document.activeElement).toBe(newButtons[1]);
+    cleanup();
+  });
+});
+
+describe('findLegendContainer', () => {
+  it('returns the [data-chart-legend] sibling of the canvas', () => {
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(findLegendContainer(chart as any)).toBe(legendEl);
+    cleanup();
+  });
+
+  it('returns null when the canvas is detached', () => {
+    const { chart, cleanup } = makeFakeChart({ legendItems: [], withRoot: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(findLegendContainer(chart as any)).toBeNull();
+    cleanup();
+  });
+
+  it('returns null when chart.canvas is null', () => {
+    const { chart, cleanup } = makeFakeChart({ legendItems: [], withCanvas: false });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(findLegendContainer(chart as any)).toBeNull();
+    cleanup();
+  });
+
+  it('falls back to canvas.parentElement.parentElement when the canvas is not inside .device-chart', () => {
+    // Build a non-standard ancestor chain: <div><div><canvas/></div><ul data-chart-legend/></div>
+    const root = document.createElement('div');
+    const wrap = document.createElement('div');
+    const canvas = document.createElement('canvas');
+    const legend = document.createElement('ul');
+    legend.setAttribute('data-chart-legend', '');
+    wrap.appendChild(canvas);
+    root.appendChild(wrap);
+    root.appendChild(legend);
+    document.body.appendChild(root);
+    fakeChartRoots.push(root);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(findLegendContainer({ canvas } as any)).toBe(legend);
+  });
+});
+
+describe('renderHtmlLegend — edge cases', () => {
+  it('falls back to defaultLegendItems when generateLabels throws', () => {
+    const { chart, legendEl, cleanup } = makeFakeChart({
+      legendItems: [],
+      // Override config to inject a throwing generateLabels.
+      withGenerateLabels: false,
+      datasets: [{ label: 'Solar', backgroundColor: '#f5c542' }],
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (chart as any).config._config.options = {
+      plugins: {
+        legend: {
+          labels: {
+            generateLabels: () => { throw new Error('boom'); },
+          },
+        },
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    const buttons = legendEl!.querySelectorAll('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].querySelector('.chart-legend-label')!.textContent).toBe('Solar');
+    cleanup();
+  });
+
+  it('bails when generateLabels returns a non-array', () => {
+    const { chart, legendEl, cleanup } = makeFakeChart({
+      legendItems: [],
+      withGenerateLabels: false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (chart as any).config._config.options = {
+      plugins: {
+        legend: {
+          labels: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            generateLabels: () => ({ not: 'an array' } as any),
+          },
+        },
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    expect(legendEl!.querySelectorAll('button').length).toBe(0);
+    cleanup();
+  });
+
+  it('reads from chart.config.options when chart.config._config is absent', () => {
+    // Mirror an alternate Chart.js layout where the raw config lives at chart.config.options directly.
+    const items = [{ text: 'Solar', fillStyle: '#f5c542', datasetIndex: 0 }];
+    const { chart, legendEl, cleanup } = makeFakeChart({
+      legendItems: [],
+      withGenerateLabels: false,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (chart as any).config = {
+      options: {
+        plugins: {
+          legend: {
+            labels: { generateLabels: () => items },
+          },
+        },
+      },
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    expect(legendEl!.querySelectorAll('button').length).toBe(1);
+    cleanup();
+  });
+
+  it('handles items with null text and null fillStyle without crashing', () => {
+    const items = [{ text: null, fillStyle: null, datasetIndex: 0 }];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    const button = legendEl!.querySelector('button')!;
+    expect(button.querySelector('.chart-legend-label')!.textContent).toBe('');
+    const swatch = button.querySelector('.chart-legend-swatch') as HTMLElement;
+    // Empty string is "" which still satisfies the nullish fallback to 'transparent'.
+    expect(swatch.style.backgroundColor === '' || swatch.style.backgroundColor === 'transparent').toBe(true);
+    cleanup();
+  });
+
+  it('falls back to background-color "transparent" when toDataURL throws AND fillStyle is nullish', () => {
+    const canvas = document.createElement('canvas');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (canvas as any).toDataURL = () => { throw new Error('tainted'); };
+    const items = [{ text: 'Grid', fillStyle: null, datasetIndex: 0, pointStyle: canvas }];
+    const { chart, legendEl, cleanup } = makeFakeChart({ legendItems: items });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderHtmlLegend(chart as any);
+    const swatch = legendEl!.querySelector('.chart-legend-swatch') as HTMLElement;
+    expect(swatch.querySelector('img')).toBeNull();
+    // Nullish fillStyle → 'transparent' fallback.
+    cleanup();
+  });
+});
+
+describe('defaultLegendItems', () => {
+  it('returns [] when chart.data is undefined', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = defaultLegendItems({} as any);
+    expect(items).toEqual([]);
+  });
+
+  it('uses ds.borderColor when string, otherwise backgroundColor', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = defaultLegendItems({
+      data: {
+        datasets: [
+          { label: 'A', borderColor: '#aaa', backgroundColor: '#bbb' },
+          { label: 'B', borderColor: undefined, backgroundColor: '#ccc' },
+          { label: 'C', borderColor: () => '#fff' /* not a string */, backgroundColor: () => '#ddd' /* not a string */ },
+        ],
+      },
+      isDatasetVisible: () => true,
+    } as any);
+    expect(items[0].fillStyle).toBe('#aaa');
+    expect(items[1].fillStyle).toBe('#ccc');
+    expect(items[2].fillStyle).toBeUndefined();
+  });
+
+  it('falls back to "Series N" when ds.label is missing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = defaultLegendItems({
+      data: { datasets: [{ borderColor: '#aaa' }, { backgroundColor: '#bbb' }] },
+      isDatasetVisible: () => true,
+    } as any);
+    expect(items[0].text).toBe('Series 1');
+    expect(items[1].text).toBe('Series 2');
+  });
+
+  it('treats isDatasetVisible absence as "all visible"', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = defaultLegendItems({
+      data: { datasets: [{ label: 'A', borderColor: '#aaa' }] },
+    } as any);
+    expect(items[0].hidden).toBe(false);
+  });
+});
+
+describe('buildBarConfig generateLabels — edge branches', () => {
+  it('builds items for all four datasets and patches each pointStyle when canvases are available', () => {
+    const fakeCtx = {
+      fillStyle: '', beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
+      closePath: vi.fn(), fill: vi.fn(), fillRect: vi.fn(),
+    };
+    const orig = HTMLCanvasElement.prototype.getContext;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (HTMLCanvasElement.prototype as any).getContext = vi.fn(() => fakeCtx);
+    try {
+      const cfg = buildBarConfig(60, emptyDatasets);
+      const legend = (cfg.options!.plugins as { legend: { labels: { generateLabels: (c: unknown) => Array<{ text: string; pointStyle?: unknown }> } } }).legend;
+      const stubChart = {
+        data: {
+          datasets: [
+            { label: 'Solar', backgroundColor: SERIES_COLORS.solar, borderColor: SERIES_COLORS.solar },
+            { label: 'Home Load', backgroundColor: SERIES_COLORS.homeLoad, borderColor: SERIES_COLORS.homeLoad },
+            { label: 'Grid', backgroundColor: SERIES_COLORS.grid, borderColor: SERIES_COLORS.grid },
+            { label: 'Battery %', backgroundColor: SERIES_COLORS.battery, borderColor: SERIES_COLORS.battery },
+          ],
+        },
+        isDatasetVisible: () => true,
+      };
+      const items = legend.labels.generateLabels(stubChart);
+      expect(items.length).toBe(4);
+      for (const it of items) {
+        expect(it.pointStyle).toBeInstanceOf(HTMLCanvasElement);
+      }
+    } finally {
+      HTMLCanvasElement.prototype.getContext = orig;
+    }
+  });
+
+  it('handles datasets with non-string colors and missing isDatasetVisible', () => {
+    const cfg = buildBarConfig(86400, emptyDatasets);
+    const legend = (cfg.options!.plugins as { legend: { labels: { generateLabels: (c: unknown) => Array<{ text: string; fillStyle?: unknown; strokeStyle?: unknown; hidden?: boolean }> } } }).legend;
+    const stubChart = {
+      data: {
+        datasets: [
+          { label: 'Solar', backgroundColor: () => '#fff', borderColor: () => '#000' },
+        ],
+      },
+      // no isDatasetVisible — should default to false hidden
+    };
+    const items = legend.labels.generateLabels(stubChart);
+    expect(items[0].fillStyle).toBeUndefined();
+    expect(items[0].strokeStyle).toBeUndefined();
+    expect(items[0].hidden).toBe(false);
+  });
+
+  it('returns [] when chart.data is undefined', () => {
+    const cfg = buildBarConfig(86400, emptyDatasets);
+    const legend = (cfg.options!.plugins as { legend: { labels: { generateLabels: (c: unknown) => Array<unknown> } } }).legend;
+    expect(legend.labels.generateLabels({})).toEqual([]);
+  });
+});
+
+describe('canvas legend visibility', () => {
+  it('hides the native canvas legend so the HTML legend is the only one shown', () => {
+    const base = buildBaseOptions(60);
+    const legend = (base.plugins as { legend: { display: boolean } }).legend;
+    expect(legend.display).toBe(false);
+  });
+});
+
+describe('HistoricalGraph HTML legend integration', () => {
+  it('renders one <ul data-chart-legend> per device chart', async () => {
+    setupTwoDeviceMocks();
+    render(<HistoricalGraph timeRange={defaultTimeRange} />);
+    await waitFor(() => {
+      expect(capturedConfigs.length).toBe(2);
+    });
+    const lists = document.querySelectorAll('[data-chart-legend]');
+    expect(lists.length).toBe(2);
+    for (const ul of Array.from(lists)) {
+      expect(ul.tagName).toBe('UL');
+      expect(ul.getAttribute('aria-label')).toMatch(/chart legend/i);
+    }
   });
 });

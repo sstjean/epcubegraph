@@ -60,7 +60,7 @@ To modify an existing series (color, axis assignment, gradient fill, etc.), edit
 | Symptom | First thing to check |
 |---|---|
 | Blank canvas | Open devtools → Console. NFR-006 means any context-creation failure surfaces via the `error` state and an Application Insights event. Also check that `chartRef.current` is non-null in the React/Preact devtools. |
-| Axis labels look wrong on long ranges (re-regression of #149) | Confirm `scales.x.time.displayFormats.month === 'MMM yyyy'`. Confirm `time.unit` is **not** set (must be auto). Confirm `chartjs-adapter-date-fns` side-effect import is still at the top of `HistoricalGraph.tsx`. |
+| Axis labels look wrong on long ranges (re-regression of #149) | Confirm `scales.x.time.displayFormats.month === 'MMM yyyy'`. Confirm `time.unit` is **explicitly set** via `getTimeUnit(step)` (`hour` / `day` / `month`) — leaving it unset re-introduces the viewport-driven auto-pick that #149 broke on. Confirm the Eastern-pinned `ticks.callback` (`formatAxisTick`) is in `buildBaseOptions`. Confirm `chartjs-adapter-date-fns` side-effect import is still at the top of `HistoricalGraph.tsx`. |
 | Bars overlap | You probably removed both `barPercentage` and `categoryPercentage`. Restore them, or check that you have not set `stacked: true` on `scales.x` or `scales.y`. |
 | Bars touch the chart edge | `scales.x.offset` is false or missing; restore `offset: true` on bar-step configs. |
 | Battery line is invisible or squashed | Confirm `yAxisID: 'y1'` on the Battery dataset and `position: 'right'` + `min: 0` + `max: 100` on `scales.y1`. |

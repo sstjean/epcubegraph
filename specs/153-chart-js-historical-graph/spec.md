@@ -43,16 +43,19 @@ As a homeowner comparing my energy sources for each day, when the bucket size is
 
 ### User Story 3 — Battery % overlay on a secondary axis (Priority: P1)
 
-As a homeowner, when I look at any historical chart, I see Battery state-of-charge (0–100%) rendered as a **line on a right-side secondary y-axis** scaled 0–100, so I can correlate battery behavior with power flows without it being squashed by the watt-scale primary axis.
+As a homeowner, when I look at a historical **line** chart (1d / 7d ranges, `step < 86400`), I see Battery state-of-charge (0–100%) rendered as a **line on a right-side secondary y-axis** scaled 0–100, so I can correlate battery behavior with power flows without it being squashed by the watt-scale primary axis.
 
-**Why this priority**: Battery overlay is core to interpreting solar/grid behavior. It must survive the migration unchanged.
+On **bar** views (30d / 1y, `step >= 86400`), the Battery overlay is intentionally **omitted**: power series are aggregated to daily/monthly buckets and a per-bucket battery line alongside them is noise rather than signal.
 
-**Independent Test**: Open any range with seeded battery data. Confirm the right-side y-axis is labeled 0–100 with `%` ticks, and the battery line stays within that range regardless of how large the watt values are on the left axis.
+**Why this priority**: Battery overlay is core to interpreting solar/grid behavior on the sub-day views. It must survive the migration unchanged on line views.
+
+**Independent Test**: Open the 1d or 7d preset with seeded battery data. Confirm the right-side y-axis is labeled 0–100 with `%` ticks, and the battery line stays within that range regardless of how large the watt values are on the left axis. Switch to 30d or 1y and confirm the Battery dataset is not present.
 
 **Acceptance Scenarios**:
 
-1. **Given** the dataset contains battery percent values, **When** the chart renders, **Then** Battery % appears as a line on a secondary right-side y-axis scaled 0–100 with `%`-suffixed tick labels.
-2. **Given** the user toggles Battery off in the legend, **When** the chart re-renders, **Then** the Battery line disappears but the secondary axis behavior of remaining series is unaffected.
+1. **Given** the dataset contains battery percent values and `step < 86400`, **When** the chart renders, **Then** Battery % appears as a line on a secondary right-side y-axis scaled 0–100 with `%`-suffixed tick labels.
+2. **Given** the user toggles Battery off in the legend (line view), **When** the chart re-renders, **Then** the Battery line disappears but the secondary axis behavior of remaining series is unaffected.
+3. **Given** `step >= 86400` (bar view), **When** the chart renders, **Then** the Battery dataset is omitted and the right-side y-axis is not drawn.
 
 ---
 
@@ -122,7 +125,7 @@ As a homeowner, the first and last bars of any bar chart have visible padding fr
 - **Device added / removed mid-session**: Re-rendering with a different device set creates / destroys chart instances cleanly with no orphaned canvases or memory leaks (the existing unmount-cleanup test must still pass).
 - **Extremely sparse data** (e.g., one point per week on a 1y range): Axis tick density auto-adjusts; no overlapping labels.
 - **Window resize**: Charts resize responsively without distortion or stale dimensions.
-- **Custom range crossing a DST boundary**: Time axis labels render in the user's local timezone without duplicated or skipped hour labels around the transition. *(Behavior matches today; documented as preserved.)*
+- **Custom range crossing a DST boundary**: Time axis labels render in the fixed `America/New_York` (Eastern) display timezone without duplicated or skipped hour labels around the transition. *(Behavior matches today's Eastern-pinned rendering; documented as preserved.)*
 
 ## Requirements *(mandatory)*
 
@@ -139,7 +142,7 @@ As a homeowner, the first and last bars of any bar chart have visible padding fr
 - **FR-009**: The component MUST destroy underlying chart instances on unmount and on data/range changes that require re-creation, leaving no orphaned canvas elements or retained chart objects.
 - **FR-010**: The migration MUST remove the uPlot dependency, its CSS import, and any uPlot-specific styling from the dashboard once the new implementation is in place. (uPlot is used only in `HistoricalGraph.tsx` and the `.uplot` CSS rules in `app.css`.)
 - **FR-011**: The chart lifecycle (creation, update, destruction) MUST be managed directly against the Chart.js `Chart` class — no React/Preact wrapper library (e.g., `react-chartjs-2`) may be introduced.
-- **FR-012**: Time-axis formatting MUST use a date adapter compatible with Chart.js (`chartjs-adapter-date-fns`) so that auto-formatted ticks honor the user's local timezone.
+- **FR-012**: Time-axis tick labels and tooltip timestamps MUST be rendered in the fixed display timezone `America/New_York` (Eastern). Storage remains UTC; presentation is pinned to Eastern via explicit `ticks.callback` / `formatTooltipTimestamp` helpers (the `chartjs-adapter-date-fns` adapter exposes no native timezone option, so axis formatting bypasses the adapter's locale-based defaults).
 - **FR-013**: The PR completing this migration MUST close issue #149 (axis-labels bug) and issue #153 (this migration).
 
 ### Non-Functional Requirements

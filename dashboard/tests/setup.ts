@@ -4,10 +4,18 @@ import { afterEach } from 'vitest';
 
 afterEach(cleanup);
 
-// happy-dom does not provide a usable canvas 2D context. Chart.js' constructor
-// is mocked in component tests, but our component still calls
-// canvas.getContext('2d') and falls back to an error UI when it returns null.
-// Provide a minimal stub so production code keeps a happy path under tests.
+// happy-dom does not provide a usable canvas 2D context. Most component tests
+// for HistoricalGraph mock Chart.js' constructor directly, but some
+// integration-style tests (e.g., tests/component/HistoryView.test.tsx) render
+// HistoricalGraph indirectly without mocking chart.js — they instantiate the
+// real Chart against this stub. Our component also calls
+// canvas.getContext('2d') itself and falls back to an error UI when it returns
+// null. Provide a minimal stub so production code keeps a happy path under
+// tests.
+//
+// If you add a test that instantiates real Chart.js and exercises a method
+// missing from this stub, prefer mocking chart.js in that test over expanding
+// this stub — keeping the stub small surfaces accidental real-Chart usage.
 if (typeof HTMLCanvasElement !== 'undefined') {
   const proto = HTMLCanvasElement.prototype as unknown as {
     getContext: (type: string) => unknown;

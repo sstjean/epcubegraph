@@ -16,9 +16,13 @@ All option names below reference Chart.js 4.x API. Some option names changed fro
 
 ## 1. The `time` scale + `chartjs-adapter-date-fns` — how it fixes #149
 
-**Decision**: Use `scales.x.type: 'time'` with `chartjs-adapter-date-fns` registered at module init. Let Chart.js choose the time unit automatically (`time.unit` left **unset**) and provide an explicit `displayFormats` map per candidate unit. Data is `{ x: timestamp_ms, y: value }` points (not parallel arrays).
+**Decision**: Use `scales.x.type: 'time'` with `chartjs-adapter-date-fns` registered at module init. Set `time.unit` **explicitly** per preset via `getTimeUnit(step)` (`hour` for sub-hour steps, `day` for sub-day, `month` for >= day) so the tick generator emits one tick per chosen unit independent of data density. Provide an explicit `displayFormats` map per candidate unit. Format both axis ticks and tooltip timestamps through `Intl.DateTimeFormat` pinned to `America/New_York` (the adapter has no native timezone option). Data is `{ x: timestamp_ms, y: value }` points (not parallel arrays).
 
-**Why this fixes #149**: The original bug — day-of-month numbers on the 1y view — happened because uPlot's tick generator emitted a fixed count of ticks regardless of unit, and the formatter only saw the raw epoch number. Chart.js's `time` scale is unit-aware: when the visible span is ~1 year it picks `unit: 'month'` and emits one tick per month, then formats each tick through `displayFormats.month` (default `'MMM yyyy'`). The "bare day number" failure mode is structurally impossible: the scale knows what unit the tick represents.
+**Why this fixes #149**: The original bug — day-of-month numbers on the 1y view — happened because uPlot's tick generator emitted a fixed count of ticks regardless of unit, and the formatter only saw the raw epoch number. Chart.js's `time` scale is unit-aware: when `time.unit` is `'month'` it emits one tick per month, then formats each tick through our `formatAxisTick(ms, 'month')` callback (which renders `MMM yyyy` in `America/New_York`). The "bare day number" failure mode is structurally impossible: the unit is explicit and the formatter is unit-aware.
+
+**Why explicit `time.unit` (not auto)**: Chart.js's auto unit picker is driven by the visible **viewport** span at paint time, not by the API aggregation `step`. On narrow viewports, the auto picker can drop from `month` to `day` on the 1y preset and re-introduce the #149 failure mode. Pinning the unit to the aggregation step via `getTimeUnit(step)` decouples tick granularity from viewport width and makes the behavior deterministic for the screenshot acceptance tests.
+
+**Why explicit Eastern timezone (not local)**: The dashboard is a personal tool whose authoritative timezone is the operator's home timezone (Eastern). Render-time timezone drift (CI runners in UTC, mobile devices abroad) would otherwise show timestamps that don't match the data the operator collected at home. `chartjs-adapter-date-fns@3` exposes no `time.zone` option; the canonical workaround is to override `ticks.callback` and the tooltip `title` callback with `Intl.DateTimeFormat({ timeZone: 'America/New_York', … })`. The adapter's `locale` setting still controls weekday/month names but not the absolute offset.
 
 **Configuration pattern** (used by `buildBarConfig` / `buildLineConfig` via `buildBaseOptions`):
 
@@ -32,10 +36,10 @@ scales: {
     offset: true,                         // see §3 — bars don't touch edges
     bounds: 'ticks',                      // see §3 — pad scale to whole tick boundaries
     adapters: {
-      date: { locale: enUS },             // user's local timezone is implicit; locale controls labels
+      date: { locale: enUS },             // weekday/month names; timezone handled in callbacks
     },
     time: {
-      // unit: undefined,                 // let Chart.js auto-pick
+      unit: getTimeUnit(step),            // explicit per-preset unit (hour | day | month)
       tooltipFormat: 'PPpp',              // "May 23, 2026, 3:04:05 PM" — date-fns format
       displayFormats: {
         minute:  'HH:mm',                 // 1d / sub-day buckets
@@ -51,15 +55,16 @@ scales: {
       autoSkip: true,                     // see §4
       maxRotation: 0,                     // no diagonal labels
       source: 'auto',
+      callback: (value) => formatAxisTick(Number(value), getTimeUnit(step)),  // Eastern-pinned
     },
   },
   // y / y1 — see §6
 }
 ```
 
-**Why explicit `displayFormats` even though defaults exist**: The defaults are sensible but the `month` default is `'MMM yyyy'` only in some 4.x patch versions; pinning it locally guarantees SC-001 ("every visible tick on 1y includes both month and year") regardless of upstream defaults drift.
+**Why explicit `displayFormats` even though defaults exist**: The defaults are sensible but the `month` default is `'MMM yyyy'` only in some 4.x patch versions; pinning it locally guarantees SC-001 ("every visible tick on 1y includes both month and year") regardless of upstream defaults drift. Note that with the Eastern-pinned `ticks.callback` in place, `displayFormats` is effectively a fallback that only fires if the callback returns `undefined`.
 
-**DST**: `chartjs-adapter-date-fns` uses the user's local timezone for formatting, matching today's uPlot behavior; no special handling required for the DST edge case noted in spec.
+**DST**: All formatting goes through `Intl.DateTimeFormat({ timeZone: 'America/New_York' })`, which handles DST transitions correctly. No special handling required for the DST edge case noted in spec.
 
 ---
 
@@ -142,13 +147,13 @@ ticks: {
 
 `displayFormats` is the map of date-fns format strings per time unit. The settings above (§1) are the final values used by `buildBaseOptions` (and inherited by both `buildBarConfig` and `buildLineConfig`). Mapping to spec acceptance criteria:
 
-| Preset | Auto-picked `time.unit` | `displayFormats[unit]` | Sample label |
+| Preset | `getTimeUnit(step)` | `displayFormats[unit]` | Sample label |
 |---|---|---|---|
-| 1d (step=60s) | `hour` (typical viewport) | `'HH:mm'` | `09:00` |
-| 7d (step=3600s) | `day` | `'MMM d'` | `May 18` |
-| 30d (step=86400s) | `day` or `week` | `'MMM d'` | `May 1`, `May 8` |
+| 1d (step=60s) | `hour` | `'HH:mm'` | `09:00` |
+| 7d (step=3600s) | `hour` | `'HH:mm'` | `09:00` |
+| 30d (step=86400s) | `day` | `'MMM d'` | `May 1`, `May 8` |
 | 1y (step=86400s) | `month` | `'MMM yyyy'` | `Jun 2025` ✅ #149 |
-| Custom | auto | (per range) | auto |
+| Custom | auto from step | (per range) | auto |
 
 **`tooltipFormat: 'PPpp'`** gives a long localized date+time (date-fns long format). The existing `formatTooltipTimestamp` helper stays for the tooltip body (consistency with current tests) and is fed each series' `x` value via Chart.js's tooltip callback (`callbacks.title`).
 
