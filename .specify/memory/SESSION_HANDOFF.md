@@ -1,150 +1,94 @@
-# Session Handoff — 2026-05-23
+# Session Handoff — 2026-05-25
 
-> **READ THIS AT START UP.** This file captures the state of work in progress
-> at the end of the 2026-05-23 session so the next session can pick up cleanly.
-> Delete this file (or its body) once the work it describes has landed.
+**Branch in flight**: `153-chart-js-historical-graph` (commit `bb94946` pushed)
+**PR**: [#161](https://github.com/sstjean/epcubegraph/pull/161) — Chart.js
+migration of `HistoricalGraph.tsx` (closes #149 + #153). All seven Copilot
+review comments addressed in `bb94946`.
 
-## TL;DR
+## What was done this session
 
-Issue #149 (1y view x-axis shows day-of-month instead of month/year) ballooned
-into a chart-library swap. The user wants **Chart.js** to replace **uPlot** for
-`HistoricalGraph.tsx`. Current uncommitted work on branch
-`149-axis-month-year-labels` has been **abandoned and stashed** — do not try to
-rescue it; start fresh from `main`.
+- Triaged + fixed all 7 Copilot review comments on PR #161:
+  1. `createGridSplitSwatch` docstring now matches the drawn pixels (green
+     top-left = export, red bottom-right = pull). Verified via
+     `scripts/dump-swatch.py`.
+  2. Removed the dead `_deviceName` field + `deviceName` parameter from
+     `buildBarConfig` / `buildLineConfig` (and all 15 test call sites).
+  3. **NFR-004 keyboard a11y**: replaced Chart.js' canvas legend with a
+     sibling HTML legend list of `<button role="switch">` elements per
+     device chart. New `htmlLegendPlugin` (Chart.js plugin id
+     `htmlLegend`) registered at module init in `HistoricalGraph.tsx`.
+     Native canvas legend hidden via `plugins.legend.display = false`.
+     Tab/Enter/Space all wired. Grid bar swatch survives as a `data:` URL
+     `<img>` on the Grid button.
+  4–6. Updated `spec.md` US3 / FR-012 / DST edge, `research.md` §1, and
+     `quickstart.md` debug guidance to match the as-built behavior:
+     battery overlay is line-views only; display timezone is pinned to
+     `America/New_York` (the `chartjs-adapter-date-fns` adapter has no
+     native TZ option, so axis ticks + tooltip titles go through `Intl`
+     callbacks); `time.unit` is set explicitly via `getTimeUnit(step)`.
+  7. Updated `dashboard/tests/setup.ts` comment — Chart.js is mocked in
+     *most* component tests but `HistoryView.test.tsx` instantiates real
+     Chart against the canvas stub.
 
-## Why we're swapping uPlot for Chart.js
+- Tests: 772/772 pass; 100% coverage on lines/branches/statements/
+  functions (dashboard).
+- End-to-end Playwright verification against the local
+  `docker-compose.prod-local.yml` stack at <http://localhost:5173>:
+  - 1d line view: toggle a series via click, then re-toggle via keyboard
+    (Enter), then again via Space; Tab moves focus to next legend
+    button; focus preserved across rebuild.
+  - 30d bar view: Battery legend correctly omitted; Grid swatch
+    pixel-dumped — diagonal matches docstring.
+  - Screenshots in `verify-153/` (untracked).
 
-uPlot proved too low-level for what the user actually wants:
+## What's next at start-up
 
-1. **Grouped bars**: uPlot has no native grouped/clustered bar support. Our
-   workaround (`uPlot.paths.bars({ size, align: [-1, 0, 1] })`) produced
-   overlapping bars because `align` controls bar→data-point anchoring, not
-   inter-series offset. A custom paths renderer would be needed.
-2. **X-axis padding**: bars sit flush against the chart edges. Fixable via a
-   `scales.x.range()` callback but adds more bespoke code.
-3. **Axis tick spacing for sparse data**: uPlot's auto-tick generator emits a
-   fixed number of ticks regardless of data density. For the 1y preset with
-   only 2 months of data, it emitted ~14 ticks all crammed into April. We
-   patched this with `bucketAlignedSplits()` but it's another workaround.
-4. **Label suppression policy churn**: month-only / month+year / dedup logic
-   needed several iterations because the spec interacted badly with uPlot's
-   tick density.
+1. **Check PR #161 status first.**
+   - CI rollup on `bb94946` (build/test/dashboard/exporter/validate-infra
+     + deploy-staging).
+   - Re-check Copilot review on the new commit — they may post a fresh
+     pass over `bb94946` worth triaging.
+2. **If green + clean review → merge with a merge commit (NOT squash).**
+   PR description already says it closes #149 + #153. After merge:
+   - Delete local + remote `153-chart-js-historical-graph` branch.
+   - Confirm #149 + #153 auto-closed.
+   - Verify F153 user-story sub-issues #154–#160 closed too (or close
+     them manually if not linked via `Closes #`).
+   - Destroy the staging environment if one was provisioned for the PR
+     (use `gh workflow run cd.yml ... destroy=true`).
+3. **If review left new comments → triage + fix the same way.**
+4. **Then**: pivot to the next-priority open issue — #115 (separate App
+   Insights per env) or #52 (port exporter Python→C#, low priority). No
+   strong direction yet; ask Steve.
 
-The user's verdict after multiple back-and-forth iterations:
-> "If uPlot can't do something this simple then use something else."
+## What NOT to do
 
-## What was tried (and abandoned)
+- **Do not shut down the local Docker stack.** Steve keeps
+  `local-postgres-1` + `local-epcube-exporter-1` running between
+  sessions as the persistent dev environment. The `local/` Docker
+  Compose stack should already be up at start-up.
+- **Do not push without explicit permission.** Commits are fine.
+- **Do not merge directly to main.** Even for cleanup. Always branch +
+  PR per the discipline rule.
+- **Do not commit `verify-153/`.** It's screenshot artifacts. Either
+  delete it after merge or add to `.gitignore` if it'll persist.
 
-On branch `149-axis-month-year-labels` (stashed, not committed):
+## Local dev servers from this session
 
-- Added step-aware `formatAxisDates(splits, step?)` with month-of-year dedup
-- Added `bucketAlignedSplits(data)` to pin one tick per data bucket
-- Added `splits` callback on the time axis (bars mode only)
-- Multiple test iterations as the suppression policy changed
-- Total: 5+ unit tests, all green, but **the visual result still didn't meet
-  the user's bar (literal pun). Padding + grouped bars not yet attempted.**
+- API: `cd api/src/EpCubeGraph.Api && dotnet run` — listens on
+  **port 5062** with the launch profile. Without `--no-launch-profile`
+  it picks up the correct port. Log: `/tmp/api.log`.
+- Dashboard: `cd dashboard && npm run dev` — Vite on **port 5173**.
+  Log: `/tmp/dashboard.log`.
+- The user prefers Chromium for Playwright — use the
+  `mcp_microsoft_pla_browser_*` tools, **not** the VS Code internal
+  browser (`open_browser_page`). Internal browser opens a non-Chromium
+  shell that can't be driven by the standard browser tools.
 
-The stash is preserved as `stash@{0}` if anyone wants to inspect the test
-helpers for reference (some patterns may translate). Otherwise drop it:
-`git stash drop stash@{0}`.
+## Open issues snapshot (as of session end)
 
-## What to do next session
-
-### Option A (recommended): Chart.js migration
-
-1. **Open a new issue** titled something like:
-   > Replace uPlot with Chart.js in HistoricalGraph — grouped bars,
-   > x-axis padding, proper time labels (supersedes #149)
-
-   Reference #149 as subsumed-by.
-
-2. **Branch**: `chart-js-historical-graph` off `main`.
-
-3. **Install deps**:
-   ```bash
-   cd dashboard
-   npm install chart.js chartjs-adapter-date-fns date-fns
-   ```
-
-4. **Rewrite `dashboard/src/components/HistoricalGraph.tsx`** with Chart.js.
-   Required features that must be preserved (audit against current behavior):
-   - **Line chart** for short ranges (`step < 86400`), one chart per device.
-   - **Grouped bar chart** for long ranges (`step >= 86400`), one chart per
-     device, with Solar / Home Load / Grid as three side-by-side bars per
-     bucket — **no overlap**.
-   - **Battery %** rendered as a line overlay on a secondary y-axis (right).
-   - **Tooltip** on hover with all series values + timestamp.
-   - **Gap handling**: insert nulls in series when bucket gap > 2× step.
-     Chart.js handles `spanGaps: false` natively.
-   - **X-axis padding**: configure `scales.x.offset: true` and/or
-     `barPercentage`/`categoryPercentage` so bars never touch the edges.
-     Use `time` scale with `chartjs-adapter-date-fns` for proper date labels.
-   - **Time axis labels** auto-format per range (date-fns format strings or
-     Chart.js `scales.x.time.displayFormats`).
-   - **Dual y-axis**: Power (kW/W) on left, Battery % (0-100) on right.
-   - **Series toggle via legend** (Chart.js does this natively).
-   - **Multiple device charts** stacked vertically.
-
-5. **Rewrite `dashboard/tests/component/HistoricalGraph.test.tsx`**:
-   - Drop all uPlot-specific tests (formatAxisDates, bucketAlignedSplits,
-     barAligns, etc).
-   - Drop the `vi.mock('uplot', ...)` setup at the top.
-   - Replace with Chart.js mocks: mock the `Chart` constructor and assert
-     config shape (datasets, options.scales, plugin config).
-   - Keep tests for pure data transforms: `buildDeviceChartData`,
-     `getAggregationLabel`, `shouldUseBars`, `formatTooltipTimestamp`,
-     `computeAxisSize`/`powerAxisSize` (if still used).
-   - **100% coverage is non-negotiable** per the constitution. If a config
-     branch is hard to cover, simplify the branch.
-
-6. **Remove uPlot from `package.json`** once nothing references it
-   (`grep -r uplot dashboard/src dashboard/tests`).
-
-7. **Visual verification**: run the local stack
-   (`docker compose -f local/docker-compose.prod-local.yml ps` should already
-   be up) and visit http://localhost:5173 → History → cycle through
-   1d / 7d / 30d / 1y / Custom. Expected:
-   - 1d/7d: smooth line chart.
-   - 30d/1y: grouped bars, padded from edges, month/year labels.
-   - Battery % overlay visible.
-   - Tooltip works on hover.
-
-8. **`/speckit.specify`** is not required for this — it's a refactor of an
-   existing component with a tracked bug (#149 + the new issue). Just file
-   the issue, write the code, write tests, PR.
-
-### Option B (only if Chart.js proves a bad fit)
-
-Try **ECharts** (`echarts` package). Heavier (~150KB gzipped) but extremely
-capable. Same grouped-bar story.
-
-### Option C (NOT recommended)
-
-Continue with uPlot and a custom paths renderer for grouped bars. The user
-has already rejected this path.
-
-## Other open work (not blocked by this)
-
-Open issues at session end:
-- **#149** — will be closed by the Chart.js PR
-- **#115** — Separate Application Insights per environment (staging vs prod)
-- **#52**  — Port epcube-exporter from Python to C# (longstanding, low pri)
-
-## Session housekeeping
-
-- Local stack is **still running**. Don't shut it down — user keeps Docker up
-  between sessions. Terminals from prior session may be gone; recreate as
-  needed (`cd dashboard && npm run dev` for the Vite server, etc.)
-- Stash `stash@{0}` holds the abandoned uPlot work — drop when confident.
-- Branch `149-axis-month-year-labels` is local-only, no remote. Either delete
-  after starting Chart.js work, or keep as a reference for the test helpers.
-- This handoff is on branch `docs/session-handoff-2026-05-23`. Merge it to
-  main quickly so next session reads the latest.
-
-## Lessons recorded
-
-Already added to user memory (`/memories/`):
-- Don't pattern-match from grep when verifying — check the actual rendered
-  output, especially for UI changes. (Tests passing ≠ requirement met.)
-- When a tool/library can't do something natively after two workarounds,
-  pause and ask whether to swap it rather than pile on more workarounds.
+- **#149** — historical graph axis labels — will close on PR #161 merge
+- **#153** — Chart.js migration (this PR)
+- **#154–#160** — F153 user stories US1–US7
+- **#115** — separate App Insights per env
+- **#52** — port exporter Python→C# (low priority)

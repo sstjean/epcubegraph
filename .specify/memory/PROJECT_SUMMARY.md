@@ -1,13 +1,63 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-23
+**Last Updated**: 2026-05-25
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `main` (working tree clean)
+**Branch**: `153-chart-js-historical-graph` (PR #161 open — review fixes pushed, awaiting CI/re-review)
 **Last merged**: PR #151 — chore: drop iPhone/iPad feature specs (#5, #6 closed)
-**Active handoff**: see `.specify/memory/SESSION_HANDOFF.md` for in-flight work
-(Chart.js migration to replace uPlot in `HistoricalGraph.tsx`, supersedes #149).
+**Active PR**: #161 (closes #149 + #153) — Chart.js migration of `HistoricalGraph.tsx`
+**Active handoff**: see `.specify/memory/SESSION_HANDOFF.md` for what to do at next start-up
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
+
+---
+
+## Recent sessions (2026-05-25)
+
+- **PR #161 review-comment sweep** (commit `bb94946`, pushed): addressed
+  all 7 Copilot review comments on the Chart.js migration. Highlights:
+  - **NFR-004 keyboard a11y**: replaced the canvas legend with a sibling
+    HTML legend `<ul>` of `<button role="switch">` elements per device
+    chart. New `htmlLegendPlugin` (Chart.js plugin id `htmlLegend`)
+    mirrors the chart's legend on every `afterUpdate`. Buttons carry
+    `aria-checked`, a `--hidden` modifier when toggled off, and a swatch
+    (`<img>` from `pointStyle.toDataURL()` for the diagonal Grid swatch,
+    `background-color` otherwise). Click + Enter + Space all toggle
+    dataset visibility; Tab moves focus through legend entries; focus
+    is preserved across rebuild. Native canvas legend hidden via
+    `plugins.legend.display = false`.
+  - **buildBarConfig.generateLabels** now builds items directly from
+    `chart.data.datasets` instead of delegating to `Chart.defaults` —
+    the default resolver throws when `display:false` leaves the legend
+    uninitialized.
+  - **renderHtmlLegend** reads raw `chart.config`
+    (`._config.options ?? .options`) with try/catch +
+    `defaultLegendItems` fallback for the same reason.
+  - `createGridSplitSwatch` docstring corrected (green top-left =
+    export, red bottom-right = pull); verified pixel-by-pixel via
+    `scripts/dump-swatch.py`.
+  - `_deviceName` dead field + `deviceName` param removed from
+    `buildBarConfig` / `buildLineConfig` (and 15 test call sites).
+  - **spec.md / research.md / quickstart.md** updated to reflect
+    as-built behavior: battery overlay is line-views only; display
+    timezone is pinned to `America/New_York` via `Intl` callbacks
+    (`chartjs-adapter-date-fns` has no native TZ option); `time.unit`
+    is set explicitly via `getTimeUnit(step)`.
+  - `tests/setup.ts` comment corrected — Chart.js is mocked in *most*
+    component tests but `HistoryView.test.tsx` instantiates real Chart
+    against the canvas stub.
+- Tests: 772/772 pass, 100% coverage on lines/branches/statements/
+  functions.
+- End-to-end Playwright verification against the local
+  `docker-compose.prod-local.yml` stack at <http://localhost:5173> —
+  1d line view + 30d bar view: click toggles, Tab focus order,
+  Enter + Space activation, pixel-dumped diagonal Grid swatch.
+  Screenshots in `verify-153/` (untracked).
+- Process notes:
+  - Use **Chromium via `mcp_microsoft_pla_browser_*`**, not the VS Code
+    internal `open_browser_page` — the internal browser is non-Chromium
+    and can't be driven by the standard browser tools.
+  - Don't ask whether to start Docker — check `docker ps` first; if the
+    daemon is up but the persistent stack isn't, just bring it up.
 
 ---
 
