@@ -20,7 +20,8 @@ if (typeof HTMLCanvasElement !== 'undefined') {
   const proto = HTMLCanvasElement.prototype as unknown as {
     getContext: (type: string) => unknown;
   };
-  proto.getContext = function getContext() {
+  proto.getContext = function getContext(type: string) {
+    if (type !== '2d') return null;
     const noop = () => {};
     return {
       canvas: this,

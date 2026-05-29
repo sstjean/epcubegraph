@@ -43,3 +43,6 @@ for y in range(H):
                 line += '.'
         print(f'  y={yy}: {line}')
     sys.exit(0)
+
+print(f'No orange/green swatch found in {sys.argv[1]}', file=sys.stderr)
+sys.exit(1)
