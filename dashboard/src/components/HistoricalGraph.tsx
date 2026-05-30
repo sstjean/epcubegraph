@@ -826,7 +826,12 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
 
     const useBars = shouldUseBars(timeRange.step);
 
-    deviceCharts.forEach((chart, idx) => {
+    // Pre-flight every canvas context first so a mid-loop failure cannot
+    // leave partially-created Chart instances alive while the UI shows an
+    // error. If any device's getContext returns null we abort before
+    // constructing any Chart.
+    const contexts: CanvasRenderingContext2D[] = [];
+    for (let idx = 0; idx < deviceCharts.length; idx += 1) {
       const ctx = canvasRefs.current[idx]?.getContext('2d');
       if (!ctx) {
         const err = new Error('Chart context unavailable');
@@ -834,11 +839,15 @@ export function HistoricalGraph({ timeRange }: HistoricalGraphProps) {
         trackException(err);
         return;
       }
+      contexts.push(ctx);
+    }
+
+    deviceCharts.forEach((chart, idx) => {
       const config = useBars
         ? buildBarConfig(timeRange.step, chart.data)
         : buildLineConfig(timeRange.step, chart.data);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const instance = new Chart(ctx, config as any);
+      const instance = new Chart(contexts[idx], config as any);
       chartRefs.current.push(instance);
     });
 

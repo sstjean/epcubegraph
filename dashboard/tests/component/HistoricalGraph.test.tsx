@@ -520,6 +520,44 @@ describe('HistoricalGraph', () => {
       HTMLCanvasElement.prototype.getContext = original;
     }
   });
+
+  it('aborts chart creation with zero live Chart instances when a device canvas fails getContext mid-loop (regression: partial cleanup bug)', async () => {
+    // Arrange — first DOM-connected canvas succeeds, second returns null.
+    // Ephemeral (off-DOM) swatch canvases always get a fake ctx so config
+    // construction itself does not fail.
+    const original = HTMLCanvasElement.prototype.getContext;
+    const fakeCtx = {
+      fillStyle: '',
+      strokeStyle: '',
+      fillRect: () => {},
+      beginPath: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      fill: () => {},
+    } as unknown as CanvasRenderingContext2D;
+    let connectedCanvasCalls = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (HTMLCanvasElement.prototype as any).getContext = function (type: string) {
+      if (type !== '2d') return null;
+      if (!this.isConnected) return fakeCtx;
+      connectedCanvasCalls += 1;
+      return connectedCanvasCalls === 1 ? fakeCtx : null;
+    };
+    try {
+      setupTwoDeviceMocks();
+      render(<HistoricalGraph timeRange={defaultTimeRange} />);
+      // Act — wait for the chart-creation effect to surface the failure
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toMatch(/Chart context unavailable/);
+      });
+      // Assert — zero Chart instances exist (no partial-state leak); failure tracked
+      expect(capturedConfigs.length).toBe(0);
+      expect(mockTrackException).toHaveBeenCalledWith(expect.any(Error));
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
+  });
 });
 
 describe('buildDeviceChartData', () => {

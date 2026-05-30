@@ -43,13 +43,13 @@ As a homeowner comparing my energy sources for each day, when the bucket size is
 
 ### User Story 3 — Battery % overlay on a secondary axis (Priority: P1)
 
-As a homeowner, when I look at a historical **line** chart (1d / 7d ranges, `step < 86400`), I see Battery state-of-charge (0–100%) rendered as a **line on a right-side secondary y-axis** scaled 0–100, so I can correlate battery behavior with power flows without it being squashed by the watt-scale primary axis.
+As a homeowner, when I look at a historical **line** chart (1d preset and short Custom ranges where `step < 86400`), I see Battery state-of-charge (0–100%) rendered as a **line on a right-side secondary y-axis** scaled 0–100, so I can correlate battery behavior with power flows without it being squashed by the watt-scale primary axis.
 
-On **bar** views (30d / 1y, `step >= 86400`), the Battery overlay is intentionally **omitted**: power series are aggregated to daily/monthly buckets and a per-bucket battery line alongside them is noise rather than signal.
+On **bar** views (7d / 30d / 1y presets and Custom ranges where `step >= 86400`), the Battery overlay is intentionally **omitted**: power series are aggregated to daily/monthly buckets and a per-bucket battery line alongside them is noise rather than signal.
 
 **Why this priority**: Battery overlay is core to interpreting solar/grid behavior on the sub-day views. It must survive the migration unchanged on line views.
 
-**Independent Test**: Open the 1d or 7d preset with seeded battery data. Confirm the right-side y-axis is labeled 0–100 with `%` ticks, and the battery line stays within that range regardless of how large the watt values are on the left axis. Switch to 30d or 1y and confirm the Battery dataset is not present.
+**Independent Test**: Open the 1d preset with seeded battery data. Confirm the right-side y-axis is labeled 0–100 with `%` ticks, and the battery line stays within that range regardless of how large the watt values are on the left axis. Switch to 7d / 30d / 1y and confirm the Battery dataset is not present.
 
 **Acceptance Scenarios**:
 

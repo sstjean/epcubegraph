@@ -198,9 +198,9 @@ These three stories share `buildChartConfig` plus the multi-device render loop a
 - [X] T040 [Verify] Run `cd dashboard && npm run typecheck`. MUST be clean — no `tsc` errors.
 - [X] T041 [Verify] Run `cd dashboard && npm run build`. Capture the printed asset table. Compute `delta_gzipped_total = (new_index_js_gz + new_index_css_gz) − (121.45 + 4.63) KB`. Record raw + gzipped pre/post numbers and the delta in scratch notes (will go into the PR description per T045). NFR-002 / SC-006.
 - [ ] T041a [Verify] (NFR-003 render performance) In the running dev server at <http://localhost:5173>, open DevTools Console and time a single 1y-preset chart render: `const t0 = performance.now(); /* trigger preset change to 1y */; await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); const dt = performance.now() - t0; console.log('1y render ms:', dt);`. Assert `dt < 200`. Record the measured ms for the PR description. (Constitution: NFR-003 — 200 ms ceiling on ~400-bucket render.)
-- [ ] T042 [Verify] At <http://localhost:5173> against the persistent local prod-like stack (verified up in T003), visually verify each range preset and capture a screenshot per device per preset (10 screenshots if 2 devices × 5 presets):
+- [X] T042 [Verify] At <http://localhost:5173> against the persistent local prod-like stack (verified up in T003), visually verify each range preset and capture a screenshot per device per preset (10 screenshots if 2 devices × 5 presets):
   - **1d**: axis shows hours (e.g., `09:00`, `12:00`), three series render as lines, battery on right axis 0–100.
-  - **7d**: axis shows day-of-week + day-of-month, three series render as lines (step=3600 < 86400 → lines per FR-001).
+  - **7d**: axis shows day-of-week + day-of-month, three series render as **grouped bars** (step=86400 → bars per FR-001), Battery overlay omitted.
   - **30d**: axis shows day-with-month at month boundaries, three series render as **grouped bars** with visible inter-bucket gaps and visible padding from plot edges (US-7).
   - **1y**: axis shows **month + year** (`Jun 2025`, `Sep 2025`, …) — **never** bare day-of-month numbers (US-1 / SC-001 / closes #149). Grouped bars.
   - **Custom (~6 weeks)**: axis auto-picks readable granularity; no label overlap.
