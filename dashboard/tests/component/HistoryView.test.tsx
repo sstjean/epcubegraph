@@ -10,25 +10,6 @@ vi.mock('../../src/api', () => ({
   fetchGridPower: vi.fn(),
 }));
 
-// Mock uPlot — happy-dom doesn't support canvas
-vi.mock('uplot', () => {
-  return {
-    default: class MockUPlot {
-      root: HTMLDivElement;
-      constructor(_opts: unknown, _data: unknown, target: HTMLElement) {
-        this.root = document.createElement('div');
-        this.root.className = 'uplot';
-        target.appendChild(this.root);
-      }
-      destroy() {
-        this.root.remove();
-      }
-      setData() {}
-      setSize() {}
-    },
-  };
-});
-
 const mockFetchDevices = fetchDevices as ReturnType<typeof vi.fn>;
 const mockFetchRangeReadings = fetchRangeReadings as ReturnType<typeof vi.fn>;
 const mockFetchGridPower = fetchGridPower as ReturnType<typeof vi.fn>;

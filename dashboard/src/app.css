@@ -775,6 +775,78 @@ section > h2 {
   margin: 0 0 0.5rem 0;
 }
 
+/* Fixed-height wrapper required by Chart.js when maintainAspectRatio: false,
+ * otherwise the ResizeObserver loop continuously grows the canvas height. */
+.device-chart-canvas {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
+
+/* HTML legend (NFR-004 keyboard accessibility). The native Chart.js legend is
+ * canvas-rendered and not focusable; htmlLegendPlugin populates this <ul>
+ * with real <button>s mirroring the chart's legend items. */
+.chart-html-legend {
+  list-style: none;
+  margin: 0.5rem 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.chart-html-legend .chart-legend-row {
+  margin: 0;
+  padding: 0;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.chart-legend-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chart-legend-item:focus-visible {
+  outline: none;
+  border-color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chart-legend-item--hidden {
+  opacity: 0.5;
+}
+
+.chart-legend-item--hidden .chart-legend-label {
+  text-decoration: line-through;
+}
+
+.chart-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background-color: transparent;
+}
+
+.chart-legend-swatch img {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
 .chart-tooltip {
   position: absolute;
   z-index: 10;
@@ -892,15 +964,6 @@ section > h2 {
   font-size: 0.85rem;
   color: var(--text-muted);
   padding: 0.5rem 0;
-}
-
-/* uPlot legend — clickable series toggle */
-.uplot .u-legend .u-label {
-  cursor: pointer;
-}
-
-.uplot .u-legend .u-label:hover {
-  text-decoration: underline;
 }
 
 /* Settings Page */
