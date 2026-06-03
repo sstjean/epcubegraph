@@ -41,6 +41,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter), Npgsql (API), Preact + uPlot (dashboard), MSAL.js (auth) (124-device-discovery)
 - PostgreSQL 17 — existing `epcubegraph` database. Schema changes: `devices` table (add `status` column), new `pending_replacements` table. New settings key: `discovery_interval_seconds`. (124-device-discovery)
 - TypeScript 5.8 / Preact 10.x (dashboard) + Chart.js 4.x, chartjs-adapter-date-fns 3.x, date-fns 4.x (replaces uPlot in `HistoricalGraph.tsx`) (153-chart-js-historical-graph)
+- Terraform (`azurerm ~>4.0`); Bash (validation script). No + Azure CLI (`az monitor app-insights`, `az containerapp`) (115-appinsights-per-environment)
+- N/A (no schema/data changes; monitoring resources only). (115-appinsights-per-environment)
 
 ## Project Structure
 
@@ -103,7 +105,6 @@ When the user says **"Start up"** or **"Shutdown"**, follow the procedures in `.
 ````
 
 ## Recent Changes
+- 115-appinsights-per-environment: Added Terraform (`azurerm ~>4.0`); Bash (validation script). No + Azure CLI (`az monitor app-insights`, `az containerapp`)
 - 153-chart-js-historical-graph: Added Chart.js 4.x + chartjs-adapter-date-fns 3.x + date-fns 4.x to the dashboard; removed uPlot from `HistoricalGraph.tsx`
 - 124-device-discovery: Added Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter), Npgsql (API), Preact + uPlot (dashboard), MSAL.js (auth)
-- 093-remove-vestigial-metrics: Added Python 3.12 (exporter), C# / .NET 10 (API), Bash (scripts), HCL (Terraform) + psycopg2 (exporter), Npgsql (API), unittest (exporter tests), xUnit (API tests)
-- 010-simplify-vue-mapping: Added TypeScript 5.8 (dashboard), C# / .NET 10 (API) + Preact 10.x, Vitest 4.x (dashboard); ASP.NET Core Minimal API, Npgsql (API)
