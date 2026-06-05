@@ -1,6 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/preact';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/preact';
 import { h } from 'preact';
+
+const telemetryMocks = vi.hoisted(() => ({
+  trackPageLoad: vi.fn(),
+}));
 
 // Mock route components to avoid side effects (fetch calls, etc.)
 vi.mock('../../src/components/CurrentReadings', () => ({
@@ -29,9 +33,40 @@ vi.mock('../../src/hooks/useDeviceDiscovery', () => ({
   }),
 }));
 
+vi.mock('../../src/telemetry', () => ({
+  trackPageLoad: telemetryMocks.trackPageLoad,
+}));
+
 import { App } from '../../src/App';
 
 describe('App', () => {
+  beforeEach(() => {
+    telemetryMocks.trackPageLoad.mockClear();
+  });
+
+  it('tracks initial page load on mount', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
+    // Act
+    render(<App />);
+
+    // Assert
+    expect(telemetryMocks.trackPageLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it('tracks page load again on route change', () => {
+    // Arrange
+    history.pushState({}, '', '/');
+
+    // Act
+    render(<App />);
+    fireEvent.click(screen.getByRole('link', { name: 'History' }));
+
+    // Assert
+    expect(telemetryMocks.trackPageLoad).toHaveBeenCalledTimes(2);
+  });
+
   it('renders <nav> landmark with navigation links (FR-015)', () => {
     // Arrange
     history.pushState({}, '', '/');
