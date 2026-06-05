@@ -498,6 +498,50 @@ else
 fi
 
 # ==============================================================================
+# 8b. Application Insights (per-environment isolation — issue #115)
+# ==============================================================================
+header "Application Insights"
+
+AI_NAME="${ENV_NAME}-appinsights"
+AI_JSON=$(az monitor app-insights component show --app "$AI_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
+
+if [[ -z "$AI_JSON" ]]; then
+  # R1: per-environment Application Insights resource must exist
+  fail "Application Insights '$AI_NAME' not found"
+else
+  pass "Application Insights '$AI_NAME' exists"
+
+  # R2: the component must link to THIS environment's Log Analytics workspace
+  #     (workspaceResourceId is the az-CLI JSON field for the workspace_id link)
+  AI_WORKSPACE=$(echo "$AI_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('workspaceResourceId',''))")
+  if [[ "$AI_WORKSPACE" == *"/${ENV_NAME}-logs" ]]; then
+    pass "Linked to per-environment Log Analytics workspace '${ENV_NAME}-logs'"
+  else
+    fail "Workspace link: $AI_WORKSPACE (expected to end with /${ENV_NAME}-logs)"
+  fi
+
+  # R3: the API Container App must source its connection string from the
+  #     per-environment secret (mirrors the ConnectionStrings__DefaultConnection
+  #     check above). Skip cleanly if the API was not deployed.
+  if [[ -z "$API_JSON" ]]; then
+    skip "API Container App not deployed — cannot verify connection-string secret ref"
+  else
+    AI_SECRET_REF=$(echo "$API_JSON" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+envs = d['properties']['template']['containers'][0].get('env',[])
+conn = next((e for e in envs if e['name'] == 'APPLICATIONINSIGHTS_CONNECTION_STRING'), None)
+print(conn.get('secretRef','') if conn else '')
+")
+    if [[ "$AI_SECRET_REF" == "appinsights-connection-string" ]]; then
+      pass "API App Insights connection string sourced from secret 'appinsights-connection-string'"
+    else
+      fail "API App Insights connection string secret ref: $AI_SECRET_REF (expected appinsights-connection-string)"
+    fi
+  fi
+fi
+
+# ==============================================================================
 # 9. Managed Identity & RBAC
 # ==============================================================================
 header "Managed Identity"

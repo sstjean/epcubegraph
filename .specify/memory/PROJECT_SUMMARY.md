@@ -1,14 +1,40 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-05-24
+**Last Updated**: 2026-06-04
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `153-chart-js-historical-graph` (PR #161 open, awaiting review + CI)
-**Last merged**: PR #151 — chore: drop iPhone/iPad feature specs (#5, #6 closed)
-**Active PR**: #161 (closes #149 + #153) — Chart.js migration of `HistoricalGraph.tsx`
+**Branch**: `115-appinsights-per-environment` (PR #163 open)
+**Last merged**: PR #162 — issue cleanup and branch hygiene
+**Active PR**: #163 (closes #115) — Per-environment Application Insights isolation (verify + enforce)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
+
+## Recent sessions (2026-05-24)
+
+## Recent sessions (2026-06-04)
+
+- Completed full shutdown-cycle for issue #115 on branch `115-appinsights-per-environment`:
+  - Added validator enforcement in `infra/validate-deployment.sh` for Application Insights:
+    - R1: `${env}-appinsights` exists
+    - R2: linked to `${env}-logs`
+    - R3: API `APPLICATIONINSIGHTS_CONNECTION_STRING` secretRef is `appinsights-connection-string`
+  - Live evidence captured before teardown:
+    - Validator PASS: 65 passed / 0 failed in staging
+    - Distinct instrumentation keys: staging `9ce57485-...` vs production `c62f58ff-...`
+    - Production query windows (`30m`, `30d`) showed zero staging leakage
+  - Staging destroy completed (run `26906146556`) and verified:
+    - `epcubegraph-b115-app-*` resource groups removed
+    - staging App Insights + Log Analytics removed
+    - production `epcubegraph-appinsights` remains intact
+- Documentation/spec updates completed and committed:
+  - `DEPLOY.md`: new per-environment App Insights guidance and resource table rows
+  - `specs/115-appinsights-per-environment/tasks.md`: marked complete with evidence and observed telemetry limitation notes
+- PR opened: #163 (`https://github.com/sstjean/epcubegraph/pull/163`), merge state currently `CLEAN`.
+- Issue #115 updated with closing evidence comments.
+- New defect discovered and filed: #164 (no App Insights telemetry emitted at runtime despite correct wiring).
+  - Evidence: zero telemetry in production over 30d and staging after generated traffic.
+  - Leading hypothesis: telemetry ingestion path blocked/misconfigured in private networking context.
 
 ## Recent sessions (2026-05-24)
 
@@ -48,16 +74,24 @@
 
 ## What's Next
 
-1. Check PR #161 status (CI rollup, Copilot/human review notes) at next start-up.
-2. Address review feedback or merge if green.
-3. After merge: delete `153-chart-js-historical-graph` branch (local + remote),
-   confirm #149 + #153 auto-close, check for any vestigial staging envs.
+1. Monitor PR #163 checks/review and merge when green.
+2. After merging #163, verify #115 auto-closes and remove branch `115-appinsights-per-environment` (local + remote).
+3. Ensure any PR-triggered staging environment residue is destroyed after checks complete.
+4. Start work on issue #164 root cause (no App Insights telemetry ingestion):
+  - inspect API container logs for AI channel/transmission failures
+  - test reachability from container to AI ingestion endpoint host
+  - decide remediation path (AMPLS/private link vs NAT egress) while preserving env parity
 
 ## Open issues
 
-- **#149** — historical graph axis labels (will be closed by Chart.js PR)
-- **#115** — Separate Application Insights per environment
+- **#164** — API/dashboard emit no Application Insights telemetry at runtime (new)
+- **#115** — Separate Application Insights per environment (closure pending PR #163 merge)
 - **#52**  — Port epcube-exporter from Python to C# (low priority)
+
+## Pending
+
+- PR #163 is open and awaiting CI/review/merge.
+- Follow-up diagnostic implementation for #164 not yet started (issue filed with evidence + hypotheses).
 
 ---
 

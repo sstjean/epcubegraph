@@ -149,6 +149,18 @@ Deletes ALL epcubegraph Azure resources (RGs, DNS, state, KVs, Entra apps):
 ./infra/validate-deployment.sh --rg epcubegraph-rg
 ```
 
+### Per-environment Application Insights
+
+Each environment gets its **own** monitoring resources, templated by
+`environment_name`: `${env}-appinsights` (Application Insights) linked to its own
+`${env}-logs` (Log Analytics workspace). The API reads its connection string from the
+per-environment Key Vault secret `appinsights-connection-string`, so staging telemetry
+can never appear in production's resource (the Application Map is computed per
+resource). The validator's **Application Insights** section enforces this wiring
+(R1: resource exists, R2: linked to `${env}-logs`, R3: API secret ref). Destroying an
+environment removes both `${env}-appinsights` and `${env}-logs`; production is
+unaffected.
+
 ---
 
 ## What Gets Created
@@ -164,6 +176,8 @@ Deletes ALL epcubegraph Azure resources (RGs, DNS, state, KVs, Entra apps):
 | API Container App | main-rg | ASP.NET Core, Entra ID auth |
 | Container Registry | main-rg | Docker images |
 | Static Web App | main-rg | Preact dashboard SPA |
+| Application Insights | main-rg | Per-env telemetry (`${env}-appinsights`) |
+| Log Analytics Workspace | main-rg | Per-env log store (`${env}-logs`) |
 | Entra ID App Registrations | (global) | OAuth 2.0 + user_impersonation |
 
 ---
