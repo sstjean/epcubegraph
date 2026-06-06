@@ -1,16 +1,37 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-06-04
+**Last Updated**: 2026-06-06
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `115-appinsights-per-environment` (PR #163 open)
-**Last merged**: PR #162 — issue cleanup and branch hygiene
-**Active PR**: #163 (closes #115) — Per-environment Application Insights isolation (verify + enforce)
+**Branch**: `164-dashboard-pageview-initial-load` (PR #165 open)
+**Last merged**: PR #163 — Per-environment Application Insights isolation (verify + enforce)
+**Active PR**: #165 — Fix dashboard initial page-view telemetry (partial fix for #164)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## Recent sessions (2026-05-24)
+## Recent sessions (2026-06-06)
+
+- Completed cleanup for #163 / #115:
+  - Merged PR #163 with merge commit.
+  - Verified #115 auto-closed.
+  - Deleted `115-appinsights-per-environment` branch (local + remote).
+  - Destroyed residual b115 staging env via run `27017066095` and verified all `epcubegraph-b115-app*` resource groups removed.
+- Advanced #164 with live telemetry verification:
+  - Generated controlled production API traffic and confirmed immediate `requests` ingestion in App Insights (`epcubegraph-api`), disproving the broad "API ingestion is fully broken" claim.
+  - Verified dashboard telemetry gap remained (`pageViews` and `customEvents` absent in production history).
+  - Verified deployed dashboard bundle contains a real App Insights connection string and tracking methods (so the issue is not missing bundle config injection).
+- Implemented dashboard fix on branch `164-dashboard-pageview-initial-load`:
+  - `dashboard/src/App.tsx`: track initial page view on mount; avoid duplicate first event when router emits initial route change.
+  - `dashboard/tests/component/App.test.tsx`: added regression tests for initial page-view tracking and route-change tracking.
+  - Commit: `484e870`.
+- Validation completed:
+  - `cd dashboard && npm run typecheck` passed.
+  - `cd dashboard && npm run test:coverage` passed at 100% statements/branches/functions/lines (775 tests).
+- Collaboration artifacts:
+  - Posted issue update to #164 with verified findings and fix summary.
+  - Opened PR #165: https://github.com/sstjean/epcubegraph/pull/165.
+  - Latest observed state: PR #165 open, merge state `CLEAN`, checks green.
 
 ## Recent sessions (2026-06-04)
 
@@ -33,8 +54,6 @@
 - PR opened: #163 (`https://github.com/sstjean/epcubegraph/pull/163`), merge state currently `CLEAN`.
 - Issue #115 updated with closing evidence comments.
 - New defect discovered and filed: #164 (no App Insights telemetry emitted at runtime despite correct wiring).
-  - Evidence: zero telemetry in production over 30d and staging after generated traffic.
-  - Leading hypothesis: telemetry ingestion path blocked/misconfigured in private networking context.
 
 ## Recent sessions (2026-05-24)
 
@@ -74,24 +93,23 @@
 
 ## What's Next
 
-1. Monitor PR #163 checks/review and merge when green.
-2. After merging #163, verify #115 auto-closes and remove branch `115-appinsights-per-environment` (local + remote).
-3. Ensure any PR-triggered staging environment residue is destroyed after checks complete.
-4. Start work on issue #164 root cause (no App Insights telemetry ingestion):
-  - inspect API container logs for AI channel/transmission failures
-  - test reachability from container to AI ingestion endpoint host
-  - decide remediation path (AMPLS/private link vs NAT egress) while preserving env parity
+1. Merge PR #165 with a merge commit once user approves.
+2. After merge, verify issue #164 status and decide whether to keep #164 open for remaining telemetry scope or split/create follow-up issue(s).
+3. If #165 merges, delete branch `164-dashboard-pageview-initial-load` (local + remote).
+4. Post-deploy verification for dashboard telemetry:
+  - confirm new `pageViews` appear for `epcubegraph-dashboard`
+  - confirm route-change page views continue to emit
+  - confirm no duplicate first page-view event
 
 ## Open issues
 
-- **#164** — API/dashboard emit no Application Insights telemetry at runtime (new)
-- **#115** — Separate Application Insights per environment (closure pending PR #163 merge)
+- **#164** — API/dashboard emit no Application Insights telemetry at runtime (active; partially addressed by PR #165)
 - **#52**  — Port epcube-exporter from Python to C# (low priority)
 
 ## Pending
 
-- PR #163 is open and awaiting CI/review/merge.
-- Follow-up diagnostic implementation for #164 not yet started (issue filed with evidence + hypotheses).
+- PR #165 is open and awaiting merge decision.
+- No uncommitted local changes at shutdown.
 
 ---
 
