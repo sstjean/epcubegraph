@@ -1,63 +1,67 @@
-# Session Handoff (2026-06-04)
+# Session Handoff (2026-06-06)
 
 ## Branch / Repo State
 
-- Current branch: `115-appinsights-per-environment`
-- Latest commits on branch:
-  - `9d6bb2e` docs(memory): shutdown update project summary for 2026-06-04
-  - `caddd42` docs(115): record verify-only evidence + per-env App Insights note
-  - `049780f` feat(115): validator R1-R3 App Insights checks
-- Working tree: clean at shutdown
-- Stashes: none created this session
+- Current branch: `164-dashboard-pageview-initial-load`
+- PR: #165 (open) — https://github.com/sstjean/epcubegraph/pull/165
+- Latest feature commit on branch:
+  - `484e870` fix(dashboard): track initial page view in App
+- Working tree at shutdown: clean
+- Stashes: none
 
 ## What Was Completed
 
-1. Closed out issue #115 work items with evidence and docs updates.
-2. Opened PR #163: https://github.com/sstjean/epcubegraph/pull/163
-3. Ran staging destroy workflow and verified teardown:
-   - run `26906146556` succeeded
-   - b115 staging RGs removed
-   - production App Insights still present
-4. Filed follow-up defect #164 for no App Insights telemetry ingestion:
-   - https://github.com/sstjean/epcubegraph/issues/164
+1. Closed #163 lifecycle:
+   - merged PR #163
+   - verified #115 closed
+   - deleted branch `115-appinsights-per-environment` (local + remote)
+   - destroyed residual b115 staging resources (run `27017066095`, success)
+2. Advanced #164 diagnosis with live evidence:
+   - produced controlled API traffic and confirmed request ingestion in production App Insights
+   - confirmed dashboard telemetry gap persisted (`pageViews` / `customEvents` absent)
+   - confirmed deployed dashboard bundle contains App Insights connection string and telemetry methods
+3. Implemented a targeted dashboard fix:
+   - `dashboard/src/App.tsx`: explicit initial page-view tracking on mount
+   - de-dup guard to prevent double first event when router emits initial route change
+   - `dashboard/tests/component/App.test.tsx`: regression coverage for mount + route-change tracking
+4. Verification completed:
+   - `cd dashboard && npm run typecheck` passed
+   - `cd dashboard && npm run test:coverage` passed at 100% (775 tests)
+5. Collaboration updates:
+   - posted issue #164 update comment with findings and fix summary
+   - opened PR #165
 
 ## What Was Tried / What Failed
 
-- Tried to prove positive telemetry landing in staging and production using `az monitor app-insights query` across `requests`, `exceptions`, `customEvents`, `traces`, `dependencies`.
-- Result: zero rows observed (including production over 30d), despite valid connection string wiring and validator pass.
-- This was determined to be a separate defect (not #115 isolation failure), so investigation was split into #164.
+- Initial route-only page-view assumption was incomplete: test showed router `onChange` may fire on initial load, which caused double-count risk after adding mount tracking.
+- Resolved by adding the `useRef` first-event gate in `App.tsx`; tests then passed and coverage returned to 100%.
 
 ## Decision / How To Proceed
 
-- Treat #115 as complete via structural isolation proof + validator enforcement (PR #163).
-- Track and fix runtime telemetry ingestion separately under #164.
+- Treat API ingestion as currently functional (verified with live controlled traffic).
+- Treat this branch/PR as a dashboard telemetry trigger fix (partial #164 scope), not full closure of #164 until post-deploy telemetry is re-verified.
 
 ## Concrete Next Actions
 
-1. Monitor PR #163 checks and merge when green:
-   - `gh pr view 163 --json state,mergeStateStatus,url`
-2. After merge, verify #115 closes and clean branch:
-   - `gh issue view 115`
-   - `git checkout main && git pull`
-   - `git branch -d 115-appinsights-per-environment`
-   - `git push origin --delete 115-appinsights-per-environment`
-3. Confirm no vestigial staging envs remain (including any PR-triggered ones):
-   - `az group list --query "[?contains(name, 'epcubegraph-b')].name" -o tsv`
-   - If needed: `gh workflow run cd.yml -f environment=staging -f branch_name=<branch> -f destroy=true`
-4. Start #164 diagnosis in live environment:
-   - Check API container logs for AI channel/transmission errors
-   - Test reachability from API container to App Insights ingestion endpoint
-   - Validate whether private-network egress path supports AI endpoints
-   - Propose fix path (AMPLS/private link vs NAT egress) with environment parity
+1. Check PR #165 status and merge when user approves:
+   - `gh pr view 165 --json state,mergeStateStatus,statusCheckRollup,url`
+   - merge with merge commit only: `gh pr merge 165 --merge --auto=false`
+2. After merge:
+   - `git checkout main && git pull --ff-only`
+   - `git branch -d 164-dashboard-pageview-initial-load`
+   - `git push origin --delete 164-dashboard-pageview-initial-load`
+3. Verify production dashboard telemetry after deploy:
+   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | summarize count() by cloud_RoleName" -o json`
+   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | project timestamp,name,url,cloud_RoleName | order by timestamp desc | take 20" -o json`
+4. Decide #164 closure or split based on post-deploy results.
 
 ## Do Not Repeat / Guardrails
 
-- Do not treat telemetry non-arrival as proof of leakage; #115 isolation is already proven by separate resources/keys and validator R1-R3.
-- Do not run `infra/validate-deployment.sh` on macOS system bash 3.2; use `/opt/homebrew/bin/bash` locally (CI Linux bash is unaffected).
-- Do not use portal-only evidence for #115/#164; keep CLI-query evidence as primary.
+- Do not restate #164 as "no API ingestion at all" without fresh verification; current evidence shows API requests are ingesting.
+- Keep evidence CLI-based (query output + controlled traffic), not portal-only.
+- Preserve merge-commit policy (`--merge` only).
 
 ## Open Issues Affected
 
-- #115 (pending auto-close on PR #163 merge)
-- #164 (new, open)
+- #164 (open; partially addressed by PR #165)
 - #52 (unchanged backlog)

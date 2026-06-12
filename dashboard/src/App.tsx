@@ -1,4 +1,5 @@
 import Router from 'preact-router';
+import { useEffect, useRef } from 'preact/hooks';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CurrentReadings } from './components/CurrentReadings';
 import { HistoryView } from './components/HistoryView';
@@ -8,11 +9,23 @@ import { ReplacementBanner } from './components/ReplacementBanner';
 import { DeviceDiscoveryProvider } from './hooks/useDeviceDiscovery';
 import { trackPageLoad } from './telemetry';
 
-function handleRouteChange() {
-  trackPageLoad();
-}
-
 export function App() {
+  const initialPageViewTracked = useRef(false);
+
+  function handleRouteChange() {
+    if (!initialPageViewTracked.current) {
+      initialPageViewTracked.current = true;
+      return;
+    }
+
+    trackPageLoad();
+  }
+
+  useEffect(() => {
+    initialPageViewTracked.current = true;
+    trackPageLoad();
+  }, []);
+
   return (
     <ErrorBoundary>
       <DeviceDiscoveryProvider>
