@@ -34,6 +34,14 @@ skip()   { echo -e "  ${YELLOW}⊘${NC} $*"; SKIP=$((SKIP + 1)); }
 header() { echo ""; echo -e "${BOLD}── $* ──${NC}"; }
 info()   { echo -e "  ${BLUE}→${NC} $*"; }
 
+# -- az_json helper ------------------------------------------------------------
+# Runs `az` capturing stdout/stderr/exit-code separately so each check can tell
+# a real CLI/tool error apart from a genuinely-absent resource — instead of the
+# old `2>/dev/null || echo ""` pattern that swallowed errors and misreported
+# them as "not found" (issue #166). See infra/lib/az-json.sh.
+# shellcheck source=lib/az-json.sh
+source "${SCRIPT_DIR}/lib/az-json.sh"
+
 # -- Argument parsing ----------------------------------------------------------
 RG_OVERRIDE=""
 while [[ $# -gt 0 ]]; do

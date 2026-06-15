@@ -43,6 +43,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - TypeScript 5.8 / Preact 10.x (dashboard) + Chart.js 4.x, chartjs-adapter-date-fns 3.x, date-fns 4.x (replaces uPlot in `HistoricalGraph.tsx`) (153-chart-js-historical-graph)
 - Terraform (`azurerm ~>4.0`); Bash (validation script). No + Azure CLI (`az monitor app-insights`, `az containerapp`) (115-appinsights-per-environment)
 - N/A (no schema/data changes; monitoring resources only). (115-appinsights-per-environment)
+- Bash (target `/usr/bin/env bash`, `set -euo pipefail`); Python 3 used inline for JSON parsing (unchanged) + Azure CLI (`az`) — must work on **2.84.0** (local) and **>= 2.86.0** (runner); `python3`; `curl` (existing smoke tests) (166-validate-pg-db-check)
+- N/A (no schema/data changes — FR-010) (166-validate-pg-db-check)
 
 ## Project Structure
 
@@ -105,6 +107,6 @@ When the user says **"Start up"** or **"Shutdown"**, follow the procedures in `.
 ````
 
 ## Recent Changes
+- 166-validate-pg-db-check: Added Bash (target `/usr/bin/env bash`, `set -euo pipefail`); Python 3 used inline for JSON parsing (unchanged) + Azure CLI (`az`) — must work on **2.84.0** (local) and **>= 2.86.0** (runner); `python3`; `curl` (existing smoke tests)
 - 115-appinsights-per-environment: Added Terraform (`azurerm ~>4.0`); Bash (validation script). No + Azure CLI (`az monitor app-insights`, `az containerapp`)
 - 153-chart-js-historical-graph: Added Chart.js 4.x + chartjs-adapter-date-fns 3.x + date-fns 4.x to the dashboard; removed uPlot from `HistoricalGraph.tsx`
-- 124-device-discovery: Added Python 3.12 (exporter), C# / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter), Npgsql (API), Preact + uPlot (dashboard), MSAL.js (auth)

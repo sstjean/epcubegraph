@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Stub `az` CLI for testing infra/lib/az-json.sh.
+# Behavior is selected by the STUB_AZ_MODE environment variable. The stub
+# ignores the actual az arguments — it only simulates the three outcomes the
+# az_json helper must distinguish (see specs/166-validate-pg-db-check/
+# contracts/az-json.md "Stub contract for tests").
+
+case "${STUB_AZ_MODE:-}" in
+  success-json)
+    # Successful call returning JSON (mimics `az resource show` for the DB).
+    printf '%s\n' '{"properties":{"charset":"UTF8","collation":"en_US.utf8"}}'
+    exit 0
+    ;;
+  error)
+    # A real CLI failure: non-zero exit with a diagnostic on stderr. This is
+    # the case the old `2>/dev/null || echo ""` pattern silently swallowed.
+    printf '%s\n' "ERROR: unrecognized arguments: --server-name --database-name" >&2
+    exit 2
+    ;;
+  success-empty)
+    # Successful call that legitimately returns no output (resource absent).
+    exit 0
+    ;;
+  *)
+    printf '%s\n' "stub-az: unknown STUB_AZ_MODE='${STUB_AZ_MODE:-}'" >&2
+    exit 99
+    ;;
+esac
