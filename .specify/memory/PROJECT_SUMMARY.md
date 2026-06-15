@@ -1,39 +1,70 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-06-06
+**Last Updated**: 2026-06-14
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `164-dashboard-pageview-initial-load` (PR #165 open)
-**Last merged**: PR #163 — Per-environment Application Insights isolation (verify + enforce)
-**Active PR**: #165 — Fix dashboard initial page-view telemetry (partial fix for #164)
+**Branch**: `166-validate-pg-db-check` (WIP — NOT pushed; work in flight, see SESSION_HANDOFF.md)
+**Last merged**: PR #165 — Fix dashboard initial page-view telemetry (merge commit `504a39c`)
+**Active PR**: none
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
 
-## Recent sessions (2026-06-06)
+## Recent sessions (2026-06-13/14)
 
-- Completed cleanup for #163 / #115:
-  - Merged PR #163 with merge commit.
-  - Verified #115 auto-closed.
-  - Deleted `115-appinsights-per-environment` branch (local + remote).
-  - Destroyed residual b115 staging env via run `27017066095` and verified all `epcubegraph-b115-app*` resource groups removed.
-- Advanced #164 with live telemetry verification:
-  - Generated controlled production API traffic and confirmed immediate `requests` ingestion in App Insights (`epcubegraph-api`), disproving the broad "API ingestion is fully broken" claim.
-  - Verified dashboard telemetry gap remained (`pageViews` and `customEvents` absent in production history).
-  - Verified deployed dashboard bundle contains a real App Insights connection string and tracking methods (so the issue is not missing bundle config injection).
-- Implemented dashboard fix on branch `164-dashboard-pageview-initial-load`:
-  - `dashboard/src/App.tsx`: track initial page view on mount; avoid duplicate first event when router emits initial route change.
-  - `dashboard/tests/component/App.test.tsx`: added regression tests for initial page-view tracking and route-change tracking.
-  - Commit: `484e870`.
-- Validation completed:
-  - `cd dashboard && npm run typecheck` passed.
-  - `cd dashboard && npm run test:coverage` passed at 100% statements/branches/functions/lines (775 tests).
-- Collaboration artifacts:
-  - Posted issue update to #164 with verified findings and fix summary.
-  - Opened PR #165: https://github.com/sstjean/epcubegraph/pull/165.
-  - Latest observed state: PR #165 open, merge state `CLEAN`, checks green.
+- **Started up** from handoff; confirmed: no open PRs, 0 Dependabot alerts, CD still RED (#166).
+- **Issue #166 — full spec-kit process completed** (spec→plan→tasks→analyze→implement):
+  - Spec: `specs/166-validate-pg-db-check/spec.md` — 4 user stories, 13 FRs, 7 success criteria.
+  - Plan: `specs/166-validate-pg-db-check/plan.md` + research.md, data-model.md, contracts/az-json.md, quickstart.md — all crux decisions resolved including live-verified `.properties.charset`/`.properties.collation` field paths.
+  - Tasks: `specs/166-validate-pg-db-check/tasks.md` — 27 tasks, 7 phases, TDD Red-before-Green ordered.
+  - Analysis: GO — zero critical/high findings; 17-occurrence count ground-truth-verified.
+  - Implementation (in flight):
+    - `infra/lib/az-json.sh`: new `az_json()` helper — captures stdout/stderr/exit-code separately, never swallows stderr, `set -e`-safe via save/restore of caller's errexit state.
+    - `infra/tests/stub-az`: stub `az` CLI (success-json / error / success-empty modes).
+    - `infra/tests/test-az-json.sh`: 15-assertion TDD suite — Red confirmed, Green confirmed (15/15).
+    - `infra/validate-deployment.sh`: sourcing `lib/az-json.sh` at top.
+    - Commit: `eb93845` on branch `166-validate-pg-db-check` (NOT pushed).
+- **CRITICAL DISCOVERY (session end):** When an Azure resource is genuinely missing, `az resource show --ids` and `az containerapp show` return **rc!=0** (rc=3 / rc=1) with "ResourceNotFound" on stderr — NOT empty-stdout-with-rc=0. This invalidates the `success-empty` branch of the original call-site contract. The three-branch pattern must be revised to:
+  - `rc=0` → resource present (JSON stdout)
+  - `rc!=0` + stderr contains "ResourceNotFound" → resource absent (fail or skip per policy)
+  - `rc!=0` + other stderr → real tool error (surface stderr)
+  - The `stub-az` and `test-az-json.sh` need updating to match this behavior (replace `success-empty` with `resource-not-found` mode).
+  - The call-site conversions (T009-T023, 17 sites) are **NOT yet done** — must update contracts/stub/tests first.
 
-## Recent sessions (2026-06-04)
+## Recent sessions (2026-06-12)
+
+- **Merged PR #165** (issue #164 dashboard initial page-view fix) via merge commit `504a39c`. Branch `164-dashboard-pageview-initial-load` deleted (local + remote). `main` fast-forwarded; working tree clean.
+- **Reviewed the #164 fix end-to-end before merge** using isolated staging App Insights (`epcubegraph-b164-das-appinsights`) — page views landed correctly (`/history`, `/settings`, `/circuits`, `/`), one PageView per navigation, no double-count.
+- **Diagnosed the post-merge `validate-prod` CD failure** (CD run `27391633429`): NOT a flake — failed twice identically on the PostgreSQL DB check (`✗ Managed PostgreSQL database 'epcubegraph' not found`). Production is healthy; DB exists. **Root cause: az CLI breaking change.** `infra/validate-deployment.sh` (section 7) uses `az postgres flexible-server db show --database-name/--server-name`, which were removed in az CLI **2.86.0** (May 2026). The auto-updated GitHub runner has crossed 2.86.0 → command errors → `2>/dev/null || echo ""` swallows it → false "not found". Local az is 2.84.0 so it still works locally. The server check passes because it uses the non-deprecated `--name` flag.
+  - **Corrected issue #166** (was wrongly premised on a "transient az error") with the verified root cause and fix (version-stable call + stop swallowing stderr + audit the script for the same anti-pattern).
+- **Filed issue #167**: dashboard CSP blocks the App Insights SDK config fetch. `connect-src` in `dashboard/public/staticwebapp.config.json` allows the ingestion host but not `https://js.monitor.azure.com` → `ai.config.*.cfg.json` fetch refused on every prod page load. Ingestion still works (proven below); this is console noise + SDK falling back to default config.
+- **Production #164 verification (INCONCLUSIVE — #164 stays OPEN):**
+  - Verified prod bundle (`index-0NgvjEn6.js`) contains tracking code AND the correct connection string baked in (instrumentation key `c62f58ff-...` matches the prod App Insights resource exactly).
+  - User performed real authenticated navigation on `https://epcube.devsbx.xyz`. DevTools showed `track` beacons leaving from `telemetry.ts:32` with **204/200**, and the `track` response body was **`{"itemsReceived":10,"itemsAccepted":10,"appId":null,"errors":[]}`** — App Insights ACCEPTED all items server-side.
+  - **BUT** `az monitor app-insights query` for `pageViews` returns **empty even after ~12h** (well past ingestion lag). Items accepted at ingestion but never became queryable. Per Steve's standard, "fixed" = data visible in App Insights regardless of what ingestion reports — so **#164 is NOT verified fixed.** Needs investigation next session (see SESSION_HANDOFF.md).
+- **Destroyed b164 staging** via workflow destroy (cd.yml, run `27454291543`, conclusion=success). All `epcubegraph-b164-das-*` resource groups removed (verified empty).
+
+## What's Next
+
+1. **#166 (HIGH — keeps CD RED):** Resume on branch `166-validate-pg-db-check`. The `az_json` helper is done and tested. **Before converting the 17 call sites**, update the contract, stub, and tests to match the live-verified az CLI behavior (rc!=0 for missing resources, not rc=0-with-empty). Then update the DB check (T009-T011) and harden all 17 sites (T016-T023). See SESSION_HANDOFF.md for the exact steps.
+2. **#167:** Add `https://js.monitor.azure.com` to `connect-src` in `dashboard/public/staticwebapp.config.json`. Cheap fix, may help #164 investigation.
+3. **#164 (HIGH):** Resolve why `pageViews` are accepted at ingestion but never queryable. Leading hypothesis: workspace-based AI — query `AppPageViews` table in Log Analytics directly. See handoff for concrete az commands.
+4. **#52** — backlog.
+
+## Open issues
+
+- **#166** — `validate-prod` PostgreSQL DB check broken (az CLI 2.86.0 breaking change); fix in progress on branch `166-validate-pg-db-check`. OPEN.
+- **#164** — Dashboard pageViews accepted at ingestion but not queryable (code fix merged but end-to-end NOT verified). OPEN.
+- **#167** — Dashboard CSP blocks App Insights SDK config fetch. OPEN.
+- **#52**  — Port epcube-exporter Python→C# (backlog).
+
+## Pending
+
+- **CD is RED** on `validate-prod` (issue #166) until the script is fixed. Production itself is healthy.
+- Branch `166-validate-pg-db-check` exists locally with commit `eb93845`, NOT pushed.
+- Local Docker prod-local stack: leave running between sessions (Steve keeps it up).
+
+
 
 - Completed full shutdown-cycle for issue #115 on branch `115-appinsights-per-environment`:
   - Added validator enforcement in `infra/validate-deployment.sh` for Application Insights:

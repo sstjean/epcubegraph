@@ -1,67 +1,198 @@
-# Session Handoff (2026-06-06)
+# Session Handoff — 2026-06-14
 
-## Branch / Repo State
+## Why this handoff exists
 
-- Current branch: `164-dashboard-pageview-initial-load`
-- PR: #165 (open) — https://github.com/sstjean/epcubegraph/pull/165
-- Latest feature commit on branch:
-  - `484e870` fix(dashboard): track initial page view in App
-- Working tree at shutdown: clean
-- Stashes: none
+Issue #166 (validate-prod CD failure) is in active development on branch
+`166-validate-pg-db-check`. A **critical design discovery was made at session
+end** that must be applied before the remaining call-site conversions proceed.
+Do NOT start converting the 17 az call sites until after applying the design
+revision described below.
 
-## What Was Completed
+## Current branch / tree state
 
-1. Closed #163 lifecycle:
-   - merged PR #163
-   - verified #115 closed
-   - deleted branch `115-appinsights-per-environment` (local + remote)
-   - destroyed residual b115 staging resources (run `27017066095`, success)
-2. Advanced #164 diagnosis with live evidence:
-   - produced controlled API traffic and confirmed request ingestion in production App Insights
-   - confirmed dashboard telemetry gap persisted (`pageViews` / `customEvents` absent)
-   - confirmed deployed dashboard bundle contains App Insights connection string and telemetry methods
-3. Implemented a targeted dashboard fix:
-   - `dashboard/src/App.tsx`: explicit initial page-view tracking on mount
-   - de-dup guard to prevent double first event when router emits initial route change
-   - `dashboard/tests/component/App.test.tsx`: regression coverage for mount + route-change tracking
-4. Verification completed:
-   - `cd dashboard && npm run typecheck` passed
-   - `cd dashboard && npm run test:coverage` passed at 100% (775 tests)
-5. Collaboration updates:
-   - posted issue #164 update comment with findings and fix summary
-   - opened PR #165
+- Branch: `166-validate-pg-db-check` (local only — NOT pushed to origin)
+- Commit: `eb93845` (WIP commit, everything done this session is in it)
+- Working tree: clean after WIP commit
+- `main` is at `504a39c` (PR #165 merge) — no change
+- Docker prod-local stack: leave running (do NOT tear down)
+- No other stashes or abandoned branches
 
-## What Was Tried / What Failed
+## What is DONE (do not redo)
 
-- Initial route-only page-view assumption was incomplete: test showed router `onChange` may fire on initial load, which caused double-count risk after adding mount tracking.
-- Resolved by adding the `useRef` first-event gate in `App.tsx`; tests then passed and coverage returned to 100%.
+1. **Full spec-kit artifacts** under `specs/166-validate-pg-db-check/`: spec.md, plan.md, research.md, data-model.md, contracts/az-json.md, quickstart.md, tasks.md (27 tasks). Analysis passed GO with zero critical/high issues.
+2. **`infra/lib/az-json.sh`**: `az_json()` helper implemented and working.
+3. **`infra/tests/stub-az`**: stub `az` with `STUB_AZ_MODE` in three modes.
+4. **`infra/tests/test-az-json.sh`**: 15-assertion test — Red confirmed, Green confirmed (15/15 pass). Run `bash infra/tests/test-az-json.sh` to re-verify.
+5. **`infra/validate-deployment.sh`**: sources `lib/az-json.sh` after the helper block.
+6. **`.github/agents/copilot-instructions.md`**: speckit boilerplate added for #166.
 
-## Decision / How To Proceed
+## CRITICAL DISCOVERY: az CLI absence behavior
 
-- Treat API ingestion as currently functional (verified with live controlled traffic).
-- Treat this branch/PR as a dashboard telemetry trigger fix (partial #164 scope), not full closure of #164 until post-deploy telemetry is re-verified.
+**The original call-site contract in `specs/166-validate-pg-db-check/contracts/az-json.md` is wrong for the absence case.**
 
-## Concrete Next Actions
+Live-verified behavior (az 2.84.0 against production):
+```
+az resource show --ids "/subscriptions/.../databases/nonexistentdb"
+→ rc=3, stdout=(empty), stderr="ResourceNotFound ... not found"
 
-1. Check PR #165 status and merge when user approves:
-   - `gh pr view 165 --json state,mergeStateStatus,statusCheckRollup,url`
-   - merge with merge commit only: `gh pr merge 165 --merge --auto=false`
-2. After merge:
-   - `git checkout main && git pull --ff-only`
-   - `git branch -d 164-dashboard-pageview-initial-load`
-   - `git push origin --delete 164-dashboard-pageview-initial-load`
-3. Verify production dashboard telemetry after deploy:
-   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | summarize count() by cloud_RoleName" -o json`
-   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | project timestamp,name,url,cloud_RoleName | order by timestamp desc | take 20" -o json`
-4. Decide #164 closure or split based on post-deploy results.
+az containerapp show --name "epcubegraph-nonexistent" --resource-group "..."
+→ rc=1, stdout=(empty), stderr="ResourceNotFound ... not found"
 
-## Do Not Repeat / Guardrails
+az resource show --ids "/subscriptions/.../databases/epcubegraph"  (EXISTS)
+→ rc=0, stdout=JSON with .properties.charset/collation, stderr=(empty)
+```
 
-- Do not restate #164 as "no API ingestion at all" without fresh verification; current evidence shows API requests are ingesting.
-- Keep evidence CLI-based (query output + controlled traffic), not portal-only.
-- Preserve merge-commit policy (`--merge` only).
+**Conclusion:** There is NO "zero-exit-with-empty-stdout" case for missing resources. A missing resource exits non-zero (rc=1 or rc=3) with "ResourceNotFound" on stderr. The current `success-empty` stub mode and `elif [[ -z "$AZ_JSON_OUT" ]]` branch in the contract do NOT reflect real az CLI behavior.
 
-## Open Issues Affected
+The CORRECT three-branch pattern is:
+```
+rc=0                               → PRESENT (JSON on stdout)
+rc!=0, stderr contains "NotFound"  → ABSENT  (fail or skip per policy)
+rc!=0, other stderr                → TOOL ERROR (surface AZ_JSON_ERR)
+```
 
-- #164 (open; partially addressed by PR #165)
-- #52 (unchanged backlog)
+## What to do NEXT SESSION (in order)
+
+### Step 1: Update `stub-az` (replace `success-empty` with `resource-not-found`)
+
+In `infra/tests/stub-az`, replace the `success-empty` mode with `resource-not-found`:
+```bash
+  resource-not-found)
+    printf '%s\n' "ERROR: (ResourceNotFound) The resource was not found." >&2
+    exit 3
+    ;;
+```
+Keep `success-json` and `error` as-is.
+
+### Step 2: Update `test-az-json.sh` (Scenario 3: absence via non-zero rc)
+
+Replace the `success-empty` scenario with `resource-not-found`. Update `decide_db()`:
+```bash
+decide_db() {
+  if ! az_json resource show --ids "/fake/db/id" -o json; then
+    if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+      echo "NOT_FOUND"
+    else
+      echo "TOOL_ERROR: ${AZ_JSON_ERR}"
+    fi
+  else
+    echo "PRESENT"
+  fi
+}
+```
+New Scenario 3 assertions:
+- `AZ_JSON_RC != 0` (rc=3 from stub)
+- `AZ_JSON_OUT` is empty
+- `AZ_JSON_ERR` contains "ResourceNotFound"
+- `decide_db` returns "NOT_FOUND"
+- Verify Scenario 2 (`error` mode / "unrecognized arguments") still returns "TOOL_ERROR" not "NOT_FOUND"
+
+Re-run `bash infra/tests/test-az-json.sh` and confirm Green.
+
+### Step 3: Update `contracts/az-json.md`
+
+Replace the stub contract table and call-site patterns to match the corrected behavior. Key patterns:
+
+**Required resource** (DB, ACR, KV, logs, appinsights, identity, entra):
+```bash
+if ! az_json resource show --ids "$PG_DB_ID" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Managed PostgreSQL database 'epcubegraph' not found"
+  else
+    fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"
+  fi
+else
+  PG_DB_JSON="$AZ_JSON_OUT"
+  pass "Managed PostgreSQL database 'epcubegraph' exists"
+  ...charset/collation sub-checks...
+fi
+```
+
+**Optional resource** (API/exporter — legitimately absent when not deployed):
+```bash
+if ! az_json containerapp show --name "$API_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    skip "API Container App '$API_NAME' not deployed (api_image may be empty)"
+  else
+    fail "API Container App '$API_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
+else
+  API_JSON="$AZ_JSON_OUT"
+  pass "Container App '$API_NAME' exists"
+  ...sub-checks...
+fi
+```
+
+**tsv commands** (KV secret list, ACR id, role assignment) — zero-exit with empty stdout IS valid (empty list is not an error):
+```bash
+if ! az_json keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv; then
+  fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+else
+  KV_SECRETS="$AZ_JSON_OUT"  # empty = firewall fallback, not a tool error
+  ...existing firewall fallback logic unchanged...
+fi
+```
+
+### Step 4: Convert the 17 call sites in `infra/validate-deployment.sh` (T009-T023)
+
+With the corrected pattern, convert all sites sequentially (same file — no parallel edits):
+
+| Section | ~Line | Pattern |
+|---------|-------|---------|
+| 1 Container Apps Env | 86 | fail-on-absence |
+| 2 PostgreSQL server | 107 | fail-on-absence |
+| 3 API Container App | 170 | **skip-on-absence** |
+| 4 exporter Container App | 273 | **skip-on-absence** |
+| 5 ACR | 377 | fail-on-absence |
+| 6 Key Vault | 405 | fail-on-absence |
+| 6 KV secrets | 420 | tsv pattern (empty=firewall fallback) |
+| 6 KV fallback exporter | 423 | fail-on-absence |
+| 6 KV env query | 430 | remove python parse stderr swallow |
+| **7 DB check (THE FIX)** | **457** | **fail-on-absence, `az resource show --ids`, `.properties.*`** |
+| 8 Log Analytics | 485 | fail-on-absence |
+| 8b App Insights | 506 | fail-on-absence |
+| 9 Managed Identity | 550 | fail-on-absence |
+| 9 ACR id | 562 | tsv pattern |
+| 9 role list | 564 | tsv pattern (empty=role not assigned → fail) |
+| 10 Entra app | 581 | fail-on-absence (also guard `== "null"`) |
+| 10 SP show | 619 | fail-on-absence |
+
+DB resource ID (version-stable, confirmed live on az 2.84.0):
+```bash
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+PG_DB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${PG_NAME}/databases/epcubegraph"
+```
+DB response: `.properties.charset` = `"UTF8"`, `.properties.collation` = `"en_US.utf8"` (live-verified).
+
+### Step 5: Verify and close
+
+- `bash infra/tests/test-az-json.sh` → Green
+- `grep -n '2>/dev/null || echo ""' infra/validate-deployment.sh` → zero hits
+- `cd infra && ./validate-deployment.sh --rg epcubegraph-rg` → RESULT: PASS
+- Wire test into CI (`validate-infra` job in `.github/workflows/ci.yml`); confirm `infra/**` is in the `changes` path filter so `infra/tests/**` triggers it
+- Push branch, open PR referencing #166, wait for CD `validate-prod` to go GREEN
+
+## #164 investigation notes
+
+Leading hypothesis: workspace-based App Insights. Query `AppPageViews` in Log Analytics directly:
+```bash
+az monitor app-insights component show --app epcubegraph-appinsights \
+  -g epcubegraph-rg -o json | jq '{ingestionMode,workspaceResourceId}'
+
+az monitor log-analytics query -w <workspace-guid> \
+  --analytics-query "AppPageViews | where TimeGenerated > ago(24h) | take 20" -o table
+```
+Do NOT close #164 until pageViews are visibly queryable (5-minute debug limit applies).
+
+## #167 (CSP)
+
+Add `https://js.monitor.azure.com` to `connect-src` in
+`dashboard/public/staticwebapp.config.json` (narrow, no wildcard). Separate branch/PR.
+
+## Must NOT do
+
+- Do NOT start converting the 17 call sites before updating stub/test/contracts (Steps 1-3 above)
+- Do NOT close #164 until pageViews are visibly queryable
+- Do NOT shut down the local Docker prod-local stack
+- Do NOT squash-merge (always merge commit)
+- Do NOT push the WIP branch without completing it (commit message says "wip")
