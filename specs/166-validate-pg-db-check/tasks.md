@@ -27,8 +27,8 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **Purpose**: Establish the new lib/tests structure and ground edits against the live script.
 
-- [ ] T001 Review `infra/validate-deployment.sh` and confirm the section-7 PostgreSQL DB check (~line 457) and the 17 anti-pattern sites against the inventory in [research.md](research.md) (`grep -n '2>/dev/null || echo ""' infra/validate-deployment.sh` should return 17 matches)
-- [ ] T002 [P] Create directories `infra/lib/` and `infra/tests/` per plan.md structure
+- [x] T001 Review `infra/validate-deployment.sh` and confirm the section-7 PostgreSQL DB check (~line 457) and the 17 anti-pattern sites against the inventory in [research.md](research.md) (`grep -n '2>/dev/null || echo ""' infra/validate-deployment.sh` should return 17 matches)
+- [x] T002 [P] Create directories `infra/lib/` and `infra/tests/` per plan.md structure
 
 ---
 
@@ -38,12 +38,12 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **⚠️ CRITICAL**: No call-site work (US1–US4) may begin until the helper is GREEN (T007).
 
-- [ ] T003 [P] Create stub `infra/tests/stub-az` — a fake `az` whose behavior is selected by `STUB_AZ_MODE` with the three modes from [contracts/az-json.md](contracts/az-json.md): `success-json` (charset/collation JSON, exit 0), `error` (empty stdout, stderr `... unrecognized arguments: --server-name ...`, exit 2), `success-empty` (empty stdout, exit 0); `chmod +x`
-- [ ] T004 Write `infra/tests/test-az-json.sh` (the **RED** artifact) — plain-bash runner that puts `infra/tests/stub-az` first on `PATH`, sources `infra/lib/az-json.sh`, and asserts all three scenarios + call-site outcomes from the contract: success-json → `AZ_JSON_RC=0` / `AZ_JSON_OUT`=JSON / `AZ_JSON_ERR` empty; error → `AZ_JSON_RC!=0` / `AZ_JSON_ERR` contains `unrecognized arguments` / a call-site block emits the real error **not** "not found" (US2/SC-003); success-empty → `AZ_JSON_RC=0` / `AZ_JSON_OUT` empty / call-site reports absence (US3/SC-004); `chmod +x`
-- [ ] T005 Run `bash infra/tests/test-az-json.sh` and confirm it **FAILS** (RED — `infra/lib/az-json.sh` absent). Do not proceed until Red is verified
-- [ ] T006 Implement `infra/lib/az-json.sh` defining `az_json()` per the reference implementation in [contracts/az-json.md](contracts/az-json.md): `set +e`/`set -e`-wrapped capture into `AZ_JSON_OUT`, stderr to a temp file then `AZ_JSON_ERR` (never `/dev/null`), `AZ_JSON_RC=$?`, `return "$AZ_JSON_RC"`; pure getter (no pass/fail/skip, no counter mutation); `_errfile` the only `local`
-- [ ] T007 Run `bash infra/tests/test-az-json.sh` and confirm it **PASSES** (GREEN). All three branches + three call-site outcomes covered
-- [ ] T008 Source `infra/lib/az-json.sh` near the top of `infra/validate-deployment.sh` (after the helper-function block, before the checks), keeping `set -euo pipefail` intact
+- [x] T003 [P] Create stub `infra/tests/stub-az` — a fake `az` whose behavior is selected by `STUB_AZ_MODE` with the three modes from [contracts/az-json.md](contracts/az-json.md): `success-json` (charset/collation JSON, exit 0), `error` (empty stdout, stderr `... unrecognized arguments: --server-name ...`, exit 2), `success-empty` (empty stdout, exit 0); `chmod +x`
+- [x] T004 Write `infra/tests/test-az-json.sh` (the **RED** artifact) — plain-bash runner that puts `infra/tests/stub-az` first on `PATH`, sources `infra/lib/az-json.sh`, and asserts all three scenarios + call-site outcomes from the contract: success-json → `AZ_JSON_RC=0` / `AZ_JSON_OUT`=JSON / `AZ_JSON_ERR` empty; error → `AZ_JSON_RC!=0` / `AZ_JSON_ERR` contains `unrecognized arguments` / a call-site block emits the real error **not** "not found" (US2/SC-003); success-empty → `AZ_JSON_RC=0` / `AZ_JSON_OUT` empty / call-site reports absence (US3/SC-004); `chmod +x`
+- [x] T005 Run `bash infra/tests/test-az-json.sh` and confirm it **FAILS** (RED — `infra/lib/az-json.sh` absent). Do not proceed until Red is verified
+- [x] T006 Implement `infra/lib/az-json.sh` defining `az_json()` per the reference implementation in [contracts/az-json.md](contracts/az-json.md): `set +e`/`set -e`-wrapped capture into `AZ_JSON_OUT`, stderr to a temp file then `AZ_JSON_ERR` (never `/dev/null`), `AZ_JSON_RC=$?`, `return "$AZ_JSON_RC"`; pure getter (no pass/fail/skip, no counter mutation); `_errfile` the only `local`
+- [x] T007 Run `bash infra/tests/test-az-json.sh` and confirm it **PASSES** (GREEN). All three branches + three call-site outcomes covered
+- [x] T008 Source `infra/lib/az-json.sh` near the top of `infra/validate-deployment.sh` (after the helper-function block, before the checks), keeping `set -euo pipefail` intact
 
 **Checkpoint**: `az_json` exists, is unit-tested, and is available to the validation script.
 
@@ -55,9 +55,9 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **Independent Test**: Run `./validate-deployment.sh --rg epcubegraph-rg` against healthy production on az 2.84.0 — section "Managed PostgreSQL Database" reports the DB present with charset `UTF8` and collation `en_US.utf8`, and the run has zero DB-attributable failures.
 
-- [ ] T009 [US1] Replace the deprecated DB check (~line 457, `az postgres flexible-server db show --server-name --database-name`) in `infra/validate-deployment.sh` with the version-stable approach from [research.md](research.md) Decision A: compute `SUBSCRIPTION_ID=$(az account show --query id -o tsv)`, construct `PG_DB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${PG_NAME}/databases/epcubegraph"`, then `az_json resource show --ids "$PG_DB_ID" -o json` as the present-branch source (`pass` on non-empty)
-- [ ] T010 [US1] In the same DB block, read charset from `.properties.charset` (assert `UTF8`) and collation from `.properties.collation` (assert `en_US.utf8`) — updating the python extraction from top-level `d.get('charset','')` to `d.get('properties',{}).get('charset','')` (and likewise collation), preserving the existing `pass`/`fail` sub-check reporting (FR-008)
-- [ ] T011 [US1] Run `bash infra/tests/test-az-json.sh` (still GREEN) and run `./validate-deployment.sh --rg epcubegraph-rg` against live production (az 2.84.0); confirm section 7 reports present + UTF8 + en_US.utf8 with zero DB failures (quickstart §3, SC-001)
+- [x] T009 [US1] Replace the deprecated DB check (~line 457, `az postgres flexible-server db show --server-name --database-name`) in `infra/validate-deployment.sh` with the version-stable approach from [research.md](research.md) Decision A: compute `SUBSCRIPTION_ID=$(az account show --query id -o tsv)`, construct `PG_DB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${PG_NAME}/databases/epcubegraph"`, then `az_json resource show --ids "$PG_DB_ID" -o json` as the present-branch source (`pass` on non-empty)
+- [x] T010 [US1] In the same DB block, read charset from `.properties.charset` (assert `UTF8`) and collation from `.properties.collation` (assert `en_US.utf8`) — updating the python extraction from top-level `d.get('charset','')` to `d.get('properties',{}).get('charset','')` (and likewise collation), preserving the existing `pass`/`fail` sub-check reporting (FR-008)
+- [~] T011 [US1] Run `bash infra/tests/test-az-json.sh` (still GREEN) and run `./validate-deployment.sh --rg epcubegraph-rg` against live production — test suite GREEN (16/16); live prod run skipped locally (wrong az account on dev machine); CI validate-infra will confirm via the wired test suite. Post-merge validate-prod CD run is the acceptance gate.
 
 **Checkpoint**: The headline defect is fixed — production DB check is green on 2.84.0.
 
@@ -69,8 +69,8 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **Independent Test**: Force the DB-check command to fail at the CLI level (stub `error` mode) — output shows the real stderr (`unrecognized arguments`) and reports a tool-level failure, never "database not found".
 
-- [ ] T012 [US2] In the DB block in `infra/validate-deployment.sh`, ensure the first branch is `if ! az_json resource show --ids "$PG_DB_ID" -o json; then fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"` so a non-zero az exit surfaces `AZ_JSON_ERR` before any empty/absence handling (US2/FR-004)
-- [ ] T013 [US2] Verify the forced-error path per quickstart §4 (point `az` at `infra/tests/stub-az` in `error` mode for the DB block, or rely on the `error` scenario in `infra/tests/test-az-json.sh`): the message contains the real stderr and is NOT "database not found" (SC-003)
+- [x] T012 [US2] In the DB block in `infra/validate-deployment.sh`, ensure the first branch is `if ! az_json resource show --ids "$PG_DB_ID" -o json; then fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"` so a non-zero az exit surfaces `AZ_JSON_ERR` before any empty/absence handling (US2/FR-004)
+- [x] T013 [US2] Verify the forced-error path per quickstart §4 (point `az` at `infra/tests/stub-az` in `error` mode for the DB block, or rely on the `error` scenario in `infra/tests/test-az-json.sh`): the message contains the real stderr and is NOT "database not found" (SC-003)
 
 **Checkpoint**: Tool errors at the DB site are unmistakably distinct from absence.
 
@@ -82,8 +82,8 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **Independent Test**: With the DB-check command succeeding but returning empty (stub `success-empty`), the check reports `fail "... not found"`, distinct from the tool-error message.
 
-- [ ] T014 [US3] In the DB block in `infra/validate-deployment.sh`, ensure the middle branch is `elif [[ -z "$AZ_JSON_OUT" ]]; then fail "Managed PostgreSQL database 'epcubegraph' not found"` (absence policy = fail for the DB), with the present-branch sub-checks in the `else` (US3/FR-006)
-- [ ] T015 [US3] Verify via the `success-empty` scenario in `infra/tests/test-az-json.sh` that the absence branch fires "not found" and is distinguishable from the `error` branch (SC-004)
+- [x] T014 [US3] In the DB block in `infra/validate-deployment.sh`, ensure the absence branch fires `elif [[ -z "$AZ_JSON_OUT" ]]; then fail "Managed PostgreSQL database 'epcubegraph' not found"` (absence policy = fail for the DB), with the present-branch sub-checks in the `else` (US3/FR-006)
+- [x] T015 [US3] Verify via the `resource-not-found` scenario in `infra/tests/test-az-json.sh` that the absence branch fires "not found" (stub updated from `success-empty` to `resource-not-found` per live-verified az CLI behavior)
 
 **Checkpoint**: All three DB-site outcomes (present / tool-error / absent) are correct and distinct.
 
@@ -97,15 +97,15 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 > **Serialized**: All tasks below edit the single file `infra/validate-deployment.sh` and therefore run **sequentially (no [P])** to avoid edit collisions. Use the line numbers from [research.md](research.md) as a guide.
 
-- [ ] T016 [US4] Convert the Container Apps environment check (~line 86) and PostgreSQL server check (~line 107) to `az_json`, fail-on-absence pattern (tool-error branch surfaces `AZ_JSON_ERR`; empty-on-success → `fail "... not found"`)
-- [ ] T017 [US4] Convert the API Container App (~line 170) and exporter Container App (~line 273) checks to `az_json`, **skip-on-absence** pattern (empty-on-success → `skip "... not deployed"`, preserving FR-013)
-- [ ] T018 [US4] Convert the ACR check (~line 377) and Key Vault check (~line 405) to `az_json`, fail-on-absence pattern
-- [ ] T019 [US4] Convert the Key Vault secret list (~line 420, `-o tsv`) and the exporter Container App KV-fallback show (~line 423) to `az_json`, preserving the firewall-fallback meaning of empty-on-success and only changing the non-zero path to surface `AZ_JSON_ERR`
-- [ ] T020 [US4] Harden the python-parse fallback (~line 430): remove the `2>/dev/null || echo ""` swallow so a genuine `python3` parse error surfaces (documented non-`az` exception per FR-009; input is already validated non-empty JSON upstream)
-- [ ] T021 [US4] Convert the Log Analytics workspace check (~line 485) and Application Insights component check (~line 506) to `az_json`, fail-on-absence pattern
-- [ ] T022 [US4] Convert the managed identity check (~line 550), ACR id lookup (~line 562, `-o tsv`), and role-assignment list (~line 564, `-o tsv`) to `az_json`, preserving empty-on-success semantics (RBAC skip / role-missing fail) and surfacing `AZ_JSON_ERR` on non-zero
-- [ ] T023 [US4] Convert the Entra app list (~line 581, `--query "[0]"`) and service-principal show (~line 619) to `az_json`, preserving the existing `== "null"`/empty handling and surfacing `AZ_JSON_ERR` on non-zero
-- [ ] T024 [US4] Run `bash infra/tests/test-az-json.sh` (GREEN) and the audit grep `grep -n '2>/dev/null || echo ""' infra/validate-deployment.sh` → zero unguarded `az` sites remain (only the documented line-430 python exception, if any) (SC-006)
+- [x] T016 [US4] Convert the Container Apps environment check (~line 86) and PostgreSQL server check (~line 107) to `az_json`, fail-on-absence pattern (tool-error branch surfaces `AZ_JSON_ERR`; empty-on-success → `fail "... not found"`)
+- [x] T017 [US4] Convert the API Container App (~line 170) and exporter Container App (~line 273) checks to `az_json`, **skip-on-absence** pattern (empty-on-success → `skip "... not deployed"`, preserving FR-013)
+- [x] T018 [US4] Convert the ACR check (~line 377) and Key Vault check (~line 405) to `az_json`, fail-on-absence pattern
+- [x] T019 [US4] Convert the Key Vault secret list (~line 420, `-o tsv`) and the exporter Container App KV-fallback show (~line 423) to `az_json`, preserving the firewall-fallback meaning of empty-on-success and only changing the non-zero path to surface `AZ_JSON_ERR`
+- [x] T020 [US4] Harden the python-parse fallback (~line 430): remove the `2>/dev/null || echo ""` swallow so a genuine `python3` parse error surfaces (documented non-`az` exception per FR-009; input is already validated non-empty JSON upstream)
+- [x] T021 [US4] Convert the Log Analytics workspace check (~line 485) and Application Insights component check (~line 506) to `az_json`, fail-on-absence pattern
+- [x] T022 [US4] Convert the managed identity check (~line 550), ACR id lookup (~line 562, `-o tsv`), and role-assignment list (~line 564, `-o tsv`) to `az_json`, preserving empty-on-success semantics (RBAC skip / role-missing fail) and surfacing `AZ_JSON_ERR` on non-zero
+- [x] T023 [US4] Convert the Entra app list (~line 581, `--query "[0]"`) and service-principal show (~line 619) to `az_json`, preserving the existing `== "null"`/empty handling and surfacing `AZ_JSON_ERR` on non-zero
+- [x] T024 [US4] Run `bash infra/tests/test-az-json.sh` (GREEN) and the audit grep `grep -n '2>/dev/null || echo ""' infra/validate-deployment.sh` → zero unguarded `az` sites remain (only the documented line-430 python exception, if any) (SC-006)
 
 **Checkpoint**: No swallow-and-misreport anti-pattern survives anywhere in the script.
 
@@ -115,9 +115,9 @@ collide. They run sequentially. Only tasks touching genuinely independent files
 
 **Purpose**: CI wiring, full live verification, and acceptance closure.
 
-- [ ] T025 [P] Wire `bash infra/tests/test-az-json.sh` into the `validate-infra` job in `.github/workflows/ci.yml` so the helper test runs on every push (CI Test Coverage principle)
-- [ ] T026 Run the full live production validation `cd infra && ./validate-deployment.sh --rg epcubegraph-rg` on az 2.84.0; confirm `RESULT: PASS` with zero DB-attributable failures and exit 0 (quickstart §3, SC-002, SC-007)
-- [ ] T027 Execute quickstart.md steps 1–4 end to end (unit test Red→Green, grep audit, live prod run, forced-error check) and update issue #166 with the acceptance evidence, noting that the final >= 2.86.0 confirmation is the post-merge production CD `validate-prod` run (quickstart §5, SC-005)
+- [x] T025 [P] Wire `bash infra/tests/test-az-json.sh` into the `validate-infra` job in `.github/workflows/ci.yml` so the helper test runs on every push (CI Test Coverage principle)
+- [~] T026 Run the full live production validation `cd infra && ./validate-deployment.sh --rg epcubegraph-rg` — skipped locally (az CLI on wrong account); acceptance via post-merge validate-prod CD run
+- [~] T027 Execute quickstart.md steps 1–4 end to end — unit tests Red→Green ✅, grep audit ✅, live prod run pending (post-merge), forced-error check ✅ via test-az-json.sh Scenario 2. Issue #166 acceptance evidence in PR #170 body.
 
 ---
 
