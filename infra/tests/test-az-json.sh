@@ -2,10 +2,10 @@
 # Unit test for infra/lib/az-json.sh (the az_json getter).
 #
 # Drives a stubbed `az` (infra/tests/stub-az) through the three outcomes the
-# helper must distinguish — CLI success-with-output, CLI tool error, and
-# CLI success-with-empty-output — and asserts that each maps to the correct
-# AZ_JSON_RC / AZ_JSON_OUT / AZ_JSON_ERR globals and the correct call-site
-# decision (pass / surface-real-error / report-absence).
+# helper must distinguish — CLI success-with-JSON-output, CLI tool error (e.g.
+# unrecognized arguments), and resource-not-found (rc!=0, ResourceNotFound on
+# stderr) — and asserts that each maps to the correct AZ_JSON_RC / AZ_JSON_OUT
+# / AZ_JSON_ERR globals and the correct call-site decision.
 #
 # Run: bash infra/tests/test-az-json.sh   (exit 0 = all pass, 1 = any fail)
 
@@ -58,11 +58,16 @@ check_contains() {
 # A representative call-site block exercising the canonical fail-on-absence
 # pattern from contracts/az-json.md. Returns the decision label on stdout so
 # the test can assert which branch fired.
+#
+# Correct pattern (live-verified): missing resources exit non-zero with
+# "ResourceNotFound" on stderr — they do NOT produce rc=0 with empty stdout.
 decide_db() {
   if ! az_json resource show --ids "/fake/db/id" -o json; then
-    echo "TOOL_ERROR: ${AZ_JSON_ERR}"
-  elif [[ -z "$AZ_JSON_OUT" ]]; then
-    echo "NOT_FOUND"
+    if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+      echo "NOT_FOUND"
+    else
+      echo "TOOL_ERROR: ${AZ_JSON_ERR}"
+    fi
   else
     echo "PRESENT"
   fi
@@ -104,16 +109,27 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 
 # ---------------------------------------------------------------------------
-echo "Scenario 3: success-empty (CLI succeeds, empty output) — genuine absence"
+echo "Scenario 3: resource-not-found (rc!=0, ResourceNotFound on stderr) — genuine absence"
 # ---------------------------------------------------------------------------
-STUB_AZ_MODE="success-empty"
+# Live-verified: az resource show/containerapp show for a missing resource
+# exits non-zero (rc=3 or rc=1) with ResourceNotFound on stderr — NOT rc=0.
+STUB_AZ_MODE="resource-not-found"
 export STUB_AZ_MODE
 az_json resource show --ids x -o json
 rc=$?
-check "success-empty: AZ_JSON_RC is 0"                  "0"  "$rc"
-check "success-empty: AZ_JSON_OUT is empty"             ""   "$AZ_JSON_OUT"
-check "success-empty: AZ_JSON_ERR is empty"             ""   "$AZ_JSON_ERR"
-check "success-empty: call-site decides NOT_FOUND"      "NOT_FOUND" "$(decide_db)"
+check "resource-not-found: AZ_JSON_RC is non-zero"              "3"    "$rc"
+check "resource-not-found: AZ_JSON_OUT is empty"                ""     "$AZ_JSON_OUT"
+check_contains "resource-not-found: AZ_JSON_ERR has ResourceNotFound" "ResourceNotFound" "$AZ_JSON_ERR"
+check "resource-not-found: call-site decides NOT_FOUND"         "NOT_FOUND" "$(decide_db)"
+# Guard: resource-not-found must NOT be treated as TOOL_ERROR
+db_decision_notfound="$(decide_db)"
+if [[ "$db_decision_notfound" == TOOL_ERROR* ]]; then
+  echo "  FAIL - resource-not-found: absence was misreported as TOOL_ERROR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo "  ok   - resource-not-found: absence is NOT misreported as TOOL_ERROR"
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
 
 # ---------------------------------------------------------------------------
 echo ""

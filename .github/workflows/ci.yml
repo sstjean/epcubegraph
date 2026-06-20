@@ -189,6 +189,9 @@ jobs:
         working-directory: infra
         run: terraform fmt -check -recursive
 
+      - name: az_json helper tests
+        run: bash infra/tests/test-az-json.sh
+
   validate-tools:
     needs: changes
     if: needs.changes.outputs.code == 'true'

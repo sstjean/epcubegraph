@@ -91,11 +91,14 @@ pass "Resource group '$RG_NAME' exists"
 header "Container Apps Environment"
 
 CAE_NAME="${ENV_NAME}-env"
-CAE_JSON=$(az containerapp env show --name "$CAE_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$CAE_JSON" ]]; then
-  fail "Container Apps Environment '$CAE_NAME' not found"
+if ! az_json containerapp env show --name "$CAE_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Container Apps Environment '$CAE_NAME' not found"
+  else
+    fail "Container Apps Environment '$CAE_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  CAE_JSON="$AZ_JSON_OUT"
   pass "Container Apps Environment '$CAE_NAME' exists"
 
   CAE_STATUS=$(echo "$CAE_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
@@ -112,11 +115,14 @@ fi
 header "Managed PostgreSQL Server"
 
 PG_NAME="${ENV_NAME}-postgres"
-PG_JSON=$(az postgres flexible-server show --name "$PG_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$PG_JSON" ]]; then
-  fail "Managed PostgreSQL server '$PG_NAME' not found"
+if ! az_json postgres flexible-server show --name "$PG_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Managed PostgreSQL server '$PG_NAME' not found"
+  else
+    fail "Managed PostgreSQL server '$PG_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  PG_JSON="$AZ_JSON_OUT"
   pass "Managed PostgreSQL server '$PG_NAME' exists"
 
   PG_STATE=$(echo "$PG_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('state',''))")
@@ -175,11 +181,15 @@ fi
 header "API Container App"
 
 API_NAME="${ENV_NAME}-api"
-API_JSON=$(az containerapp show --name "$API_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$API_JSON" ]]; then
-  skip "API Container App '$API_NAME' not deployed (api_image may be empty)"
+API_JSON=""
+if ! az_json containerapp show --name "$API_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    skip "API Container App '$API_NAME' not deployed (api_image may be empty)"
+  else
+    fail "API Container App '$API_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  API_JSON="$AZ_JSON_OUT"
   pass "Container App '$API_NAME' exists"
 
   API_STATUS=$(echo "$API_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
@@ -278,11 +288,15 @@ fi
 header "epcube-exporter Container App"
 
 EXP_NAME="${ENV_NAME}-exporter"
-EXP_JSON=$(az containerapp show --name "$EXP_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$EXP_JSON" ]]; then
-  skip "epcube-exporter Container App '$EXP_NAME' not deployed (epcube_image may be empty)"
+EXP_JSON=""
+if ! az_json containerapp show --name "$EXP_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    skip "epcube-exporter Container App '$EXP_NAME' not deployed (epcube_image may be empty)"
+  else
+    fail "epcube-exporter Container App '$EXP_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  EXP_JSON="$AZ_JSON_OUT"
   pass "Container App '$EXP_NAME' exists"
 
   EXP_STATUS=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('provisioningState',''))")
@@ -382,11 +396,14 @@ fi
 header "Azure Container Registry"
 
 ACR_NAME=$(echo "${ENV_NAME}cr" | tr -d '-')
-ACR_JSON=$(az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$ACR_JSON" ]]; then
-  fail "Container Registry '$ACR_NAME' not found"
+if ! az_json acr show --name "$ACR_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Container Registry '$ACR_NAME' not found"
+  else
+    fail "Container Registry '$ACR_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  ACR_JSON="$AZ_JSON_OUT"
   pass "Container Registry '$ACR_NAME' exists"
 
   ACR_SKU=$(echo "$ACR_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('sku',{}).get('name',''))")
@@ -410,11 +427,14 @@ fi
 header "Key Vault"
 
 KV_NAME="${ENV_NAME}-kv"
-KV_JSON=$(az keyvault show --name "$KV_NAME" --resource-group "${ENV_NAME}-bootstrap-rg" -o json 2>/dev/null || echo "")
-
-if [[ -z "$KV_JSON" ]]; then
-  fail "Key Vault '$KV_NAME' not found"
+if ! az_json keyvault show --name "$KV_NAME" --resource-group "${ENV_NAME}-bootstrap-rg" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Key Vault '$KV_NAME' not found"
+  else
+    fail "Key Vault '$KV_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  KV_JSON="$AZ_JSON_OUT"
   pass "Key Vault '$KV_NAME' exists"
 
   KV_SOFT_DELETE=$(echo "$KV_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties'].get('enableSoftDelete',False))")
@@ -425,35 +445,43 @@ else
   fi
 
   # Check required secrets exist (may fail if KV firewall blocks runner IP)
-  KV_SECRETS=$(az keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv 2>/dev/null || echo "")
-  if [[ -z "$KV_SECRETS" ]]; then
-    # Firewall likely blocking data-plane access — check via Container App secrets instead
-    EXP_CONTAINER_JSON=$(az containerapp show --name "${ENV_NAME}-exporter" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-    if [[ -n "$EXP_CONTAINER_JSON" ]]; then
-      EXP_CA_SECRETS=$(echo "$EXP_CONTAINER_JSON" | python3 -c "
+  if ! az_json keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv; then
+    fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+  else
+    KV_SECRETS="$AZ_JSON_OUT"
+    if [[ -z "$KV_SECRETS" ]]; then
+      # Firewall likely blocking data-plane access — check via Container App secrets instead
+      if ! az_json containerapp show --name "${ENV_NAME}-exporter" --resource-group "$RG_NAME" -o json; then
+        if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+          fail "Cannot verify KV secrets (firewall blocks data-plane, exporter not found)"
+        else
+          fail "Cannot verify KV secrets (firewall blocks data-plane, exporter: az CLI error — ${AZ_JSON_ERR})"
+        fi
+      else
+        EXP_CONTAINER_JSON="$AZ_JSON_OUT"
+        EXP_CA_SECRETS=$(echo "$EXP_CONTAINER_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 secrets = d['properties']['configuration'].get('secrets',[])
 print(' '.join(s['name'] for s in secrets))
-" 2>/dev/null || echo "")
+")
+        for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
+          if echo "$EXP_CA_SECRETS" | grep -q "$expected_secret"; then
+            pass "Secret '$expected_secret' referenced in Container App (KV data-plane blocked by firewall)"
+          else
+            fail "Secret '$expected_secret' not found in Container App or Key Vault"
+          fi
+        done
+      fi
+    else
       for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
-        if echo "$EXP_CA_SECRETS" | grep -q "$expected_secret"; then
-          pass "Secret '$expected_secret' referenced in Container App (KV data-plane blocked by firewall)"
+        if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
+          pass "Secret '$expected_secret' exists"
         else
-          fail "Secret '$expected_secret' not found in Container App or Key Vault"
+          fail "Secret '$expected_secret' not found"
         fi
       done
-    else
-      fail "Cannot verify KV secrets (firewall blocks data-plane, exporter not found)"
     fi
-  else
-    for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
-      if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
-        pass "Secret '$expected_secret' exists"
-      else
-        fail "Secret '$expected_secret' not found"
-      fi
-    done
   fi
 fi
 
@@ -462,21 +490,29 @@ fi
 # ==============================================================================
 header "Managed PostgreSQL Database"
 
-PG_DB_JSON=$(az postgres flexible-server db show --resource-group "$RG_NAME" --server-name "$PG_NAME" --database-name "epcubegraph" -o json 2>/dev/null || echo "")
-
-if [[ -z "$PG_DB_JSON" ]]; then
-  fail "Managed PostgreSQL database 'epcubegraph' not found"
+# az postgres flexible-server db show was removed in az CLI 2.86.0 (issue #166).
+# Use az resource show --ids with the stable ARM resource ID instead.
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+PG_DB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${PG_NAME}/databases/epcubegraph"
+if ! az_json resource show --ids "$PG_DB_ID" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Managed PostgreSQL database 'epcubegraph' not found"
+  else
+    fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  PG_DB_JSON="$AZ_JSON_OUT"
   pass "Managed PostgreSQL database 'epcubegraph' exists"
 
-  PG_DB_CHARSET=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('charset',''))")
+  # az resource show wraps fields under .properties (live-verified on az 2.84.0)
+  PG_DB_CHARSET=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('charset',''))")
   if [[ "$PG_DB_CHARSET" == "UTF8" ]]; then
     pass "Database charset: UTF8"
   else
     fail "Database charset: $PG_DB_CHARSET (expected UTF8)"
   fi
 
-  PG_DB_COLLATION=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('collation',''))")
+  PG_DB_COLLATION=$(echo "$PG_DB_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('properties',{}).get('collation',''))")
   if [[ "$PG_DB_COLLATION" == "en_US.utf8" ]]; then
     pass "Database collation: en_US.utf8"
   else
@@ -490,11 +526,14 @@ fi
 header "Log Analytics Workspace"
 
 LAW_NAME="${ENV_NAME}-logs"
-LAW_JSON=$(az monitor log-analytics workspace show --workspace-name "$LAW_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$LAW_JSON" ]]; then
-  fail "Log Analytics Workspace '$LAW_NAME' not found"
+if ! az_json monitor log-analytics workspace show --workspace-name "$LAW_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Log Analytics Workspace '$LAW_NAME' not found"
+  else
+    fail "Log Analytics Workspace '$LAW_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  LAW_JSON="$AZ_JSON_OUT"
   pass "Log Analytics Workspace '$LAW_NAME' exists"
 
   LAW_RETENTION=$(echo "$LAW_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('retentionInDays',0))")
@@ -511,12 +550,15 @@ fi
 header "Application Insights"
 
 AI_NAME="${ENV_NAME}-appinsights"
-AI_JSON=$(az monitor app-insights component show --app "$AI_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$AI_JSON" ]]; then
-  # R1: per-environment Application Insights resource must exist
-  fail "Application Insights '$AI_NAME' not found"
+if ! az_json monitor app-insights component show --app "$AI_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    # R1: per-environment Application Insights resource must exist
+    fail "Application Insights '$AI_NAME' not found"
+  else
+    fail "Application Insights '$AI_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  AI_JSON="$AZ_JSON_OUT"
   pass "Application Insights '$AI_NAME' exists"
 
   # R2: the component must link to THIS environment's Log Analytics workspace
@@ -555,11 +597,14 @@ fi
 header "Managed Identity"
 
 MI_NAME="${ENV_NAME}-identity"
-MI_JSON=$(az identity show --name "$MI_NAME" --resource-group "$RG_NAME" -o json 2>/dev/null || echo "")
-
-if [[ -z "$MI_JSON" ]]; then
-  fail "Managed Identity '$MI_NAME' not found"
+if ! az_json identity show --name "$MI_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Managed Identity '$MI_NAME' not found"
+  else
+    fail "Managed Identity '$MI_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
+  MI_JSON="$AZ_JSON_OUT"
   pass "Managed Identity '$MI_NAME' exists"
 
   MI_PRINCIPAL=$(echo "$MI_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('principalId',''))")
@@ -567,13 +612,21 @@ else
     pass "Principal ID assigned: ${MI_PRINCIPAL:0:8}..."
 
     # Check AcrPull role on ACR
-    ACR_ID=$(az acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --query "id" -o tsv 2>/dev/null || echo "")
-    if [[ -n "$ACR_ID" ]]; then
-      ACR_ROLE=$(az role assignment list --assignee "$MI_PRINCIPAL" --scope "$ACR_ID" --query "[?roleDefinitionName=='AcrPull'].roleDefinitionName" -o tsv 2>/dev/null || echo "")
-      if [[ "$ACR_ROLE" == "AcrPull" ]]; then
-        pass "AcrPull role assigned on Container Registry"
-      else
-        fail "AcrPull role not found on Container Registry"
+    if ! az_json acr show --name "$ACR_NAME" --resource-group "$RG_NAME" --query "id" -o tsv; then
+      fail "Container Registry '$ACR_NAME': az CLI error during role check — ${AZ_JSON_ERR}"
+    else
+      ACR_ID="$AZ_JSON_OUT"
+      if [[ -n "$ACR_ID" ]]; then
+        if ! az_json role assignment list --assignee "$MI_PRINCIPAL" --scope "$ACR_ID" --query "[?roleDefinitionName=='AcrPull'].roleDefinitionName" -o tsv; then
+          fail "AcrPull role check: az CLI error — ${AZ_JSON_ERR}"
+        else
+          ACR_ROLE="$AZ_JSON_OUT"
+          if [[ "$ACR_ROLE" == "AcrPull" ]]; then
+            pass "AcrPull role assigned on Container Registry"
+          else
+            fail "AcrPull role not found on Container Registry"
+          fi
+        fi
       fi
     fi
   else
@@ -586,49 +639,58 @@ fi
 # ==============================================================================
 header "Entra ID App Registration"
 
-ENTRA_APP=$(az ad app list --filter "displayName eq 'EP Cube Graph API (${ENV_NAME})'" --query "[0]" -o json 2>/dev/null || echo "")
-
-if [[ -z "$ENTRA_APP" || "$ENTRA_APP" == "null" ]]; then
-  fail "Entra ID App Registration 'EP Cube Graph API (${ENV_NAME})' not found"
+# az ad app list --query "[0]" exits 0 with "null" when no app matches; use
+# az_json to surface real CLI errors, then guard for the "null" absence case.
+if ! az_json ad app list --filter "displayName eq 'EP Cube Graph API (${ENV_NAME})'" --query "[0]" -o json; then
+  fail "Entra ID App Registration 'EP Cube Graph API (${ENV_NAME})': az CLI error — ${AZ_JSON_ERR}"
 else
-  ENTRA_DISPLAY=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('displayName',''))")
-  pass "App Registration '$ENTRA_DISPLAY' exists"
-
-  ENTRA_URI=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); uris=d.get('identifierUris',[]); print(uris[0] if uris else '')")
-  if echo "$ENTRA_URI" | grep -qE "^api://"; then
-    pass "Identifier URI: $ENTRA_URI"
+  ENTRA_APP="$AZ_JSON_OUT"
+  if [[ -z "$ENTRA_APP" || "$ENTRA_APP" == "null" ]]; then
+    fail "Entra ID App Registration 'EP Cube Graph API (${ENV_NAME})' not found"
   else
-    fail "Identifier URI: $ENTRA_URI (expected api://<client-id>)"
-  fi
+    ENTRA_DISPLAY=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('displayName',''))")
+    pass "App Registration '$ENTRA_DISPLAY' exists"
 
-  ENTRA_AUDIENCE=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('signInAudience',''))")
-  if [[ "$ENTRA_AUDIENCE" == "AzureADMyOrg" ]]; then
-    pass "Sign-in audience: AzureADMyOrg"
-  else
-    fail "Sign-in audience: $ENTRA_AUDIENCE (expected AzureADMyOrg)"
-  fi
+    ENTRA_URI=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); uris=d.get('identifierUris',[]); print(uris[0] if uris else '')")
+    if echo "$ENTRA_URI" | grep -qE "^api://"; then
+      pass "Identifier URI: $ENTRA_URI"
+    else
+      fail "Identifier URI: $ENTRA_URI (expected api://<client-id>)"
+    fi
 
-  # Check user_impersonation scope exists
-  SCOPE_VALUE=$(echo "$ENTRA_APP" | python3 -c "
+    ENTRA_AUDIENCE=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('signInAudience',''))")
+    if [[ "$ENTRA_AUDIENCE" == "AzureADMyOrg" ]]; then
+      pass "Sign-in audience: AzureADMyOrg"
+    else
+      fail "Sign-in audience: $ENTRA_AUDIENCE (expected AzureADMyOrg)"
+    fi
+
+    # Check user_impersonation scope exists
+    SCOPE_VALUE=$(echo "$ENTRA_APP" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 scopes = d.get('api',{}).get('oauth2PermissionScopes',[])
 values = [s['value'] for s in scopes if s.get('isEnabled')]
 print(' '.join(values))
 ")
-  if echo "$SCOPE_VALUE" | grep -q "user_impersonation"; then
-    pass "OAuth2 scope 'user_impersonation' configured and enabled"
-  else
-    fail "OAuth2 scope 'user_impersonation' not found (found: $SCOPE_VALUE)"
-  fi
+    if echo "$SCOPE_VALUE" | grep -q "user_impersonation"; then
+      pass "OAuth2 scope 'user_impersonation' configured and enabled"
+    else
+      fail "OAuth2 scope 'user_impersonation' not found (found: $SCOPE_VALUE)"
+    fi
 
-  # Check service principal exists
-  APP_ID=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('appId',''))")
-  SP_JSON=$(az ad sp show --id "$APP_ID" -o json 2>/dev/null || echo "")
-  if [[ -n "$SP_JSON" && "$SP_JSON" != "null" ]]; then
-    pass "Service Principal exists for app"
-  else
-    fail "Service Principal not found"
+    # Check service principal exists
+    APP_ID=$(echo "$ENTRA_APP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('appId',''))")
+    if ! az_json ad sp show --id "$APP_ID" -o json; then
+      fail "Service Principal: az CLI error — ${AZ_JSON_ERR}"
+    else
+      SP_JSON="$AZ_JSON_OUT"
+      if [[ -n "$SP_JSON" && "$SP_JSON" != "null" ]]; then
+        pass "Service Principal exists for app"
+      else
+        fail "Service Principal not found"
+      fi
+    fi
   fi
 fi
 

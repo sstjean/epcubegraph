@@ -17,9 +17,12 @@ case "${STUB_AZ_MODE:-}" in
     printf '%s\n' "ERROR: unrecognized arguments: --server-name --database-name" >&2
     exit 2
     ;;
-  success-empty)
-    # Successful call that legitimately returns no output (resource absent).
-    exit 0
+  resource-not-found)
+    # A missing Azure resource: non-zero exit with ResourceNotFound on stderr.
+    # Live-verified: az resource show --ids <missing> → rc=3, stderr=ResourceNotFound
+    # Live-verified: az containerapp show <missing>  → rc=1, stderr=ResourceNotFound
+    printf '%s\n' "ERROR: (ResourceNotFound) The resource was not found." >&2
+    exit 3
     ;;
   *)
     printf '%s\n' "stub-az: unknown STUB_AZ_MODE='${STUB_AZ_MODE:-}'" >&2

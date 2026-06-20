@@ -18,8 +18,15 @@ az_json <az-args...>
 - **Arguments**: the literal arguments to forward to the `az` CLI. The function
   prepends `az` and nothing else. Callers include `-o json` / `-o tsv` / `--query`
   as needed, exactly as today.
-- **Return code**: the `az` process exit code (`$AZ_JSON_RC`). `0` ⇒ the CLI ran
-  successfully (output may still be empty); non-zero ⇒ a **tool error**.
+- **Return code**: the `az` process exit code (`$AZ_JSON_RC`). `0` ⇒ resource
+  present (JSON/tsv on stdout); non-zero ⇒ either a **missing resource** (rc=1
+  or rc=3, `ResourceNotFound` on stderr) or a **tool error** (other stderr).
+
+> **Live-verified (az 2.84.0):** `az resource show --ids <missing>` exits
+> rc=3 with `ResourceNotFound` on stderr; `az containerapp show <missing>`
+> exits rc=1 with `ResourceNotFound`. Neither produces rc=0 with empty stdout.
+> Callers must inspect `AZ_JSON_ERR` inside the failure branch to distinguish
+> absence from a real tool error.
 
 ## Outputs (global variables)
 
@@ -64,9 +71,11 @@ Managed Identity, Entra app, SP, PG server, CAE):**
 
 ```bash
 if ! az_json acr show --name "$ACR_NAME" --resource-group "$RG_NAME" -o json; then
-  fail "Container Registry '$ACR_NAME': az CLI error — ${AZ_JSON_ERR}"
-elif [[ -z "$AZ_JSON_OUT" ]]; then
-  fail "Container Registry '$ACR_NAME' not found"
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Container Registry '$ACR_NAME' not found"
+  else
+    fail "Container Registry '$ACR_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
   ACR_JSON="$AZ_JSON_OUT"
   pass "Container Registry '$ACR_NAME' exists"
@@ -78,9 +87,11 @@ fi
 
 ```bash
 if ! az_json containerapp show --name "$API_NAME" --resource-group "$RG_NAME" -o json; then
-  fail "API Container App '$API_NAME': az CLI error — ${AZ_JSON_ERR}"
-elif [[ -z "$AZ_JSON_OUT" ]]; then
-  skip "API Container App '$API_NAME' not deployed (api_image may be empty)"
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    skip "API Container App '$API_NAME' not deployed (api_image may be empty)"
+  else
+    fail "API Container App '$API_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
   API_JSON="$AZ_JSON_OUT"
   pass "Container App '$API_NAME' exists"
@@ -107,9 +118,11 @@ fi
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 PG_DB_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${PG_NAME}/databases/epcubegraph"
 if ! az_json resource show --ids "$PG_DB_ID" -o json; then
-  fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"
-elif [[ -z "$AZ_JSON_OUT" ]]; then
-  fail "Managed PostgreSQL database 'epcubegraph' not found"
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    fail "Managed PostgreSQL database 'epcubegraph' not found"
+  else
+    fail "Managed PostgreSQL database 'epcubegraph': az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
   PG_DB_JSON="$AZ_JSON_OUT"
   pass "Managed PostgreSQL database 'epcubegraph' exists"
@@ -124,16 +137,16 @@ fi
 
 `infra/tests/stub-az` selects behaviour via `STUB_AZ_MODE`:
 
-| `STUB_AZ_MODE` | stdout | stderr | exit |
-|----------------|--------|--------|------|
-| `success-json` | `{"properties":{"charset":"UTF8","collation":"en_US.utf8"}}` | (empty) | 0 |
-| `error`        | (empty) | `... unrecognized arguments: --server-name ...` | 2 |
-| `success-empty`| (empty) | (empty) | 0 |
+| `STUB_AZ_MODE`        | stdout  | stderr | exit |
+|-----------------------|---------|--------|------|
+| `success-json`        | `{"properties":{"charset":"UTF8","collation":"en_US.utf8"}}` | (empty) | 0 |
+| `error`               | (empty) | `... unrecognized arguments: --server-name ...` | 2 |
+| `resource-not-found`  | (empty) | `ERROR: (ResourceNotFound) The resource was not found.` | 3 |
 
 ## Test assertions (acceptance)
 
 | Scenario | `AZ_JSON_RC` | `AZ_JSON_OUT` | `AZ_JSON_ERR` | Call-site outcome |
 |----------|--------------|----------------|----------------|-------------------|
-| success-json  | `0`     | the JSON | empty | pass + sub-checks |
-| error         | `!= 0`  | empty    | contains `unrecognized arguments` | `fail` surfacing stderr, **not** "not found" (SC-003) |
-| success-empty | `0`     | empty    | empty | absence: `fail "not found"` / `skip` (SC-004) |
+| success-json       | `0`     | the JSON | empty | pass + sub-checks |
+| error              | `!= 0`  | empty    | contains `unrecognized arguments` | `fail` surfacing stderr, **not** "not found" (SC-003) |
+| resource-not-found | `3`     | empty    | contains `ResourceNotFound` | absence: `fail "not found"` / `skip` (SC-004) |
