@@ -447,44 +447,61 @@ else
     fail "Soft delete not enabled"
   fi
 
-  # Check required secrets exist (may fail if KV firewall blocks runner IP)
+  # Check required secrets exist. The KV firewall (public network access
+  # disabled) intentionally blocks the runner's data-plane access, so the
+  # secret-list call fails with a Forbidden error. That is an expected,
+  # recoverable condition: fall back to verifying the secrets via the
+  # Container App. Any other error is a genuine tool failure.
+  KV_DATAPLANE_BLOCKED=false
+  KV_SECRETS=""
   if ! az_json keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv; then
-    fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+    if [[ "$AZ_JSON_ERR" == *"Forbidden"* \
+       || "$AZ_JSON_ERR" == *"Public network access is disabled"* \
+       || "$AZ_JSON_ERR" == *"not from a trusted service"* ]]; then
+      KV_DATAPLANE_BLOCKED=true
+    else
+      fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+    fi
   else
     KV_SECRETS="$AZ_JSON_OUT"
+    # An empty-but-successful list also indicates the data-plane is unreachable.
     if [[ -z "$KV_SECRETS" ]]; then
-      # Firewall likely blocking data-plane access — check via Container App secrets instead
-      if ! az_json containerapp show --name "${ENV_NAME}-exporter" --resource-group "$RG_NAME" -o json; then
-        if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
-          fail "Cannot verify KV secrets (firewall blocks data-plane, exporter not found)"
-        else
-          fail "Cannot verify KV secrets (firewall blocks data-plane, exporter: az CLI error — ${AZ_JSON_ERR})"
-        fi
+      KV_DATAPLANE_BLOCKED=true
+    fi
+  fi
+
+  if [[ "$KV_DATAPLANE_BLOCKED" == true ]]; then
+    # Firewall blocking data-plane access — check via Container App secrets instead
+    if ! az_json containerapp show --name "${ENV_NAME}-exporter" --resource-group "$RG_NAME" -o json; then
+      if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+        fail "Cannot verify KV secrets (firewall blocks data-plane, exporter not found)"
       else
-        EXP_CONTAINER_JSON="$AZ_JSON_OUT"
-        EXP_CA_SECRETS=$(echo "$EXP_CONTAINER_JSON" | python3 -c "
+        fail "Cannot verify KV secrets (firewall blocks data-plane, exporter: az CLI error — ${AZ_JSON_ERR})"
+      fi
+    else
+      EXP_CONTAINER_JSON="$AZ_JSON_OUT"
+      EXP_CA_SECRETS=$(echo "$EXP_CONTAINER_JSON" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 secrets = d['properties']['configuration'].get('secrets',[])
 print(' '.join(s['name'] for s in secrets))
 ")
-        for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
-          if echo "$EXP_CA_SECRETS" | grep -q "$expected_secret"; then
-            pass "Secret '$expected_secret' referenced in Container App (KV data-plane blocked by firewall)"
-          else
-            fail "Secret '$expected_secret' not found in Container App or Key Vault"
-          fi
-        done
-      fi
-    else
       for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
-        if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
-          pass "Secret '$expected_secret' exists"
+        if echo "$EXP_CA_SECRETS" | grep -q "$expected_secret"; then
+          pass "Secret '$expected_secret' referenced in Container App (KV data-plane blocked by firewall)"
         else
-          fail "Secret '$expected_secret' not found"
+          fail "Secret '$expected_secret' not found in Container App or Key Vault"
         fi
       done
     fi
+  else
+    for expected_secret in epcube-username epcube-password exporter-oauth-secret; do
+      if echo "$KV_SECRETS" | grep -q "^${expected_secret}$"; then
+        pass "Secret '$expected_secret' exists"
+      else
+        fail "Secret '$expected_secret' not found"
+      fi
+    done
   fi
 fi
 
