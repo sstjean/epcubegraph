@@ -73,6 +73,29 @@ decide_db() {
   fi
 }
 
+# A representative call-site block for the Key Vault secret-list check, where a
+# Forbidden/firewall error is an EXPECTED, recoverable condition that must route
+# to the Container App fallback (DATAPLANE_BLOCKED) rather than fail. Any other
+# non-zero exit is a genuine tool error. Mirrors the routing logic in
+# infra/validate-deployment.sh section 6.
+decide_kv() {
+  if ! az_json keyvault secret list --vault-name "fake-kv" --query "[].name" -o tsv; then
+    if [[ "$AZ_JSON_ERR" == *"Forbidden"* \
+       || "$AZ_JSON_ERR" == *"Public network access is disabled"* \
+       || "$AZ_JSON_ERR" == *"not from a trusted service"* ]]; then
+      echo "DATAPLANE_BLOCKED"
+    else
+      echo "TOOL_ERROR: ${AZ_JSON_ERR}"
+    fi
+  else
+    if [[ -z "$AZ_JSON_OUT" ]]; then
+      echo "DATAPLANE_BLOCKED"
+    else
+      echo "PRESENT"
+    fi
+  fi
+}
+
 # ---------------------------------------------------------------------------
 echo "Scenario 1: success-json (CLI succeeds, returns JSON)"
 # ---------------------------------------------------------------------------
@@ -128,6 +151,31 @@ if [[ "$db_decision_notfound" == TOOL_ERROR* ]]; then
   TESTS_FAILED=$((TESTS_FAILED + 1))
 else
   echo "  ok   - resource-not-found: absence is NOT misreported as TOOL_ERROR"
+fi
+TESTS_RUN=$((TESTS_RUN + 1))
+
+# ---------------------------------------------------------------------------
+echo "Scenario 4: forbidden (KV firewall blocks data-plane) — recoverable, NOT a tool error"
+# ---------------------------------------------------------------------------
+# Live-verified: az keyvault secret list with the KV firewall on (public network
+# access disabled) exits non-zero with a Forbidden message on stderr. This is an
+# expected, recoverable condition (issue #166 regression): it must route to the
+# Container App fallback (DATAPLANE_BLOCKED), NOT be reported as a tool error.
+STUB_AZ_MODE="forbidden"
+export STUB_AZ_MODE
+az_json keyvault secret list --vault-name fake-kv --query "[].name" -o tsv
+rc=$?
+check "forbidden: AZ_JSON_RC is non-zero"                  "1"  "$rc"
+check "forbidden: AZ_JSON_OUT is empty"                    ""   "$AZ_JSON_OUT"
+check_contains "forbidden: AZ_JSON_ERR has Forbidden"      "Forbidden" "$AZ_JSON_ERR"
+kv_decision="$(decide_kv)"
+check "forbidden: call-site decides DATAPLANE_BLOCKED"     "DATAPLANE_BLOCKED" "$kv_decision"
+# Guard: a firewall block must NOT be misreported as a tool error (the bug).
+if [[ "$kv_decision" == TOOL_ERROR* ]]; then
+  echo "  FAIL - forbidden: firewall block was misreported as TOOL_ERROR"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo "  ok   - forbidden: firewall block is NOT misreported as TOOL_ERROR"
 fi
 TESTS_RUN=$((TESTS_RUN + 1))
 
