@@ -24,6 +24,15 @@ case "${STUB_AZ_MODE:-}" in
     printf '%s\n' "ERROR: (ResourceNotFound) The resource was not found." >&2
     exit 3
     ;;
+  forbidden)
+    # A Key Vault data-plane call blocked by the KV firewall (public network
+    # access disabled). Non-zero exit with a Forbidden message on stderr — an
+    # expected, recoverable condition that must route to the Container App
+    # fallback, NOT be treated as a tool error.
+    # Live-verified: az keyvault secret list (firewall on) → rc=1, stderr=Forbidden
+    printf '%s\n' "ERROR: (Forbidden) Public network access is disabled and request is not from a trusted service nor via an approved private link." >&2
+    exit 1
+    ;;
   *)
     printf '%s\n' "stub-az: unknown STUB_AZ_MODE='${STUB_AZ_MODE:-}'" >&2
     exit 99
