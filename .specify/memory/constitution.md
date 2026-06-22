@@ -1,22 +1,27 @@
 <!--
   Sync Impact Report
   ==================
-  Version change: 1.18.0 → 1.19.0
-  Bump rationale: MINOR — new core principle added.
+  Version change: 1.19.0 → 1.20.0
+  Bump rationale: MINOR — material expansion of an existing
+    section (GitHub Issue Discipline gains an explicit
+    Issues-First Ordering rule).
   Added sub-sections:
-    - Core Principles — III. Single Responsibility Principle:
-      Every function, class, and module MUST have one reason
-      to change. Extract untestable parts into testable units.
-  Modified sections:
-    - Core Principles — TDD renumbered III → IV
+    - DevOps — GitHub Issue Discipline — Issues-First Ordering
+      (NON-NEGOTIABLE): the parent Feature issue and its User
+      Story sub-issues MUST be created at the start of
+      /speckit.specify, before spec.md / plan.md / tasks.md are
+      authored or committed; spec.md records the Feature issue
+      number; GitHub issues remain the source of truth.
+  Modified sections: none
   Removed sections: none
   Templates requiring updates:
     - .specify/templates/plan-template.md        ✅ no changes needed
-    - .specify/templates/spec-template.md         ✅ no changes needed
+    - .specify/templates/spec-template.md         ⚠ consider a Feature-issue reference field
     - .specify/templates/tasks-template.md        ✅ no changes needed
     - .specify/templates/checklist-template.md    ✅ no changes needed
     - .specify/templates/constitution-template.md ✅ source template (unchanged)
-  Follow-up TODOs: none
+  Follow-up TODOs:
+    - Backfill GitHub issues for in-flight feature 168 to restore compliance.
 -->
 
 # EP Cube Graph Constitution
@@ -357,6 +362,16 @@ discovering conflicts at deploy time.
   build MUST fail if any drift is detected. Introducing a
   tool without updating all setup artifacts is prohibited.
 - **GitHub Issue Discipline (NON-NEGOTIABLE)**:
+  - **Issues-First Ordering**: The parent Feature issue and
+    its User Story sub-issues MUST be created at the very
+    start of the SpecKit workflow — as the first action of
+    `/speckit.specify`, BEFORE spec.md, plan.md, or tasks.md
+    are authored or committed. spec.md MUST record the parent
+    Feature issue number. All later phases (clarify, plan,
+    tasks, analyze, implement) update those issues, which
+    remain the source of truth. Authoring or advancing
+    speckit documents without the corresponding GitHub issues
+    already created is prohibited.
   - **Traceability**: Every User Story issue in GitHub MUST
     be a sub-issue of its parent Feature issue. Clean
     traceability from Feature → User Story MUST be
@@ -399,4 +414,4 @@ recoverable by anyone with repository access.
   YAGNI MUST be documented in the plan's Complexity Tracking
   table with a rejected simpler alternative.
 
-**Version**: 1.18.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-22
+**Version**: 1.20.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-06-21
