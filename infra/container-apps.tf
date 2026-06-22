@@ -9,6 +9,14 @@ resource "azurerm_container_app_environment" "main" {
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   infrastructure_subnet_id   = azurerm_subnet.infrastructure.id
 
+  # Internal load balancer only — no public inbound IP on the compute layer.
+  # This keeps the bring-your-own-public-IP feature gate from ever being reached
+  # during creation (FR-001/002/003) and satisfies Zero Trust (FR-006). Public
+  # ingress is provided exclusively by the Application Gateway WAF_v2 edge.
+  # NOTE: internal_load_balancer_enabled is ForceNew — see the blue-green
+  # production cutover runbook (quickstart.md, FR-015).
+  internal_load_balancer_enabled = true
+
   # Azure auto-populates these; ignore to prevent unnecessary force-replacement or drift.
   lifecycle {
     ignore_changes = [
@@ -58,7 +66,7 @@ resource "azurerm_container_app" "api" {
   }
 
   ingress {
-    external_enabled = true
+    external_enabled = false
     target_port      = var.api_port
     transport        = "http"
 
@@ -190,10 +198,11 @@ resource "azurerm_container_app" "exporter" {
     identity            = azurerm_user_assigned_identity.main.id
   }
 
-  # External ingress — debug page requires JWT auth in code
-  # /health remains unauthenticated for liveness checks
+  # Internal ingress only — reachable via the VNet / App Gateway edge, never
+  # directly from the public internet (FR-006). The debug page requires JWT auth
+  # in code; /health remains unauthenticated for the edge liveness probe.
   ingress {
-    external_enabled = true
+    external_enabled = false
     target_port      = var.exporter_port
     transport        = "http"
 

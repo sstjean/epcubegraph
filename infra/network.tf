@@ -63,6 +63,17 @@ resource "azurerm_subnet" "postgres" {
   }
 }
 
+# Dedicated Application Gateway subnet (App Gateway v2 requires its own subnet).
+# No delegation. default_outbound_access_enabled = false to match the SFI subnet
+# constraint (constitution §Security SFI) — consistent with the other subnets.
+resource "azurerm_subnet" "appgw" {
+  name                            = "appgw"
+  resource_group_name             = azurerm_resource_group.main.name
+  virtual_network_name            = azurerm_virtual_network.main.name
+  address_prefixes                = var.subnet_appgw_prefix
+  default_outbound_access_enabled = false
+}
+
 # ── Key Vault Private Endpoint ──
 
 resource "azurerm_private_endpoint" "keyvault" {
@@ -94,4 +105,34 @@ resource "azurerm_private_dns_zone_virtual_network_link" "keyvault" {
   resource_group_name   = azurerm_resource_group.main.name
   private_dns_zone_name = azurerm_private_dns_zone.keyvault.name
   virtual_network_id    = azurerm_virtual_network.main.id
+}
+
+# ── Internal Container Apps Environment Default Domain (private DNS) ──
+#
+# An internal Container Apps environment exposes its apps only via an internal
+# load-balancer IP, resolvable through a private DNS zone named after the env's
+# auto-generated default domain. Without this, the App Gateway backend health
+# probe and the self-hosted VNet runner cannot resolve the origin (FR-007, D4).
+
+resource "azurerm_private_dns_zone" "env_domain" {
+  name                = azurerm_container_app_environment.main.default_domain
+  resource_group_name = azurerm_resource_group.main.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "env_domain" {
+  name                  = "${var.environment_name}-env-domain-link"
+  resource_group_name   = azurerm_resource_group.main.name
+  private_dns_zone_name = azurerm_private_dns_zone.env_domain.name
+  virtual_network_id    = azurerm_virtual_network.main.id
+}
+
+# Wildcard A record → the env's internal load-balancer IP, so every app FQDN
+# (<env>-api.<default_domain>, <env>-exporter.<default_domain>) resolves to the
+# internal LB inside the VNet.
+resource "azurerm_private_dns_a_record" "env_wildcard" {
+  name                = "*"
+  zone_name           = azurerm_private_dns_zone.env_domain.name
+  resource_group_name = azurerm_resource_group.main.name
+  ttl                 = 300
+  records             = [azurerm_container_app_environment.main.static_ip_address]
 }

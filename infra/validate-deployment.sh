@@ -41,6 +41,9 @@ info()   { echo -e "  ${BLUE}→${NC} $*"; }
 # them as "not found" (issue #166). See infra/lib/az-json.sh.
 # shellcheck source=lib/az-json.sh
 source "${SCRIPT_DIR}/lib/az-json.sh"
+# Application Gateway WAF_v2 edge assertion helpers (feature 168).
+# shellcheck source=lib/edge-asserts.sh
+source "${SCRIPT_DIR}/lib/edge-asserts.sh"
 
 # -- Argument parsing ----------------------------------------------------------
 RG_OVERRIDE=""
@@ -199,13 +202,13 @@ else
     fail "Provisioning state: $API_STATUS (expected Succeeded)"
   fi
 
-  # Check ingress is external on port 8080
+  # Ingress is internal-only — public traffic arrives via the App Gateway edge (FR-006).
   API_EXT=$(echo "$API_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
   API_PORT=$(echo "$API_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$API_EXT" == "True" ]]; then
-    pass "Ingress: external enabled"
+  if [[ "$API_EXT" == "False" ]]; then
+    pass "Ingress: internal-only (external disabled)"
   else
-    fail "Ingress: external=$API_EXT (expected True)"
+    fail "Ingress: external=$API_EXT (expected False — public access is via the App Gateway edge)"
   fi
   if [[ "$API_PORT" == "8080" ]]; then
     pass "Ingress target port: 8080"
@@ -306,13 +309,13 @@ else
     fail "Provisioning state: $EXP_STATUS (expected Succeeded)"
   fi
 
-  # Check external ingress on port 9250
+  # Internal-only ingress — the exporter debug page is reached via the edge (FR-006).
   EXP_EXT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['external'])")
   EXP_PORT=$(echo "$EXP_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['properties']['configuration']['ingress']['targetPort'])")
-  if [[ "$EXP_EXT" == "True" ]]; then
-    pass "Ingress: external enabled (for debug page)"
+  if [[ "$EXP_EXT" == "False" ]]; then
+    pass "Ingress: internal-only (external disabled)"
   else
-    fail "Ingress: external=$EXP_EXT (expected True)"
+    fail "Ingress: external=$EXP_EXT (expected False — public access is via the App Gateway edge)"
   fi
   if [[ "$EXP_PORT" == "9250" ]]; then
     pass "Ingress target port: 9250"
@@ -691,6 +694,72 @@ print(' '.join(values))
         fail "Service Principal not found"
       fi
     fi
+  fi
+fi
+
+# ==============================================================================
+# 11. Application Gateway WAF_v2 Edge (feature 168)
+# ==============================================================================
+header "Application Gateway WAF_v2 Edge"
+
+APPGW_NAME="${ENV_NAME}-appgw"
+if ! az_json network application-gateway show --name "$APPGW_NAME" --resource-group "$RG_NAME" -o json; then
+  if [[ "$AZ_JSON_ERR" == *"ResourceNotFound"* || "$AZ_JSON_ERR" == *"not found"* ]]; then
+    skip "Application Gateway '$APPGW_NAME' not deployed (wildcard_certificate_name may be empty)"
+  else
+    fail "Application Gateway '$APPGW_NAME': az CLI error — ${AZ_JSON_ERR}"
+  fi
+else
+  pass "Application Gateway '$APPGW_NAME' exists"
+
+  # SC-002: exactly one public IP in the RG and it is the gateway edge.
+  if ! az_json network public-ip list --resource-group "$RG_NAME" -o json; then
+    fail "Public IP list: az CLI error — ${AZ_JSON_ERR}"
+  elif REASON=$(echo "$AZ_JSON_OUT" | assert_single_public_ip "$ENV_NAME"); then
+    pass "$REASON"
+  else
+    fail "$REASON"
+  fi
+
+  # SC-002: Container Apps environment uses an internal load balancer.
+  if [[ -n "${CAE_JSON:-}" ]]; then
+    if REASON=$(echo "$CAE_JSON" | assert_env_internal); then
+      pass "$REASON"
+    else
+      fail "$REASON"
+    fi
+  else
+    skip "Container Apps env JSON unavailable — cannot assert internal LB"
+  fi
+
+  # SC-003: managed OWASP WAF policy, Enabled, in Prevention mode.
+  WAF_NAME="${ENV_NAME}-waf-policy"
+  if ! az_json network application-gateway waf-policy show --name "$WAF_NAME" --resource-group "$RG_NAME" -o json; then
+    fail "WAF policy '$WAF_NAME': az CLI error — ${AZ_JSON_ERR}"
+  elif REASON=$(echo "$AZ_JSON_OUT" | assert_waf_prevention_owasp); then
+    pass "$REASON"
+  else
+    fail "$REASON"
+  fi
+
+  # SC-004: every gateway backend server is Healthy (the edge can serve traffic).
+  if ! az_json network application-gateway show-backend-health --name "$APPGW_NAME" --resource-group "$RG_NAME" -o json; then
+    fail "Backend health: az CLI error — ${AZ_JSON_ERR}"
+  elif REASON=$(echo "$AZ_JSON_OUT" | assert_edge_health); then
+    pass "$REASON"
+  else
+    fail "$REASON"
+  fi
+
+  # FR-009: the api_fqdn output is repointed off the internal app FQDN to the edge.
+  if API_OUT_FQDN=$(cd "$SCRIPT_DIR" && terraform output -raw api_fqdn 2>/dev/null); then
+    if [[ -n "$API_OUT_FQDN" && "$API_OUT_FQDN" != "${API_FQDN:-}" ]]; then
+      pass "api_fqdn output repointed to the edge host: $API_OUT_FQDN"
+    else
+      fail "api_fqdn output still resolves to the internal app FQDN: $API_OUT_FQDN"
+    fi
+  else
+    skip "terraform output api_fqdn unavailable — cannot verify edge repoint"
   fi
 fi
 

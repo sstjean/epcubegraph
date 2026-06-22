@@ -14,6 +14,22 @@ resource "azurerm_key_vault_access_policy" "runtime" {
   secret_permissions = ["Get", "List"]
 }
 
+# ── App Gateway Identity Access Policy (read the wildcard TLS cert only) ──
+#
+# Least-privilege: the gateway identity may only Get the wildcard certificate
+# and its backing secret from Key Vault (ZT). No secret material lands in
+# Terraform state — the gateway references the cert by versionless secret id.
+resource "azurerm_key_vault_access_policy" "appgw" {
+  count = var.wildcard_certificate_name != "" ? 1 : 0
+
+  key_vault_id = data.azurerm_key_vault.main.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_user_assigned_identity.appgw.principal_id
+
+  certificate_permissions = ["Get"]
+  secret_permissions      = ["Get"]
+}
+
 # ── EP Cube cloud credentials ──
 
 resource "azurerm_key_vault_secret" "epcube_username" {

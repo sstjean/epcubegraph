@@ -24,7 +24,7 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 **Purpose**: Variables, shared certificate prerequisite, and a clean validation baseline before any change.
 
-- [ ] T001 [P] Add new input variables in [infra/variables.tf](infra/variables.tf): `appgw_subnet_prefix`, `appgw_autoscale_min` (default 1), `appgw_autoscale_max` (default 3), `wildcard_certificate_name` (`*.devsbx.xyz`), and API/exporter staging branch subdomain vars (FR-018, D2/D3/D6).
+- [x] T001 [P] Add new input variables in [infra/variables.tf](infra/variables.tf): `appgw_subnet_prefix`, `appgw_autoscale_min` (default 1), `appgw_autoscale_max` (default 3), `wildcard_certificate_name` (`*.devsbx.xyz`), and API/exporter staging branch subdomain vars (FR-018, D2/D3/D6).
 - [ ] T002 [P] Provision and confirm the shared wildcard `*.devsbx.xyz` ACME automation (KeyVault-Acmebot pattern, deployed once in the shared scope) and **gate** that the issued cert is present in the existing Key Vault as a hard prerequisite **before** the first gateway apply (T013/T014); record the provisioning steps + sequencing in [specs/168-internal-appgw-waf-edge/quickstart.md](specs/168-internal-appgw-waf-edge/quickstart.md) Prerequisites (FR-012, research D6 sequencing risk).
 - [ ] T003 Capture a clean baseline: run `cd infra && terraform fmt -check && terraform validate` and record current `api_fqdn`/`exporter_fqdn` output values for blue-green rollback reference (D8).
 
@@ -36,9 +36,9 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 **⚠️ CRITICAL**: The App Gateway in US2–US4 cannot be applied until the dedicated subnet, managed identity, and Key Vault grant exist.
 
-- [ ] T004 Add a dedicated `/24` App Gateway subnet `azurerm_subnet.appgw` (no delegation, App Gateway-only, `default_outbound_access_enabled = false` to satisfy the SFI subnet constraint) in [infra/network.tf](infra/network.tf) (E5, research D3, constitution §Security SFI).
-- [ ] T005 Add a **dedicated** least-privilege user-assigned managed identity `azurerm_user_assigned_identity.appgw` for the gateway (not the shared `main` identity — ZT least-privilege) and grant it only `certificates/get` + `secrets/get` on the existing Key Vault in [infra/keyvault.tf](infra/keyvault.tf) (E7, Q2 — no secret material in state).
-- [ ] T006 Run `cd infra && terraform validate` to confirm the foundational subnet + identity + KV-grant additions parse cleanly.
+- [x] T004 Add a dedicated `/24` App Gateway subnet `azurerm_subnet.appgw` (no delegation, App Gateway-only, `default_outbound_access_enabled = false` to satisfy the SFI subnet constraint) in [infra/network.tf](infra/network.tf) (E5, research D3, constitution §Security SFI).
+- [x] T005 Add a **dedicated** least-privilege user-assigned managed identity `azurerm_user_assigned_identity.appgw` for the gateway (not the shared `main` identity — ZT least-privilege) and grant it only `certificates/get` + `secrets/get` on the existing Key Vault in [infra/keyvault.tf](infra/keyvault.tf) (E7, Q2 — no secret material in state).
+- [x] T006 Run `cd infra && terraform validate` to confirm the foundational subnet + identity + KV-grant additions parse cleanly.
 
 **Checkpoint**: Edge scaffolding ready — user story implementation can begin.
 
@@ -52,10 +52,10 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Set `internal_load_balancer_enabled = true` on `azurerm_container_app_environment.main` in [infra/container-apps.tf](infra/container-apps.tf) (E1, ForceNew, FR-001/002/003).
-- [ ] T008 [US1] Set `ingress.external_enabled = false` on `azurerm_container_app.api` and `azurerm_container_app.exporter` in [infra/container-apps.tf](infra/container-apps.tf) (E2, FR-006).
-- [ ] T009 [US1] Add the private DNS zone for the env `default_domain` + VNet link + wildcard `*` A record → env `static_ip_address` in [infra/network.tf](infra/network.tf), with `depends_on` the internal env (computed attrs) (E4, FR-007, research D4).
-- [ ] T010 [US1] Grep `infra/` to confirm zero `AllowBringYourOwnPublicIpAddress` / BYOPIP feature references remain anywhere (FR-003).
+- [x] T007 [US1] Set `internal_load_balancer_enabled = true` on `azurerm_container_app_environment.main` in [infra/container-apps.tf](infra/container-apps.tf) (E1, ForceNew, FR-001/002/003).
+- [x] T008 [US1] Set `ingress.external_enabled = false` on `azurerm_container_app.api` and `azurerm_container_app.exporter` in [infra/container-apps.tf](infra/container-apps.tf) (E2, FR-006).
+- [x] T009 [US1] Add the private DNS zone for the env `default_domain` + VNet link + wildcard `*` A record → env `static_ip_address` in [infra/network.tf](infra/network.tf), with `depends_on` the internal env (computed attrs) (E4, FR-007, research D4).
+- [x] T010 [US1] Grep `infra/` to confirm zero `AllowBringYourOwnPublicIpAddress` / BYOPIP feature references remain anywhere (FR-003).
 - [ ] T011 [US1] Run `cd infra && terraform fmt -check && terraform validate && terraform plan`; confirm no `SubscriptionNotRegisteredForFeature` and the env shows an internal LB (SC-001, quickstart US1 check).
 
 **Checkpoint**: A fresh environment provisions internally with no BYOPIP gate. MVP delivered.
@@ -72,14 +72,14 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 > Write FIRST and confirm RED before implementing the assertion helpers (FR-017).
 
-- [ ] T012 [P] [US2] Add red-phase cases (following the constitution's `# Arrange / # Act / # Assert` structure) for `assert_single_public_ip` and `assert_env_internal` (parsing `az` JSON via `stub-az`) in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm they FAIL before the helpers exist.
+- [x] T012 [P] [US2] Add red-phase cases (following the constitution's `# Arrange / # Act / # Assert` structure) for `assert_single_public_ip` and `assert_env_internal` (parsing `az` JSON via `stub-az`) in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm they FAIL before the helpers exist.
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Create `infra/application-gateway.tf` (NEW): `azurerm_public_ip.appgw` (Standard/Static/Azure-managed — the only public IP, FR-004) + `azurerm_application_gateway.main` shell (SKU `WAF_v2`, `autoscale_configuration` referencing the T001 vars, `identity { type = "UserAssigned" }` → T005 identity) (E3, research D2).
-- [ ] T014 [US2] In `infra/application-gateway.tf`: add API + exporter backend pools (app FQDNs `<env>-api.<default_domain>` / `<env>-exporter.<default_domain>`, resolved via the T009 private DNS), HTTPS backend settings (Host/SNI = app FQDN), HTTPS:443 listeners using the KV-referenced wildcard cert (T005 identity), host-based routing rules, and an optional HTTP:80→443 redirect (FR-008, research D5).
-- [ ] T015 [US2] Implement `assert_single_public_ip` + `assert_env_internal` in [infra/validate-deployment.sh](infra/validate-deployment.sh) to make T012 GREEN.
-- [ ] T016 [US2] Run `terraform validate`; verify (quickstart US2 check) exactly one public IP (the gateway), env internal, apps `external=false`, and PostgreSQL still private (SC-002, FR-016).
+- [x] T013 [US2] Create `infra/application-gateway.tf` (NEW): `azurerm_public_ip.appgw` (Standard/Static/Azure-managed — the only public IP, FR-004) + `azurerm_application_gateway.main` shell (SKU `WAF_v2`, `autoscale_configuration` referencing the T001 vars, `identity { type = "UserAssigned" }` → T005 identity) (E3, research D2).
+- [x] T014 [US2] In `infra/application-gateway.tf`: add API + exporter backend pools (app FQDNs `<env>-api.<default_domain>` / `<env>-exporter.<default_domain>`, resolved via the T009 private DNS), HTTPS backend settings (Host/SNI = app FQDN), HTTPS:443 listeners using the KV-referenced wildcard cert (T005 identity), host-based routing rules, and an optional HTTP:80→443 redirect (FR-008, research D5).
+- [x] T015 [US2] Implement `assert_single_public_ip` + `assert_env_internal` in [infra/validate-deployment.sh](infra/validate-deployment.sh) to make T012 GREEN.
+- [x] T016 [US2] Run `terraform validate`; verify (quickstart US2 check) exactly one public IP (the gateway), env internal, apps `external=false`, and PostgreSQL still private (SC-002, FR-016).
 
 **Checkpoint**: Public edge live; compute is private with a single Azure-managed public IP.
 
@@ -93,14 +93,14 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 ### Tests for User Story 3 ⚠️
 
-- [ ] T017 [P] [US3] Add a red-phase case (following the `# Arrange / # Act / # Assert` structure) for `assert_waf_prevention_owasp` (parsing WAF-policy `az` JSON via `stub-az`) in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm it FAILS first.
+- [x] T017 [P] [US3] Add a red-phase case (following the `# Arrange / # Act / # Assert` structure) for `assert_waf_prevention_owasp` (parsing WAF-policy `az` JSON via `stub-az`) in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm it FAILS first.
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Add `azurerm_web_application_firewall_policy.main` (managed OWASP ruleset e.g. 3.2, `policy_settings { mode = "Prevention", enabled = true }`, documented `exclusion` list) and associate it via `firewall_policy_id` on the gateway in [infra/application-gateway.tf](infra/application-gateway.tf) (E8, FR-005, research D7).
-- [ ] T019 [US3] Route App Gateway access + firewall diagnostic logs to the per-env Log Analytics / Application Insights so WAF block events are queryable for exclusion tuning (FR-019, SC-010, research D10).
-- [ ] T020 [US3] Implement `assert_waf_prevention_owasp` in [infra/validate-deployment.sh](infra/validate-deployment.sh) to make T017 GREEN.
-- [ ] T021 [US3] Run `terraform validate`; verify the WAF policy is attached, enabled, and in Prevention mode (quickstart US3 check, SC-003).
+- [x] T018 [US3] Add `azurerm_web_application_firewall_policy.main` (managed OWASP ruleset e.g. 3.2, `policy_settings { mode = "Prevention", enabled = true }`, documented `exclusion` list) and associate it via `firewall_policy_id` on the gateway in [infra/application-gateway.tf](infra/application-gateway.tf) (E8, FR-005, research D7).
+- [x] T019 [US3] Route App Gateway access + firewall diagnostic logs to the per-env Log Analytics / Application Insights so WAF block events are queryable for exclusion tuning (FR-019, SC-010, research D10).
+- [x] T020 [US3] Implement `assert_waf_prevention_owasp` in [infra/validate-deployment.sh](infra/validate-deployment.sh) to make T017 GREEN.
+- [x] T021 [US3] Run `terraform validate`; verify the WAF policy is attached, enabled, and in Prevention mode (quickstart US3 check, SC-003).
 
 **Checkpoint**: Managed OWASP WAF enforced in Prevention mode at the edge.
 
@@ -114,14 +114,14 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 ### Tests for User Story 4 ⚠️
 
-- [ ] T022 [P] [US4] Add a red-phase case (following the `# Arrange / # Act / # Assert` structure) for `assert_edge_health` (probe/health JSON via `stub-az`) and an assertion that `api_fqdn` resolves to the gateway hostname in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm RED first.
+- [x] T022 [P] [US4] Add a red-phase case (following the `# Arrange / # Act / # Assert` structure) for `assert_edge_health` (probe/health JSON via `stub-az`) and an assertion that `api_fqdn` resolves to the gateway hostname in [infra/tests/test-az-json.sh](infra/tests/test-az-json.sh); confirm RED first.
 
 ### Implementation for User Story 4
 
-- [ ] T023 [US4] Repoint `output "api_fqdn"` and `output "exporter_fqdn"` to the App Gateway public hostname (the API/exporter custom-domain FQDN) in [infra/outputs.tf](infra/outputs.tf) (E9, FR-009).
-- [ ] T024 [US4] Repoint the custom-domain CNAMEs (api/exporter) to the gateway public address and remove the now-unreachable `azurerm_container_app_custom_domain.api`, `terraform_data.api_cert_bind`, and related `time_sleep`s in [infra/dns.tf](infra/dns.tf) (E10, FR-012, research D9).
-- [ ] T025 [US4] Add/align health probes in [infra/application-gateway.tf](infra/application-gateway.tf) — API probe `GET /api/v1/health`, exporter probe `GET /health` (the exporter's actual health path, `http_handler.py`), probe host = app FQDN (FR-008, matches the CD smoke paths).
-- [ ] T026 [US4] Implement `assert_edge_health` in [infra/validate-deployment.sh](infra/validate-deployment.sh) (T022 GREEN) and confirm the existing CD `curl` smoke commands remain byte-for-byte unchanged (FR-010).
+- [x] T023 [US4] Repoint `output "api_fqdn"` and `output "exporter_fqdn"` to the App Gateway public hostname (the API/exporter custom-domain FQDN) in [infra/outputs.tf](infra/outputs.tf) (E9, FR-009).
+- [x] T024 [US4] Repoint the custom-domain CNAMEs (api/exporter) to the gateway public address and remove the now-unreachable `azurerm_container_app_custom_domain.api`, `terraform_data.api_cert_bind`, and related `time_sleep`s in [infra/dns.tf](infra/dns.tf) (E10, FR-012, research D9).
+- [x] T025 [US4] Add/align health probes in [infra/application-gateway.tf](infra/application-gateway.tf) — API probe `GET /api/v1/health`, exporter probe `GET /health` (the exporter's actual health path, `http_handler.py`), probe host = app FQDN (FR-008, matches the CD smoke paths).
+- [x] T026 [US4] Implement `assert_edge_health` in [infra/validate-deployment.sh](infra/validate-deployment.sh) (T022 GREEN) and confirm the existing CD `curl` smoke commands remain byte-for-byte unchanged (FR-010).
 - [ ] T027 [US4] Run `terraform validate`; run the CD public health smoke tests (API + exporter) and confirm both pass through the gateway (quickstart US4 check, SC-004).
 
 **Checkpoint**: All four P1 stories independently verifiable; the edge serves validated public traffic.
@@ -152,7 +152,7 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 
 ### Implementation for User Story 6
 
-- [ ] T031 [US6] Set `autoscale_configuration { min_capacity = var.appgw_autoscale_min /*1*/, max_capacity = var.appgw_autoscale_max }` on the gateway in [infra/application-gateway.tf](infra/application-gateway.tf) (FR-018, ~$340/mo prod floor).
+- [x] T031 [US6] Set `autoscale_configuration { min_capacity = var.appgw_autoscale_min /*1*/, max_capacity = var.appgw_autoscale_max }` on the gateway in [infra/application-gateway.tf](infra/application-gateway.tf) (FR-018, ~$340/mo prod floor).
 - [ ] T032 [US6] Run an ephemeral staging cycle and `gh workflow run cd.yml -f environment=staging -f branch=<branch> -f destroy=true`; verify zero residual edge/env resources after teardown (FR-014, SC-006, quickstart teardown check).
 
 **Checkpoint**: Edge cost is minimal in prod and fully ephemeral in staging.
@@ -166,7 +166,7 @@ Infrastructure-as-Code change confined to `infra/` (plus a verification pass on 
 - [ ] T033 [P] Verify [.github/workflows/cd.yml](.github/workflows/cd.yml): the `api_fqdn`/`exporter_fqdn` outputs now resolve to the gateway and the smoke commands are unchanged (FR-010).
 - [ ] T034 Finalize the production blue-green cutover runbook (additive provision → validate → CNAME cutover → confirm → decommission → rollback) in [specs/168-internal-appgw-waf-edge/quickstart.md](specs/168-internal-appgw-waf-edge/quickstart.md) (FR-015, research D8).
 - [ ] T035 Execute the production blue-green cutover after staging is green: stand up new internal env + edge additively, validate, repoint custom-domain CNAMEs, confirm dashboard load + OAuth login (FR-013, SC-008), then decommission the old external env — PostgreSQL untouched (FR-016).
-- [ ] T036 [P] Run `shellcheck infra/*.sh infra/tests/*` and `bash -n infra/validate-deployment.sh`; confirm 100% coverage on the new `validate-deployment.sh` assertion helpers (FR-017, SC-009).
+- [x] T036 [P] Run `shellcheck infra/*.sh infra/tests/*` and `bash -n infra/validate-deployment.sh`; confirm 100% coverage on the new `validate-deployment.sh` assertion helpers (FR-017, SC-009).
 - [ ] T037 Run the full [specs/168-internal-appgw-waf-edge/quickstart.md](specs/168-internal-appgw-waf-edge/quickstart.md) Definition-of-Done checklist and confirm `terraform validate` clean (SC-009).
 
 ---

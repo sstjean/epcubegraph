@@ -238,6 +238,32 @@ variable "subnet_postgres_prefix" {
   default     = ["10.0.3.0/24"]
 }
 
+variable "subnet_appgw_prefix" {
+  description = "Dedicated Application Gateway subnet prefix (/24 recommended, /26 minimum; App Gateway v2 requires its own subnet)"
+  type        = list(string)
+  default     = ["10.0.4.0/24"]
+}
+
+# ── Application Gateway (public WAF edge) ──
+
+variable "appgw_autoscale_min" {
+  description = "App Gateway WAF_v2 minimum autoscale capacity units (cost floor — FR-018)"
+  type        = number
+  default     = 1
+}
+
+variable "appgw_autoscale_max" {
+  description = "App Gateway WAF_v2 maximum autoscale capacity units (small burst headroom — FR-018)"
+  type        = number
+  default     = 3
+}
+
+variable "wildcard_certificate_name" {
+  description = "Name of the shared wildcard '*.<zone>' certificate in Key Vault (auto-issued/renewed by the ACME automation). Empty string disables the App Gateway edge."
+  type        = string
+  default     = ""
+}
+
 # ── Supporting Services ──
 
 variable "acr_sku" {

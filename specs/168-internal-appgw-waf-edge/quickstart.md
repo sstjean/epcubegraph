@@ -17,8 +17,9 @@ cd infra
 terraform fmt -check
 terraform validate
 # Any new/changed Bash (cutover/validation helpers) — red-green unit tests + lint:
-bash tests/test-az-json.sh          # existing pattern; add cases for new logic
-shellcheck infra/*.sh infra/tests/*  # style/lint
+bash tests/test-az-json.sh           # existing az_json getter contract
+bash tests/test-edge-asserts.sh      # edge assertion helpers (feature 168)
+shellcheck infra/*.sh infra/lib/*.sh infra/tests/*  # style/lint
 bash -n infra/validate-deployment.sh
 ```
 
@@ -54,7 +55,7 @@ az containerapp show -n "<env>-api" -g "$RG" \
 ### US3 — Managed OWASP WAF in Prevention
 
 ```bash
-az network application-gateway waf-policy show -n "<env>-waf" -g "$RG" \
+az network application-gateway waf-policy show -n "<env>-waf-policy" -g "$RG" \
   --query "{mode:policySettings.mode, enabled:policySettings.state, managed:managedRules.managedRuleSets[].ruleSetType}" -o json
 # Expect: mode=Prevention, enabled=Enabled, managed includes OWASP
 ```
