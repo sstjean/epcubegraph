@@ -1,14 +1,43 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-06-06
+**Last Updated**: 2026-06-30
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `164-dashboard-pageview-initial-load` (PR #165 open)
-**Last merged**: PR #163 — Per-environment Application Insights isolation (verify + enforce)
-**Active PR**: #165 — Fix dashboard initial page-view telemetry (partial fix for #164)
+**Branch**: `168-internal-appgw-waf-edge` (no PR yet; 2 commits ahead of main)
+**Last merged**: PR #171 — fix(167): allow js.monitor.azure.com in CSP connect-src
+**Active work**: Feature 168 — Internal Container Apps env behind App Gateway WAF_v2 (Terraform only)
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
 
 ---
+
+## Recent sessions (2026-06-30)
+
+- **Start-up audit.** Discovered PROJECT_SUMMARY + SESSION_HANDOFF were stale
+  (dated 2026-06-06, branch 164). Verified PR #165 merged 2026-06-12; deleted the
+  obsolete `SESSION_HANDOFF.md` and refreshed this summary to branch-168 reality.
+- **CI/PR noise triaged** (root causes read from actual logs, not speculation):
+  - **#168, #169 (Dependabot)**: `deploy / deploy-staging` FAILURE is benign —
+    Dependabot PRs run with a restricted token and have no access to the repo's
+    Azure OIDC secrets, so `azure/login@v3` fails with "Ensure 'client-id' and
+    'tenant-id' are supplied." Every real code check (build/test/dashboard/
+    exporter/infra) passes. #168 is a lockfile-only removal of transitive
+    `esbuild` platform packages; #169 bumps `pyjwt` 2.12.1→2.13.0.
+  - **#172 (`166-fix-kv-firewall-routing`)**: `deploy-staging` FAILURE is a
+    pre-existing infra blocker on `main`, NOT caused by the PR's code. Container
+    App Managed Environment creation fails with
+    `SubscriptionNotRegisteredForFeature: Microsoft.Network/AllowBringYourOwnPublicIpAddress`.
+    This is exactly the problem **feature 168 exists to fix** (internal env, no
+    BYO public IP). The KV-firewall fallback code itself passes all code checks.
+- **Feature 168 Terraform baseline** (T003 partial / T011 prep): `cd infra &&
+  terraform fmt -check -recursive` → clean (exit 0); `terraform validate` →
+  "Success! The configuration is valid." Live `terraform output` fqdn capture and
+  `terraform plan` still pending (need backend/state + Azure auth).
+- Feature 168 task state: **25 done / 12 open**. Remaining tasks are live-Azure
+  gated: ACME wildcard cert prereq (T002), plan/validate runs (T011/T027/T037),
+  staging↔prod parity diff (T029/T030), ephemeral staging cycle + teardown
+  (T032), production blue-green cutover runbook + execution (T034/T035).
+- GitHub issues for 168 exist and are correct: parent **#173** + user stories
+  **#174–#179** (U168-1..6).
 
 ## Recent sessions (2026-06-06)
 
@@ -93,23 +122,32 @@
 
 ## What's Next
 
-1. Merge PR #165 with a merge commit once user approves.
-2. After merge, verify issue #164 status and decide whether to keep #164 open for remaining telemetry scope or split/create follow-up issue(s).
-3. If #165 merges, delete branch `164-dashboard-pageview-initial-load` (local + remote).
-4. Post-deploy verification for dashboard telemetry:
-  - confirm new `pageViews` appear for `epcubegraph-dashboard`
-  - confirm route-change page views continue to emit
-  - confirm no duplicate first page-view event
+1. **Feature 168** is the active thread. Next concrete steps when ready for live
+   Azure work: capture current `api_fqdn`/`exporter_fqdn` outputs for rollback
+   (T003), run `terraform plan` and confirm no `SubscriptionNotRegisteredForFeature`
+   + internal LB (T011), then provision the shared `*.devsbx.xyz` ACME wildcard
+   cert prereq (T002) before the first gateway apply.
+2. **Open Dependabot PRs** awaiting merge decision: #168 (esbuild lockfile),
+   #169 (pyjwt). Both have green code checks; only the benign Dependabot
+   `deploy-staging` auth failure is red. Awaiting explicit merge approval.
+3. **PR #172** (KV firewall fallback) — code checks green; `deploy-staging` red
+   only because of the pre-existing BYO-public-IP blocker that 168 fixes. Decide
+   whether to merge #172 ahead of 168 or fold into the 168 cutover.
+4. Decide #164 closure (dashboard pageview fix from #165 shipped; confirm
+   post-deploy telemetry before closing).
 
 ## Open issues
 
-- **#164** — API/dashboard emit no Application Insights telemetry at runtime (active; partially addressed by PR #165)
+- **#173** — Internal Container Apps env behind App Gateway WAF_v2 (parent; in flight)
+- **#174–#179** — U168-1..6 user stories for feature 168
+- **#164** — API/dashboard emit no Application Insights telemetry at runtime (dashboard pageview fix shipped via #165; confirm post-deploy)
 - **#52**  — Port epcube-exporter from Python to C# (low priority)
 
 ## Pending
 
-- PR #165 is open and awaiting merge decision.
-- No uncommitted local changes at shutdown.
+- Feature 168 branch has 2 commits, no PR opened yet.
+- Open PRs: #172 (KV firewall fix), #168 + #169 (Dependabot) — all awaiting merge decision.
+- No uncommitted local changes.
 
 ---
 
