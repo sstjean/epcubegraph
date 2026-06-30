@@ -38,6 +38,18 @@
   (T032), production blue-green cutover runbook + execution (T034/T035).
 - GitHub issues for 168 exist and are correct: parent **#173** + user stories
   **#174–#179** (U168-1..6).
+- **Session actions completed:**
+  - Merged Dependabot **#169** (pyjwt 2.12.1→2.13.0) and **#168** (esbuild
+    lockfile cleanup) with merge commits.
+  - **Folded #172** (`fix(166)` KV firewall Forbidden → Container App fallback)
+    onto branch 168 via cherry-pick (`19ac848`) — clean, no conflicts. Verified:
+    `test-az-json.sh` 21/21, `test-edge-asserts.sh` 14/14, `terraform validate`
+    clean. **#172 intentionally left open until 168 lands.**
+  - Committed memory refresh (`61b2188`), pushed branch 168 to origin.
+  - **Opened PR #180** for feature 168:
+    https://github.com/sstjean/epcubegraph/pull/180 (closes #173; stories
+    #174–#179). `deploy / deploy-staging` expected red until cutover applies
+    the internal env (the BYOPIP failure this PR fixes).
 
 ## Recent sessions (2026-06-06)
 
@@ -145,9 +157,13 @@
 
 ## Pending
 
-- Feature 168 branch has 2 commits, no PR opened yet.
-- Open PRs: #172 (KV firewall fix), #168 + #169 (Dependabot) — all awaiting merge decision.
-- No uncommitted local changes.
+- **PR #180** open for feature 168 (5 commits). CI: all code/infra checks expected
+  green; `deploy / deploy-staging` red until the cutover applies (pre-existing
+  BYOPIP blocker this PR removes).
+- **#172** open, folded onto 168 — close it when 168 merges.
+- Remaining 168 work is live-Azure cutover (T002/T003/T011/T027–T037). See
+  `specs/168-internal-appgw-waf-edge/tasks.md` and the PR #180 checklist.
+- No uncommitted local changes after shutdown commit.
 
 ---
 
