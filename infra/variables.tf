@@ -264,6 +264,18 @@ variable "wildcard_certificate_name" {
   default     = ""
 }
 
+variable "shared_cert_key_vault_name" {
+  description = "Name of the central devsbx-common Key Vault that holds the shared wildcard cert (issued/renewed by KeyVault-Acmebot)."
+  type        = string
+  default     = "devsbx-shared-kv"
+}
+
+variable "shared_cert_key_vault_rg" {
+  description = "Resource group of the central shared-cert Key Vault."
+  type        = string
+  default     = "devsbx-shared"
+}
+
 # ── Supporting Services ──
 
 variable "acr_sku" {

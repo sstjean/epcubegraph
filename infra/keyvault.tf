@@ -14,20 +14,26 @@ resource "azurerm_key_vault_access_policy" "runtime" {
   secret_permissions = ["Get", "List"]
 }
 
-# ── App Gateway Identity Access Policy (read the wildcard TLS cert only) ──
+# ── App Gateway identity: read the shared wildcard cert (central vault) ──
 #
-# Least-privilege: the gateway identity may only Get the wildcard certificate
-# and its backing secret from Key Vault (ZT). No secret material lands in
-# Terraform state — the gateway references the cert by versionless secret id.
-resource "azurerm_key_vault_access_policy" "appgw" {
-  count = var.wildcard_certificate_name != "" ? 1 : 0
+# The wildcard cert lives in the shared devsbx-common Key Vault (RBAC-authorized),
+# not this env's vault. Grant the gateway's dedicated identity the least-privilege
+# pair App Gateway needs to pull a KV cert: Certificate User (cert metadata) +
+# Secrets User (the PFX-backing secret). Scoped to the shared vault only (ZT).
+# The CD principal has User Access Administrator at subscription scope, so it can
+# create these cross-resource-group role assignments.
+resource "azurerm_role_assignment" "appgw_cert_user" {
+  count                = local.appgw_enabled ? 1 : 0
+  scope                = data.azurerm_key_vault.shared_cert[0].id
+  role_definition_name = "Key Vault Certificate User"
+  principal_id         = azurerm_user_assigned_identity.appgw.principal_id
+}
 
-  key_vault_id = data.azurerm_key_vault.main.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_user_assigned_identity.appgw.principal_id
-
-  certificate_permissions = ["Get"]
-  secret_permissions      = ["Get"]
+resource "azurerm_role_assignment" "appgw_secret_user" {
+  count                = local.appgw_enabled ? 1 : 0
+  scope                = data.azurerm_key_vault.shared_cert[0].id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.appgw.principal_id
 }
 
 # ── EP Cube cloud credentials ──

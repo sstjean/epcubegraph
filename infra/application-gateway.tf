@@ -22,13 +22,17 @@ locals {
   exporter_public_host = "${var.exporter_subdomain}.${var.custom_domain_zone_name}"
 }
 
-# Read the wildcard certificate's versionless secret id from Key Vault. The
-# gateway pulls the cert at runtime via its managed identity; no secret material
-# enters Terraform state.
-data "azurerm_key_vault_certificate" "wildcard" {
-  count        = local.appgw_enabled ? 1 : 0
-  name         = var.wildcard_certificate_name
-  key_vault_id = data.azurerm_key_vault.main.id
+# The shared wildcard cert lives in the central devsbx-common Key Vault
+# (issued + auto-renewed once by KeyVault-Acmebot), NOT the per-env vault — a
+# single `*.devsbx.xyz` cert serves every environment's gateway (feature 168,
+# design C). Only the vault's control-plane metadata is read here (Contributor
+# suffices); no cert/secret data-plane read, so the CD principal needs no KV
+# data role. The gateway pulls the cert at runtime via its own managed identity
+# using the versionless secret id, which also auto-rotates on Acmebot renewal.
+data "azurerm_key_vault" "shared_cert" {
+  count               = local.appgw_enabled ? 1 : 0
+  name                = var.shared_cert_key_vault_name
+  resource_group_name = var.shared_cert_key_vault_rg
 }
 
 # ── Single public IP (the env's only public IP — FR-004) ──
@@ -111,8 +115,10 @@ resource "azurerm_application_gateway" "main" {
   }
 
   ssl_certificate {
-    name                = var.wildcard_certificate_name
-    key_vault_secret_id = data.azurerm_key_vault_certificate.wildcard[0].versionless_secret_id
+    name = var.wildcard_certificate_name
+    # Versionless secret id in the shared vault — App Gateway resolves + auto-
+    # rotates it via its managed identity (granted Secret User in keyvault.tf).
+    key_vault_secret_id = "${data.azurerm_key_vault.shared_cert[0].vault_uri}secrets/${var.wildcard_certificate_name}"
   }
 
   # ── API backend (HTTPS to the internal app FQDN) ──
@@ -260,10 +266,12 @@ resource "azurerm_application_gateway" "main" {
     redirect_configuration_name = "exporter-http-to-https"
   }
 
-  # The wildcard cert grant and the internal DNS record must exist before the
-  # gateway provisions, or TLS load and backend health both fail (D1, D4).
+  # The shared-vault cert grants (gateway identity) and the internal DNS record
+  # must exist before the gateway provisions, or TLS load and backend health both
+  # fail (D1, D4). RBAC role assignments also need propagation time.
   depends_on = [
-    azurerm_key_vault_access_policy.appgw,
+    azurerm_role_assignment.appgw_cert_user,
+    azurerm_role_assignment.appgw_secret_user,
     azurerm_private_dns_a_record.env_wildcard,
   ]
 }
