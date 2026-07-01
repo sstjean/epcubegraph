@@ -44,6 +44,14 @@ resource "azurerm_public_ip" "appgw" {
   allocation_method   = "Static"
   sku                 = "Standard"
   zones               = ["1", "2", "3"]
+
+  lifecycle {
+    # This sandbox tenant auto-injects a FirstPartyUsage "/Unprivileged" ip_tag
+    # on public IPs. It is not part of our config, so Terraform would try to
+    # strip it — a ForceNew replace that deadlocks because the IP is already
+    # attached to the gateway frontend. Ignore the platform-injected tag.
+    ignore_changes = [ip_tags]
+  }
 }
 
 # ── WAF policy: managed OWASP 3.2 in Prevention mode (FR-013) ──
