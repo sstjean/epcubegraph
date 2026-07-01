@@ -11,13 +11,18 @@ output "postgres_fqdn" {
 }
 
 output "api_fqdn" {
-  description = "FQDN of the API container app"
-  value       = var.api_image != "" ? azurerm_container_app.api[0].ingress[0].fqdn : ""
+  description = "Public FQDN of the API (served via the Application Gateway edge when enabled)"
+  value       = local.appgw_enabled ? local.api_public_host : (var.api_image != "" ? azurerm_container_app.api[0].ingress[0].fqdn : "")
 }
 
 output "exporter_fqdn" {
-  description = "FQDN of the epcube-exporter container app"
-  value       = var.epcube_image != "" ? azurerm_container_app.exporter[0].ingress[0].fqdn : ""
+  description = "Public FQDN of the epcube-exporter (served via the Application Gateway edge when enabled)"
+  value       = local.appgw_enabled ? local.exporter_public_host : (var.epcube_image != "" ? azurerm_container_app.exporter[0].ingress[0].fqdn : "")
+}
+
+output "appgw_public_ip" {
+  description = "Public IP of the Application Gateway edge (the environment's only public IP)"
+  value       = local.appgw_enabled ? azurerm_public_ip.appgw[0].ip_address : ""
 }
 
 output "acr_login_server" {

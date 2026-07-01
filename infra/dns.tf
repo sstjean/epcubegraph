@@ -36,16 +36,6 @@ resource "time_sleep" "dashboard_dns_propagation" {
   depends_on = [azurerm_dns_cname_record.dashboard]
 }
 
-resource "time_sleep" "api_dns_propagation" {
-  count           = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
-  create_duration = "30s"
-
-  depends_on = [
-    azurerm_dns_cname_record.api,
-    azurerm_dns_txt_record.api_verification,
-  ]
-}
-
 # SWA custom domain binding — CNAME validation auto-provisions managed TLS cert
 resource "azurerm_static_web_app_custom_domain" "dashboard" {
   count             = var.custom_domain_zone_name != "" && var.dashboard_subdomain != "" ? 1 : 0
@@ -56,126 +46,28 @@ resource "azurerm_static_web_app_custom_domain" "dashboard" {
   depends_on = [time_sleep.dashboard_dns_propagation]
 }
 
-# ── API (Container App) Custom Domain ──
+# ── API + Exporter Public DNS (Application Gateway edge) ──
+#
+# With the internal Container Apps environment fronted by the Application
+# Gateway WAF_v2 edge, the public API and exporter host names resolve directly
+# to the gateway's single public IP (FR-008). TLS is terminated at the gateway
+# with the shared wildcard certificate, so the per-app Container App managed
+# certificate + TXT verification + hostname-bind dance is gone (FR-009, D7).
 
-# TXT verification record: asuid.{api_subdomain} → Container App domain verification ID
-# Required for Azure managed certificate provisioning on Container Apps.
-resource "azurerm_dns_txt_record" "api_verification" {
-  count               = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
-  name                = "asuid.${var.api_subdomain}"
-  zone_name           = data.azurerm_dns_zone.custom[0].name
-  resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
-  ttl                 = var.custom_domain_ttl
-
-  record {
-    value = azurerm_container_app.api[0].custom_domain_verification_id
-  }
-}
-
-# CNAME: {api_subdomain}.devsbx.xyz → API Container App FQDN
-resource "azurerm_dns_cname_record" "api" {
-  count               = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
+resource "azurerm_dns_a_record" "api" {
+  count               = local.appgw_enabled && var.custom_domain_zone_name != "" && var.api_subdomain != "" ? 1 : 0
   name                = var.api_subdomain
   zone_name           = data.azurerm_dns_zone.custom[0].name
   resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
   ttl                 = var.custom_domain_ttl
-  record              = azurerm_container_app.api[0].ingress[0].fqdn
+  records             = [azurerm_public_ip.appgw[0].ip_address]
 }
 
-# Container App custom domain with Azure managed certificate.
-# cert fields are populated asynchronously by Azure after TXT + CNAME validation,
-# so ignore_changes prevents Terraform from recreating the resource on subsequent applies.
-resource "azurerm_container_app_custom_domain" "api" {
-  count            = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
-  name             = "${var.api_subdomain}.${var.custom_domain_zone_name}"
-  container_app_id = azurerm_container_app.api[0].id
-
-  lifecycle {
-    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
-  }
-
-  depends_on = [time_sleep.api_dns_propagation]
-}
-
-# Azure provisions managed certs asynchronously after the custom domain is created,
-# but doesn't auto-bind them via the Terraform API. Wait for cert provisioning,
-# then explicitly bind with az CLI. Retries up to 5 times with 15s between
-# attempts to handle eventual consistency delays.
-resource "time_sleep" "api_cert_provisioning" {
-  count           = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
-  create_duration = "60s"
-  depends_on      = [azurerm_container_app_custom_domain.api]
-}
-
-resource "terraform_data" "api_cert_bind" {
-  count            = var.custom_domain_zone_name != "" && var.api_subdomain != "" && var.api_image != "" ? 1 : 0
-  triggers_replace = [azurerm_container_app_custom_domain.api[0].id]
-
-  provisioner "local-exec" {
-    command = "for i in 1 2 3 4 5; do az containerapp hostname bind --hostname ${var.api_subdomain}.${var.custom_domain_zone_name} --name ${azurerm_container_app.api[0].name} --resource-group ${azurerm_resource_group.main.name} --environment ${azurerm_container_app_environment.main.name} --validation-method CNAME && break || echo \"Attempt $i failed, retrying in 15s...\" && sleep 15; done"
-  }
-
-  depends_on = [time_sleep.api_cert_provisioning]
-}
-
-# ── Exporter (Container App) Custom Domain ──
-
-resource "azurerm_dns_txt_record" "exporter_verification" {
-  count               = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
-  name                = "asuid.${var.exporter_subdomain}"
-  zone_name           = data.azurerm_dns_zone.custom[0].name
-  resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
-  ttl                 = var.custom_domain_ttl
-
-  record {
-    value = azurerm_container_app.exporter[0].custom_domain_verification_id
-  }
-}
-
-resource "azurerm_dns_cname_record" "exporter" {
-  count               = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
+resource "azurerm_dns_a_record" "exporter" {
+  count               = local.appgw_enabled && var.custom_domain_zone_name != "" && var.exporter_subdomain != "" ? 1 : 0
   name                = var.exporter_subdomain
   zone_name           = data.azurerm_dns_zone.custom[0].name
   resource_group_name = data.azurerm_dns_zone.custom[0].resource_group_name
   ttl                 = var.custom_domain_ttl
-  record              = azurerm_container_app.exporter[0].ingress[0].fqdn
-}
-
-resource "time_sleep" "exporter_dns_propagation" {
-  count           = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
-  create_duration = "30s"
-
-  depends_on = [
-    azurerm_dns_cname_record.exporter,
-    azurerm_dns_txt_record.exporter_verification,
-  ]
-}
-
-resource "azurerm_container_app_custom_domain" "exporter" {
-  count            = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
-  name             = "${var.exporter_subdomain}.${var.custom_domain_zone_name}"
-  container_app_id = azurerm_container_app.exporter[0].id
-
-  lifecycle {
-    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
-  }
-
-  depends_on = [time_sleep.exporter_dns_propagation]
-}
-
-resource "time_sleep" "exporter_cert_provisioning" {
-  count           = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
-  create_duration = "60s"
-  depends_on      = [azurerm_container_app_custom_domain.exporter]
-}
-
-resource "terraform_data" "exporter_cert_bind" {
-  count            = var.custom_domain_zone_name != "" && var.exporter_subdomain != "" && var.epcube_image != "" ? 1 : 0
-  triggers_replace = [azurerm_container_app_custom_domain.exporter[0].id]
-
-  provisioner "local-exec" {
-    command = "for i in 1 2 3 4 5; do az containerapp hostname bind --hostname ${var.exporter_subdomain}.${var.custom_domain_zone_name} --name ${azurerm_container_app.exporter[0].name} --resource-group ${azurerm_resource_group.main.name} --environment ${azurerm_container_app_environment.main.name} --validation-method CNAME && break || echo \"Attempt $i failed, retrying in 15s...\" && sleep 15; done"
-  }
-
-  depends_on = [time_sleep.exporter_cert_provisioning]
+  records             = [azurerm_public_ip.appgw[0].ip_address]
 }

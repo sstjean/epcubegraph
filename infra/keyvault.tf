@@ -14,6 +14,28 @@ resource "azurerm_key_vault_access_policy" "runtime" {
   secret_permissions = ["Get", "List"]
 }
 
+# ── App Gateway identity: read the shared wildcard cert (central vault) ──
+#
+# The wildcard cert lives in the shared devsbx-common Key Vault (RBAC-authorized),
+# not this env's vault. Grant the gateway's dedicated identity the least-privilege
+# pair App Gateway needs to pull a KV cert: Certificate User (cert metadata) +
+# Secrets User (the PFX-backing secret). Scoped to the shared vault only (ZT).
+# The CD principal has User Access Administrator at subscription scope, so it can
+# create these cross-resource-group role assignments.
+resource "azurerm_role_assignment" "appgw_cert_user" {
+  count                = local.appgw_enabled ? 1 : 0
+  scope                = data.azurerm_key_vault.shared_cert[0].id
+  role_definition_name = "Key Vault Certificate User"
+  principal_id         = azurerm_user_assigned_identity.appgw.principal_id
+}
+
+resource "azurerm_role_assignment" "appgw_secret_user" {
+  count                = local.appgw_enabled ? 1 : 0
+  scope                = data.azurerm_key_vault.shared_cert[0].id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.appgw.principal_id
+}
+
 # ── EP Cube cloud credentials ──
 
 resource "azurerm_key_vault_secret" "epcube_username" {

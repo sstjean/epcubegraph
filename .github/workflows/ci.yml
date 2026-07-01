@@ -70,14 +70,34 @@ jobs:
 
       - name: Integration Tests
         working-directory: api
-        run: >
-          dotnet test EpCubeGraph.sln
-          --no-build
-          --configuration Release
-          --filter "FullyQualifiedName~Integration"
-          --collect:"XPlat Code Coverage"
-          --results-directory ./TestResults
-          --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings
+        run: |
+          set -o pipefail
+          max_attempts=2
+          attempt=1
+          while true; do
+            echo "::group::Integration tests (attempt ${attempt}/${max_attempts})"
+            if dotnet test EpCubeGraph.sln \
+                 --no-build \
+                 --configuration Release \
+                 --filter "FullyQualifiedName~Integration" \
+                 --collect:"XPlat Code Coverage" \
+                 --results-directory ./TestResults \
+                 --settings tests/EpCubeGraph.Api.Tests/coverlet.runsettings \
+                 2>&1 | tee "integration-attempt-${attempt}.log"; then
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            # Retry ONLY transient Docker daemon faults — never real test failures.
+            if [ "${attempt}" -lt "${max_attempts}" ] && grep -q "DockerApiException" "integration-attempt-${attempt}.log"; then
+              echo "::warning::Transient Docker daemon error during integration tests; retrying."
+              attempt=$((attempt + 1))
+              sleep 10
+              continue
+            fi
+            echo "::error::Integration tests failed."
+            exit 1
+          done
 
       - name: Enforce coverage threshold
         working-directory: api

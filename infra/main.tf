@@ -77,3 +77,13 @@ resource "azurerm_user_assigned_identity" "main" {
   resource_group_name = azurerm_resource_group.main.name
 }
 
+# Dedicated least-privilege identity for the Application Gateway edge (ZT).
+# Used only to read the shared wildcard TLS certificate from Key Vault; kept
+# separate from the runtime app identity so neither can assume the other's
+# permissions (constitution §Security Zero-Trust — Least Privilege).
+resource "azurerm_user_assigned_identity" "appgw" {
+  name                = "${var.environment_name}-appgw-identity"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+}
+

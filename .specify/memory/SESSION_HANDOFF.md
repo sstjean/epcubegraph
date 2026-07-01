@@ -1,67 +1,61 @@
-# Session Handoff (2026-06-06)
+# Session Handoff (2026-06-30)
 
 ## Branch / Repo State
 
-- Current branch: `164-dashboard-pageview-initial-load`
-- PR: #165 (open) — https://github.com/sstjean/epcubegraph/pull/165
-- Latest feature commit on branch:
-  - `484e870` fix(dashboard): track initial page view in App
-- Working tree at shutdown: clean
+- Current branch: `168-internal-appgw-waf-edge` (pushed to origin)
+- **PR #180** (open): https://github.com/sstjean/epcubegraph/pull/180
+  - Base `main` ← `168-internal-appgw-waf-edge`, 5 commits
+  - Closes #173; implements stories #174–#179
+- Working tree: clean after shutdown commit
 - Stashes: none
 
-## What Was Completed
+## What Was Completed This Session
 
-1. Closed #163 lifecycle:
-   - merged PR #163
-   - verified #115 closed
-   - deleted branch `115-appinsights-per-environment` (local + remote)
-   - destroyed residual b115 staging resources (run `27017066095`, success)
-2. Advanced #164 diagnosis with live evidence:
-   - produced controlled API traffic and confirmed request ingestion in production App Insights
-   - confirmed dashboard telemetry gap persisted (`pageViews` / `customEvents` absent)
-   - confirmed deployed dashboard bundle contains App Insights connection string and telemetry methods
-3. Implemented a targeted dashboard fix:
-   - `dashboard/src/App.tsx`: explicit initial page-view tracking on mount
-   - de-dup guard to prevent double first event when router emits initial route change
-   - `dashboard/tests/component/App.test.tsx`: regression coverage for mount + route-change tracking
-4. Verification completed:
-   - `cd dashboard && npm run typecheck` passed
-   - `cd dashboard && npm run test:coverage` passed at 100% (775 tests)
-5. Collaboration updates:
-   - posted issue #164 update comment with findings and fix summary
-   - opened PR #165
-
-## What Was Tried / What Failed
-
-- Initial route-only page-view assumption was incomplete: test showed router `onChange` may fire on initial load, which caused double-count risk after adding mount tracking.
-- Resolved by adding the `useRef` first-event gate in `App.tsx`; tests then passed and coverage returned to 100%.
+1. Start-up audit found stale memory (branch-164 era). Verified PR #165 merged
+   2026-06-12; deleted obsolete `SESSION_HANDOFF.md`; refreshed `PROJECT_SUMMARY.md`.
+2. Triaged CI/PR noise from actual logs:
+   - #168/#169 Dependabot `deploy-staging` red = no Azure OIDC secrets in Dependabot
+     context (benign). Merged both with merge commits.
+   - #172 `deploy-staging` red = pre-existing `SubscriptionNotRegisteredForFeature:
+     AllowBringYourOwnPublicIpAddress` blocker on main (the thing 168 fixes).
+3. Folded #172's commit onto 168 (`19ac848`, clean cherry-pick). Verified
+   `test-az-json.sh` 21/21, `test-edge-asserts.sh` 14/14, `terraform validate` clean.
+4. Established 168 Terraform baseline: `terraform fmt -check -recursive` clean,
+   `terraform validate` success.
+5. Pushed branch 168; opened PR #180.
 
 ## Decision / How To Proceed
 
-- Treat API ingestion as currently functional (verified with live controlled traffic).
-- Treat this branch/PR as a dashboard telemetry trigger fix (partial #164 scope), not full closure of #164 until post-deploy telemetry is re-verified.
+- Feature 168 implementation (Terraform + bash TDD) is committed and validated
+  locally/statically. Remaining work is the **live-Azure blue-green cutover** —
+  deliberately manual, gated on Azure auth + backend state.
+- `deploy / deploy-staging` on PR #180 will stay red until the internal env is
+  actually applied; that is expected, not a regression.
 
-## Concrete Next Actions
+## Concrete Next Actions (live-Azure, when ready)
 
-1. Check PR #165 status and merge when user approves:
-   - `gh pr view 165 --json state,mergeStateStatus,statusCheckRollup,url`
-   - merge with merge commit only: `gh pr merge 165 --merge --auto=false`
-2. After merge:
-   - `git checkout main && git pull --ff-only`
-   - `git branch -d 164-dashboard-pageview-initial-load`
-   - `git push origin --delete 164-dashboard-pageview-initial-load`
-3. Verify production dashboard telemetry after deploy:
-   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | summarize count() by cloud_RoleName" -o json`
-   - `az monitor app-insights query --app epcubegraph-appinsights --resource-group epcubegraph-rg --analytics-query "pageViews | where timestamp > ago(24h) | project timestamp,name,url,cloud_RoleName | order by timestamp desc | take 20" -o json`
-4. Decide #164 closure or split based on post-deploy results.
+1. T002 — provision shared `*.devsbx.xyz` ACME wildcard cert into Key Vault BEFORE
+   first gateway apply.
+2. T003 — `cd infra && terraform output` to capture current `api_fqdn`/`exporter_fqdn`
+   for rollback baseline.
+3. T011 — `terraform plan` (staging); confirm NO `SubscriptionNotRegisteredForFeature`
+   and an internal LB shows.
+4. T027–T037 — staging parity diff, ephemeral cycle + teardown, then production
+   blue-green cutover (repoint custom-domain CNAMEs, confirm dashboard load + OAuth),
+   decommission old external env. PostgreSQL untouched throughout.
+5. When 168 merges: close #172 (folded), delete branch 168 local+remote, check for
+   vestigial staging envs.
 
 ## Do Not Repeat / Guardrails
 
-- Do not restate #164 as "no API ingestion at all" without fresh verification; current evidence shows API requests are ingesting.
-- Keep evidence CLI-based (query output + controlled traffic), not portal-only.
-- Preserve merge-commit policy (`--merge` only).
+- Don't "fix" PR #180's `deploy-staging` red by weakening checks — it clears on cutover.
+- Merge-commit policy only (`--merge`), never squash.
+- Don't run the BYOPIP feature registration — the whole point of 168 is to NOT need it.
+- Don't tear down PostgreSQL during cutover (FR-016).
 
 ## Open Issues Affected
 
-- #164 (open; partially addressed by PR #165)
-- #52 (unchanged backlog)
+- #173 (parent, closes on 180 merge), #174–#179 (stories)
+- #172 (open; folded onto 168)
+- #164 (dashboard pageview fix shipped via #165; confirm post-deploy before close)
+- #52 (backlog: exporter Python→C#)
