@@ -99,17 +99,33 @@ else
 fi
 ```
 
-**`-o tsv` / `--query` where empty-on-success is a meaningful result (KV secret list,
-ACR id, role-assignment list):** the success path keeps its existing empty-handling;
-only the **error** path changes to surface `AZ_JSON_ERR`:
+**`-o tsv` / `--query` where empty-on-success is a meaningful result (ACR id,
+role-assignment list):** the success path keeps its existing empty-handling;
+only the **error** path changes to surface `AZ_JSON_ERR`.
+
+**Recoverable error with a designed fallback (KV secret list):** the KV firewall
+(public network access disabled) blocks the runner's data-plane access, so the
+secret-list call exits **non-zero with a `Forbidden` message** (live-verified —
+*not* rc=0 with empty stdout). That is an expected, recoverable condition that
+must route to the Container App fallback, while any *other* non-zero exit is a
+genuine tool failure:
 
 ```bash
+KV_DATAPLANE_BLOCKED=false
+KV_SECRETS=""
 if ! az_json keyvault secret list --vault-name "$KV_NAME" --query "[].name" -o tsv; then
-  fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+  if [[ "$AZ_JSON_ERR" == *"Forbidden"* \
+     || "$AZ_JSON_ERR" == *"Public network access is disabled"* \
+     || "$AZ_JSON_ERR" == *"not from a trusted service"* ]]; then
+    KV_DATAPLANE_BLOCKED=true                  # expected: fall back to Container App
+  else
+    fail "Key Vault '$KV_NAME' secret list: az CLI error — ${AZ_JSON_ERR}"
+  fi
 else
-  KV_SECRETS="$AZ_JSON_OUT"   # empty here = firewall fallback path, NOT a tool error
-  # ...existing firewall-fallback logic unchanged...
+  KV_SECRETS="$AZ_JSON_OUT"
+  [[ -z "$KV_SECRETS" ]] && KV_DATAPLANE_BLOCKED=true   # empty-on-success also = blocked
 fi
+# if KV_DATAPLANE_BLOCKED: verify secrets via Container App; else grep KV_SECRETS
 ```
 
 **Database check (Decision A):**
@@ -142,6 +158,7 @@ fi
 | `success-json`        | `{"properties":{"charset":"UTF8","collation":"en_US.utf8"}}` | (empty) | 0 |
 | `error`               | (empty) | `... unrecognized arguments: --server-name ...` | 2 |
 | `resource-not-found`  | (empty) | `ERROR: (ResourceNotFound) The resource was not found.` | 3 |
+| `forbidden`           | (empty) | `ERROR: (Forbidden) Public network access is disabled and request is not from a trusted service nor via an approved private link.` | 1 |
 
 ## Test assertions (acceptance)
 
@@ -150,3 +167,4 @@ fi
 | success-json       | `0`     | the JSON | empty | pass + sub-checks |
 | error              | `!= 0`  | empty    | contains `unrecognized arguments` | `fail` surfacing stderr, **not** "not found" (SC-003) |
 | resource-not-found | `3`     | empty    | contains `ResourceNotFound` | absence: `fail "not found"` / `skip` (SC-004) |
+| forbidden          | `1`     | empty    | contains `Forbidden`        | recoverable: route to Container App fallback (`DATAPLANE_BLOCKED`), **not** a tool error |
