@@ -126,11 +126,14 @@ resource "azurerm_private_dns_zone_virtual_network_link" "env_domain" {
   virtual_network_id    = azurerm_virtual_network.main.id
 }
 
-# Wildcard A record → the env's internal load-balancer IP, so every app FQDN
-# (<env>-api.<default_domain>, <env>-exporter.<default_domain>) resolves to the
-# internal LB inside the VNet.
+# Wildcard A record → the env's internal load-balancer IP. An INTERNAL Container
+# Apps environment assigns each app the FQDN <app>.internal.<default_domain>, so
+# the record must live under the `internal` label (<app>.internal.<default_domain>)
+# — a bare `*.<default_domain>` wildcard matches only a single label and would
+# NOT resolve the `.internal.` app hostnames the App Gateway backend and the
+# self-hosted VNet runner actually target (FR-007, D4).
 resource "azurerm_private_dns_a_record" "env_wildcard" {
-  name                = "*"
+  name                = "*.internal"
   zone_name           = azurerm_private_dns_zone.env_domain.name
   resource_group_name = azurerm_resource_group.main.name
   ttl                 = 300

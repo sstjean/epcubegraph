@@ -11,11 +11,14 @@
 locals {
   appgw_enabled = var.wildcard_certificate_name != ""
 
-  env_default_domain = azurerm_container_app_environment.main.default_domain
-
-  # Internal app FQDNs (resolve to the env internal LB via the private DNS zone).
-  api_backend_fqdn      = "${var.environment_name}-api.${local.env_default_domain}"
-  exporter_backend_fqdn = "${var.environment_name}-exporter.${local.env_default_domain}"
+  # Internal app FQDNs — use each app's REAL assigned ingress FQDN. For an
+  # internal environment that FQDN includes an `.internal.` segment
+  # (<app>.internal.<default_domain>). Reconstructing it from default_domain
+  # alone drops `.internal.`; the edge probe then reaches the Container Apps
+  # envoy with a hostname no app is registered under and gets a 404, so the
+  # backend is marked unhealthy despite healthy compute (FR-008, D4).
+  api_backend_fqdn      = azurerm_container_app.api[0].ingress[0].fqdn
+  exporter_backend_fqdn = azurerm_container_app.exporter[0].ingress[0].fqdn
 
   # Public host names the edge fronts.
   api_public_host      = "${var.api_subdomain}.${var.custom_domain_zone_name}"
