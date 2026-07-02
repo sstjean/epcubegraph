@@ -17,8 +17,13 @@ locals {
   # alone drops `.internal.`; the edge probe then reaches the Container Apps
   # envoy with a hostname no app is registered under and gets a 404, so the
   # backend is marked unhealthy despite healthy compute (FR-008, D4).
-  api_backend_fqdn      = azurerm_container_app.api[0].ingress[0].fqdn
-  exporter_backend_fqdn = azurerm_container_app.exporter[0].ingress[0].fqdn
+  #
+  # try(): the container apps are count-gated on their image vars, which are
+  # NOT supplied during `terraform destroy` (count → 0). Guard the index so
+  # destroy/teardown doesn't crash with "Invalid index"; the gateway that
+  # consumes these is itself gated on appgw_enabled and is torn down too.
+  api_backend_fqdn      = try(azurerm_container_app.api[0].ingress[0].fqdn, "")
+  exporter_backend_fqdn = try(azurerm_container_app.exporter[0].ingress[0].fqdn, "")
 
   # Public host names the edge fronts.
   api_public_host      = "${var.api_subdomain}.${var.custom_domain_zone_name}"
