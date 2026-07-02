@@ -9,6 +9,11 @@
     <PackageReference Include="Microsoft.Identity.Web" Version="4.8.0" />
     <PackageReference Include="Npgsql" Version="10.0.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.7" />
+    <!-- Pin transitive: GHSA-v5pm-xwqc-g5wc (CVE-2026-49451).
+         Swashbuckle.AspNetCore 10.1.7 → Microsoft.OpenApi 2.4.1 (vulnerable, DoS
+         via circular schema refs). 2.7.5 is the patched 2.x release.
+         Remove when Swashbuckle bumps its Microsoft.OpenApi dependency. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <!-- Pin transitive: GHSA-g94r-2vxg-569j.
          Microsoft.ApplicationInsights.AspNetCore 3.1.0 → OpenTelemetry.Api 1.15.1 (vulnerable).
          Remove when App Insights bumps its OpenTelemetry dependency. -->
