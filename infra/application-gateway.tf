@@ -11,19 +11,22 @@
 locals {
   appgw_enabled = var.wildcard_certificate_name != ""
 
-  # Internal app FQDNs — use each app's REAL assigned ingress FQDN. For an
-  # internal environment that FQDN includes an `.internal.` segment
-  # (<app>.internal.<default_domain>). Reconstructing it from default_domain
-  # alone drops `.internal.`; the edge probe then reaches the Container Apps
-  # envoy with a hostname no app is registered under and gets a 404, so the
-  # backend is marked unhealthy despite healthy compute (FR-008, D4).
+  env_default_domain = azurerm_container_app_environment.main.default_domain
+
+  # Internal app FQDNs. An INTERNAL Container Apps environment assigns each app
+  # the FQDN <app-name>.internal.<default_domain>. The `.internal.` segment is
+  # mandatory: without it the edge probe reaches the Container Apps envoy under a
+  # hostname no app is registered under and gets a 404, marking the backend
+  # unhealthy despite healthy compute (FR-008, D4).
   #
-  # try(): the container apps are count-gated on their image vars, which are
-  # NOT supplied during `terraform destroy` (count → 0). Guard the index so
-  # destroy/teardown doesn't crash with "Invalid index"; the gateway that
-  # consumes these is itself gated on appgw_enabled and is torn down too.
-  api_backend_fqdn      = try(azurerm_container_app.api[0].ingress[0].fqdn, "")
-  exporter_backend_fqdn = try(azurerm_container_app.exporter[0].ingress[0].fqdn, "")
+  # Built from the environment's default domain (a non-counted resource that
+  # survives until the env itself is destroyed) rather than from
+  # azurerm_container_app.{api,exporter}[0], whose count is gated on image vars
+  # that `terraform destroy` does not supply (count -> 0). Referencing the app
+  # index there made destroy fail with "Invalid index", and a try()-guarded
+  # empty string then failed backend_address_pool fqdn validation.
+  api_backend_fqdn      = "${var.environment_name}-api.internal.${local.env_default_domain}"
+  exporter_backend_fqdn = "${var.environment_name}-exporter.internal.${local.env_default_domain}"
 
   # Public host names the edge fronts.
   api_public_host      = "${var.api_subdomain}.${var.custom_domain_zone_name}"
