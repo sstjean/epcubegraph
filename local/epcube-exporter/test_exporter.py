@@ -1169,6 +1169,17 @@ class TestPostgresWriter(unittest.TestCase):
         call_args = mock_cursor.execute.call_args[0][0]
         self.assertIn("CREATE TABLE IF NOT EXISTS devices", call_args)
         self.assertIn("CREATE TABLE IF NOT EXISTS readings", call_args)
+        # Covering index for the /readings/range history query, which filters on
+        # (metric_name, timestamp) with no device_id. Without it PG seq-scans the
+        # whole readings table on every history load (issue #182).
+        self.assertIn(
+            "CREATE INDEX IF NOT EXISTS idx_readings_metric_time",
+            call_args,
+        )
+        self.assertIn(
+            "ON readings (metric_name, timestamp) INCLUDE (device_id, value)",
+            call_args,
+        )
         mock_conn.commit.assert_called()
 
     @patch.object(db, "psycopg2")
