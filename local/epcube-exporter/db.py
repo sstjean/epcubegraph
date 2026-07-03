@@ -69,6 +69,16 @@ CREATE INDEX IF NOT EXISTS idx_readings_device_metric_time
 CREATE INDEX IF NOT EXISTS idx_readings_device_time
     ON readings (device_id, timestamp DESC);
 
+-- Issue #182: the /api/v1/readings/range history query filters on
+-- (metric_name, timestamp) with NO device_id, so neither device-leading index
+-- above can serve it — PG seq-scans the entire readings table on every history
+-- load (measured ~1.9s per metric on prod, growing with the table). This
+-- covering index turns that into an Index Only Scan bounded to the selected
+-- metric/time window. INCLUDE (device_id, value) supplies the GROUP BY / AVG
+-- columns so the heap is never touched.
+CREATE INDEX IF NOT EXISTS idx_readings_metric_time
+    ON readings (metric_name, timestamp) INCLUDE (device_id, value);
+
 CREATE TABLE IF NOT EXISTS pending_replacements (
     id SERIAL PRIMARY KEY,
     old_device_id TEXT NOT NULL,
