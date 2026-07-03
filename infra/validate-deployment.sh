@@ -42,6 +42,13 @@ info()   { echo -e "  ${BLUE}→${NC} $*"; }
 # shellcheck source=lib/az-json.sh
 source "${SCRIPT_DIR}/lib/az-json.sh"
 
+# -- telemetry helper ----------------------------------------------------------
+# Parses the count from a Log Analytics `... | summarize c=count()` query so the
+# end-to-end telemetry check (issue #164) can assert data actually lands, not
+# just that the resources are wired. See infra/lib/telemetry.sh.
+# shellcheck source=lib/telemetry.sh
+source "${SCRIPT_DIR}/lib/telemetry.sh"
+
 # -- Argument parsing ----------------------------------------------------------
 RG_OVERRIDE=""
 while [[ $# -gt 0 ]]; do
@@ -604,6 +611,50 @@ print(conn.get('secretRef','') if conn else '')
       pass "API App Insights connection string sourced from secret 'appinsights-connection-string'"
     else
       fail "API App Insights connection string secret ref: $AI_SECRET_REF (expected appinsights-connection-string)"
+    fi
+  fi
+
+  # R4 (issue #164): telemetry must actually FLOW end-to-end, not merely be
+  # wired. R1-R3 (resource exists, linked, secret referenced) all passed while
+  # zero telemetry was landing, because this workspace-based App Insights stores
+  # data in Log Analytics (AppRequests) — never the classic tables the old
+  # spot-checks queried. Generate probe traffic and confirm AppRequests land in
+  # the per-env workspace within TELEMETRY_TIMEOUT (default 240s; ingestion lag
+  # is ~1-3 min). Query errors (e.g. the CD principal lacking Log Analytics
+  # Reader) SKIP rather than fail, so this never turns a permission gap into a
+  # false telemetry failure.
+  if [[ -n "$API_FQDN" && "$AI_WORKSPACE" == *"/${ENV_NAME}-logs" ]]; then
+    if ! az_json monitor log-analytics workspace show --ids "$AI_WORKSPACE" --query customerId -o tsv; then
+      skip "End-to-end telemetry: could not resolve workspace GUID — ${AZ_JSON_ERR}"
+    else
+      AI_LAW_GUID="$AZ_JSON_OUT"
+      TELEMETRY_TIMEOUT="${TELEMETRY_TIMEOUT:-240}"
+      info "Generating probe traffic; waiting up to ${TELEMETRY_TIMEOUT}s for AppRequests to land…"
+      for _ in 1 2 3 4 5; do
+        curl -s -o /dev/null --max-time 10 "https://${API_FQDN}/api/v1/health" 2>/dev/null || true
+      done
+      telem_deadline=$(( $(date +%s) + TELEMETRY_TIMEOUT ))
+      telem_count=0
+      telem_query_failed=0
+      while :; do
+        if az_json monitor log-analytics query -w "$AI_LAW_GUID" \
+             --analytics-query "AppRequests | where TimeGenerated > ago(15m) | summarize c=count()" -o json; then
+          telem_count=$(printf '%s' "$AZ_JSON_OUT" | telemetry_count)
+          [[ "$telem_count" -gt 0 ]] && break
+        else
+          telem_query_failed=1  # a CLI/permission error won't clear by waiting
+          break
+        fi
+        [[ $(date +%s) -ge $telem_deadline ]] && break
+        sleep 20
+      done
+      if [[ "$telem_count" -gt 0 ]]; then
+        pass "End-to-end telemetry: ${telem_count} AppRequests landed in '${ENV_NAME}-logs'"
+      elif [[ "$telem_query_failed" -eq 1 ]]; then
+        skip "End-to-end telemetry: log-analytics query unavailable (permission/CLI) — ${AZ_JSON_ERR}"
+      else
+        fail "End-to-end telemetry: no AppRequests landed in '${ENV_NAME}-logs' within ${TELEMETRY_TIMEOUT}s (#164)"
+      fi
     fi
   fi
 fi
