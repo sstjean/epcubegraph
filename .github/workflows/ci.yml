@@ -212,6 +212,9 @@ jobs:
       - name: az_json helper tests
         run: bash infra/tests/test-az-json.sh
 
+      - name: telemetry helper tests
+        run: bash infra/tests/test-telemetry.sh
+
   validate-tools:
     needs: changes
     if: needs.changes.outputs.code == 'true'
