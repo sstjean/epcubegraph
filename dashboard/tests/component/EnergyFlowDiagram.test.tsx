@@ -18,6 +18,7 @@ function makeGroup(overrides: Partial<DeviceGroup['metrics']> = {}, name = 'EP C
       batteryStoredKwh: 7.2,
       gridWatts: 500,
       homeLoadWatts: 2800,
+      gridDown: false,
       ...overrides,
     },
   };
@@ -121,6 +122,84 @@ describe('EnergyFlowDiagram', () => {
     expect(texts).toContain('idle');
     expect(texts).not.toContain('importing');
     expect(texts).not.toContain('exporting');
+  });
+
+  // Grid-down indicator (feature 181)
+  it('renders red Grid icon, prohibition overlay, and "Grid Down" label when gridDown (US1)', () => {
+    // Arrange — grid-down while exporting (would normally be green) to prove the
+    // red stroke is forced regardless of flow direction.
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ gridDown: true, gridWatts: -2000 })]} />
+    );
+
+    // "Grid Down" replaces the importing/exporting/idle sublabel
+    const texts = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
+    expect(texts).toContain('Grid Down');
+    expect(texts).not.toContain('exporting');
+
+    // Prohibition (⊘) overlay: a circle bisected by a diagonal line, centered on the Grid node
+    const symbol = container.querySelector('.grid-down-symbol');
+    expect(symbol).toBeTruthy();
+    expect(symbol!.querySelector('circle')).toBeTruthy();
+    expect(symbol!.querySelector('line')).toBeTruthy();
+
+    // Grid icon stroke forced red (#ef4444) even though flow is exporting
+    const gridIcon = container.querySelector('.grid-icon');
+    expect(gridIcon?.getAttribute('stroke')).toBe('#ef4444');
+  });
+
+  it('renders no prohibition overlay or "Grid Down" label when grid is up', () => {
+    // Arrange — grid up, exporting
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ gridDown: false, gridWatts: -2000 })]} />
+    );
+
+    // Assert — normal exporting sublabel, no "Grid Down", no overlay
+    const texts = Array.from(container.querySelectorAll('text')).map((t) => t.textContent);
+    expect(texts).not.toContain('Grid Down');
+    expect(texts).toContain('exporting');
+    expect(container.querySelector('.grid-down-symbol')).toBeNull();
+
+    // Grid icon uses the normal flow color (exporting → green)
+    const gridIcon = container.querySelector('.grid-icon');
+    expect(gridIcon?.getAttribute('stroke')).toBe('#10b981');
+  });
+
+  it('flags only the affected system when multiple systems are rendered (US2)', () => {
+    // Arrange — system A grid-down, system B grid-up
+    const groups = [
+      makeGroup({ gridDown: true, gridWatts: 1500 }, 'System A', true, 'systemA'),
+      makeGroup({ gridDown: false, gridWatts: 1500 }, 'System B', true, 'systemB'),
+    ];
+    const { container } = render(<EnergyFlowDiagram groups={groups} />);
+
+    // Assert — exactly one prohibition overlay and one "Grid Down" label
+    expect(container.querySelectorAll('.grid-down-symbol').length).toBe(1);
+    const gridDownLabels = Array.from(container.querySelectorAll('text')).filter(
+      (t) => t.textContent === 'Grid Down',
+    );
+    expect(gridDownLabels.length).toBe(1);
+  });
+
+  it('renders the grid flow line as idle when gridDown, ignoring grid watts (US1)', () => {
+    // Arrange — grid-down but grid watts above threshold; normally this would
+    // animate an active red importing flow. With the grid down, no power crosses
+    // the grid boundary, so the line must render idle.
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ gridDown: true, gridWatts: 1500 })]} />
+    );
+
+    // Act — locate the Grid ↔ Gateway flow line group via its path id
+    const gridGroup = container.querySelector('#flow-0-grid')!.parentElement!;
+
+    // Assert — idle appearance: grey stroke, no animated .flow-line class,
+    // no directional dot, dimmed opacity, and no power label
+    const line = gridGroup.querySelector('line')!;
+    expect(line.getAttribute('stroke')).toBe('#4b5563');
+    expect(line.classList.contains('flow-line')).toBe(false);
+    expect(gridGroup.querySelector('.flow-dot')).toBeNull();
+    expect(gridGroup.getAttribute('opacity')).toBe('0.3');
+    expect(gridGroup.querySelector('.flow-line-label')).toBeNull();
   });
 
   // Battery direction

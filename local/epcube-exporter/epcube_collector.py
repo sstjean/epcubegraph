@@ -34,6 +34,18 @@ def parse_device_metrics(data):
     }
 
 
+def _parse_status_code(raw):
+    """Return the raw systemStatus as an int grid status code, or None.
+
+    Pure guard that keeps build_postgres_readings free of parse branching (SRP).
+    Booleans and non-integers (e.g. the "?" placeholder, arbitrary strings, or
+    floats) yield None, so the grid_status_code reading is omitted (FR-008).
+    """
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw
+
+
 def build_postgres_readings(dev_id, timestamp, metrics):
     """Build PostgreSQL reading tuples from structured metrics.
 
@@ -42,7 +54,7 @@ def build_postgres_readings(dev_id, timestamp, metrics):
     """
     bat = f"{dev_id}_battery"
     sol = f"{dev_id}_solar"
-    return [
+    readings = [
         (sol, "solar_instantaneous_generation_watts", timestamp, metrics["solar_w"]),
         (bat, "battery_state_of_capacity_percent", timestamp, metrics["soc"]),
         (bat, "grid_power_watts", timestamp, metrics["grid_w"]),
@@ -52,6 +64,13 @@ def build_postgres_readings(dev_id, timestamp, metrics):
         (bat, "battery_stored_kwh", timestamp, metrics["bat_stored_kwh"]),
         (bat, "battery_peak_stored_kwh", timestamp, metrics.get("bat_peak_kwh", 0)),
     ]
+    # Grid-down signal (feature 181): persist the raw systemStatus integer per
+    # poll. Omitted when the value is not a valid integer (e.g. "?" / missing)
+    # so absence of the signal yields absence of the reading (FR-008).
+    status_code = _parse_status_code(metrics.get("system_status_raw"))
+    if status_code is not None:
+        readings.append((bat, "grid_status_code", timestamp, status_code))
+    return readings
 
 
 def update_battery_peak(bat_peak, dev_id, bat_stored_kwh, today_str):

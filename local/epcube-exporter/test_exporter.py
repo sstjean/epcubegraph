@@ -2878,7 +2878,88 @@ class TestBuildPostgresReadings(unittest.TestCase):
         self.assertEqual(bat[0][0], "epcube1_battery")
 
 
-class TestSafeFloat(unittest.TestCase):
+class TestBuildPostgresReadingsGridStatus(unittest.TestCase):
+    """Tests for grid_status_code emission in build_postgres_readings (feature 181)."""
+
+    def _metrics(self, **overrides):
+        m = {
+            "solar_w": 3500.0, "soc": 85, "grid_w": 0.0,
+            "backup_w": 2100.0, "battery_w": 1400.0,
+            "self_sufficiency": 92.5, "bat_stored_kwh": 12.5,
+            "bat_peak_kwh": 13.0,
+        }
+        m.update(overrides)
+        return m
+
+    def _grid_status(self, readings):
+        return [r for r in readings if r[1] == "grid_status_code"]
+
+    def test_emits_grid_status_code_for_backup(self):
+        # Arrange
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics(system_status_raw=2)
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        gs = self._grid_status(readings)
+        self.assertEqual(len(gs), 1)
+        self.assertEqual(gs[0], ("epcube1_battery", "grid_status_code", ts, 2))
+
+    def test_emits_grid_status_code_for_off_grid(self):
+        # Arrange
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics(system_status_raw=3)
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        gs = self._grid_status(readings)
+        self.assertEqual(len(gs), 1)
+        self.assertEqual(gs[0][3], 3)
+
+    def test_emits_grid_status_code_for_normal(self):
+        # Arrange
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics(system_status_raw=4)
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        gs = self._grid_status(readings)
+        self.assertEqual(len(gs), 1)
+        self.assertEqual(gs[0][3], 4)
+
+    def test_omits_grid_status_code_when_unknown_string(self):
+        # Arrange
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics(system_status_raw="?")
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        self.assertEqual(self._grid_status(readings), [])
+
+    def test_omits_grid_status_code_when_missing(self):
+        # Arrange — no system_status_raw key at all
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics()
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        self.assertEqual(self._grid_status(readings), [])
+
+    def test_omits_grid_status_code_when_non_integer_string(self):
+        # Arrange
+        from epcube_collector import build_postgres_readings
+        ts = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        metrics = self._metrics(system_status_raw="abc")
+        # Act
+        readings = build_postgres_readings("epcube1", ts, metrics)
+        # Assert
+        self.assertEqual(self._grid_status(readings), [])
+
     """Tests for _safe_float — NaN/Infinity rejection."""
 
     def test_normal_value(self):

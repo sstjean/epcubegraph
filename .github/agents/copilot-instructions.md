@@ -45,6 +45,8 @@ These rules override all other behavior. Violating any of them is a critical fai
 - N/A (no schema/data changes; monitoring resources only). (115-appinsights-per-environment)
 - Bash (target `/usr/bin/env bash`, `set -euo pipefail`); Python 3 used inline for JSON parsing (unchanged) + Azure CLI (`az`) — must work on **2.84.0** (local) and **>= 2.86.0** (runner); `python3`; `curl` (existing smoke tests) (166-validate-pg-db-check)
 - N/A (no schema/data changes — FR-010) (166-validate-pg-db-check)
+- Python 3.12 (exporter), C# 13 / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter); ASP.NET Core Minimal API + Npgsql (API); Preact + inline SVG (dashboard) (181-grid-down-state)
+- PostgreSQL 17 — existing `epcubegraph` database, existing `readings` table `(device_id, metric_name, timestamp, value)`. **No schema change.** New metric name `grid_status_code`. (181-grid-down-state)
 
 ## Project Structure
 
@@ -107,6 +109,6 @@ When the user says **"Start up"** or **"Shutdown"**, follow the procedures in `.
 ````
 
 ## Recent Changes
+- 181-grid-down-state: Added Python 3.12 (exporter), C# 13 / .NET 10 (API), TypeScript 5.8 / Preact 10.x (dashboard) + psycopg2 (exporter); ASP.NET Core Minimal API + Npgsql (API); Preact + inline SVG (dashboard)
 - 166-validate-pg-db-check: Added Bash (target `/usr/bin/env bash`, `set -euo pipefail`); Python 3 used inline for JSON parsing (unchanged) + Azure CLI (`az`) — must work on **2.84.0** (local) and **>= 2.86.0** (runner); `python3`; `curl` (existing smoke tests)
 - 115-appinsights-per-environment: Added Terraform (`azurerm ~>4.0`); Bash (validation script). No + Azure CLI (`az monitor app-insights`, `az containerapp`)
-- 153-chart-js-historical-graph: Added Chart.js 4.x + chartjs-adapter-date-fns 3.x + date-fns 4.x to the dashboard; removed uPlot from `HistoricalGraph.tsx`

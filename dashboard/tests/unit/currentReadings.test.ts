@@ -37,6 +37,7 @@ describe('buildDeviceGroups', () => {
     // Act
     const groups = buildDeviceGroups(devices, {
       batterySOC, batteryPower, solar, grid, homeLoad, batteryStored,
+      gridStatus: { metric: 'grid_status_code', readings: [] },
     });
 
     // Assert
@@ -62,7 +63,7 @@ describe('buildDeviceGroups', () => {
     // Act
     const groups = buildDeviceGroups(devices, {
       batterySOC: empty, batteryPower: empty, solar: empty,
-      grid: empty, homeLoad: empty, batteryStored: empty,
+      grid: empty, homeLoad: empty, batteryStored: empty, gridStatus: empty,
     });
 
     // Assert
@@ -78,7 +79,7 @@ describe('buildDeviceGroups', () => {
     // Act
     const groups = buildDeviceGroups([], {
       batterySOC: empty, batteryPower: empty, solar: empty,
-      grid: empty, homeLoad: empty, batteryStored: empty,
+      grid: empty, homeLoad: empty, batteryStored: empty, gridStatus: empty,
     });
 
     // Assert
@@ -122,6 +123,7 @@ describe('buildDeviceGroups', () => {
     // Act
     const groups = buildDeviceGroups(devices, {
       batterySOC, batteryPower, solar, grid, homeLoad, batteryStored,
+      gridStatus: { metric: 'grid_status_code', readings: [] },
     });
 
     // Assert — offline group, all metrics zero regardless of last known values

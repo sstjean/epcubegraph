@@ -8,6 +8,7 @@ export interface DeviceCardMetrics {
   batteryStoredKwh: number;
   gridWatts: number;
   homeLoadWatts: number;
+  gridDown: boolean;
 }
 
 /** Max values for gauge dial scaling (residential EP Cube system) */

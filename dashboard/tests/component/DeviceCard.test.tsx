@@ -10,6 +10,7 @@ const baseMetrics = {
   batteryStoredKwh: 9.876,
   gridWatts: 567,
   homeLoadWatts: 2345,
+  gridDown: false,
 };
 
 describe('DeviceCard', () => {
