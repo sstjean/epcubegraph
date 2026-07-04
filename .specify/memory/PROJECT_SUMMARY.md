@@ -1,12 +1,54 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-06-06
+**Last Updated**: 2026-07-04
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
-**Branch**: `164-dashboard-pageview-initial-load` (PR #165 open)
-**Last merged**: PR #163 — Per-environment Application Insights isolation (verify + enforce)
-**Active PR**: #165 — Fix dashboard initial page-view telemetry (partial fix for #164)
+**Branch**: `main` (green). No in-flight work.
+**Last merged**: PR #188 — grid-down indicator on the Current diagram (closes #181)
+**Active work**: None — Feature 181 shipped.
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
+
+---
+
+## Recent sessions (2026-07-04)
+
+- **Feature 181 (grid-down indicator) SHIPPED ✅** — PR #188 merged to `main` (merge commit `921a37c`); closed #181, #186 (US1), #187 (US2).
+  - Picked up the local `181-grid-down-state` branch from the prior session; re-verified the full gate green: exporter 355, dashboard 792 @ 100% coverage, API 496, typecheck clean.
+  - **New requirement from Steve mid-QA (FR-005a):** when a system is grid-down, the Grid↔EP Cube **flow line renders idle** (grey, no animation, no watts label) regardless of residual watts — no power crosses the grid boundary. Implemented via a `gridLineActive = gridActive && !m.gridDown` gate in `EnergyFlowDiagram.tsx` (TDD: failing component test first, then green); documented as FR-005a in spec/quickstart. Commit `03217c7`.
+  - **Live visual QA (T016)** against the prod-local stack (real data) via Playwright/Chrome: grid-up baseline clean; simulated grid-down (`grid_status_code=3` on one system) showed red Grid icon + ⊘ overlay + "Grid Down" + idle flow line (pixel-verified 0 red / 2080 grey on the line); correct multi-system attribution; recovery cleared the indicator.
+  - **T015** — synced task checklists into issues #186/#187.
+  - **Post-merge cleanup:** local+remote branch deleted, `main` synced, stale remote ref pruned; dispatched CD staging-destroy (run `28709006015`, success) — verified zero `epcubegraph-b181*` resource groups remain; removed local QA screenshot artifacts.
+- **Process note (still open):** branch push auto-deploys a staging env; merge/close does NOT auto-destroy it → manual `gh workflow run cd.yml … destroy=true` still required. Worth automating (auto-destroy on PR merge or scheduled sweeper).
+
+---
+
+## Recent sessions (2026-07-02 → 07-03)
+
+Highlights:
+
+- **Feature 168 (internal ContainerApps + App Gateway WAF) ABANDONED.** Existed only
+  to work around `AllowBringYourOwnPublicIpAddress` (now Registered). Internal-env had
+  a systematic ingress 404 (envoy 404s healthy apps; proven via runner in-VNet curl +
+  Log Analytics). Reverted to the proven external config (prod already runs it). Closed
+  PR #180 + issues #173–#179; destroyed the broken b168 staging env.
+- **PR #183 (merged):** salvaged stranded commits — OpenApi 2.7.5 **CVE-2026-49451**
+  pin (main had been red), KV-firewall fallback (#172 closed), CI retry, constitution.
+- **PR #184 (merged) — History perf (#182):** covering index on
+  `readings(metric_name, timestamp) INCLUDE (device_id, value)`. Prod History query
+  **1911ms → 59–87ms** (Index Only Scan). Built CONCURRENTLY in prod + VACUUM; verified live.
+- **PR #185 (merged) — telemetry (#164 closed):** #164 was a false alarm
+  (workspace-based App Insights → Log Analytics `AppRequests`; all flowing, verified
+  live). Added validator R4 end-to-end telemetry smoke test + `infra/lib/telemetry.sh`.
+- **Orphan cleanup:** destroyed 6 orphaned staging envs + 4 orphaned branches; only prod
+  RGs remain. (Old envs' FAILED-state CAEs needed `az containerapp env delete` first.)
+- **Feature 181 (grid-down) — spec→plan→tasks→analyze→IMPLEMENTED (green):** grid-down =
+  `systemStatus ∈ {2,3}`; exporter persists `grid_status_code`; dashboard renders the
+  Grid icon **red + prohibition (⊘) overlay + "Grid Down"** (red alone is ambiguous —
+  importing is already red). Exporter 355 tests; dashboard 791 tests / 100% coverage.
+  **Committed on local branch `181-grid-down-state` (NOT pushed).** Next: live Playwright
+  visual QA + open PR (Closes #181).
+- **Process gap flagged:** branch push auto-deploys staging; merge/close does NOT
+  auto-destroy → orphans accumulate. Follow-up: auto-destroy on PR merge/close or a sweeper.
 
 ---
 
