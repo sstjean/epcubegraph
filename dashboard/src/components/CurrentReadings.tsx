@@ -9,6 +9,7 @@ import { formatRelativeTime } from '../utils/formatting';
 import { withRetry } from '../utils/retry';
 import { groupDevicesByAlias, getDisplayName, getBaseDeviceId, getDisplayNameFromMeta } from '../utils/devices';
 import { errorMessage } from '../utils/errors';
+import { deriveGridDown } from '../utils/grid';
 import { useVueData } from '../hooks/useVueData';
 import { useDeviceDiscoveryContext } from '../hooks/useDeviceDiscovery';
 
@@ -46,6 +47,7 @@ export interface MetricResponses {
   solar: CurrentReadingsResponse;
   grid: CurrentReadingsResponse;
   homeLoad: CurrentReadingsResponse;
+  gridStatus: CurrentReadingsResponse;
 }
 
 export function buildDeviceGroups(devices: Device[], metrics: MetricResponses): DeviceGroup[] {
@@ -68,6 +70,7 @@ export function buildDeviceGroups(devices: Device[], metrics: MetricResponses): 
           solarWatts: solarDevice ? getMetricForDevice(metrics.solar, solarDevice.device) : 0,
           homeLoadWatts: batteryDevice ? getMetricForDevice(metrics.homeLoad, batteryDevice.device) : 0,
           gridWatts: batteryDevice ? getMetricForDevice(metrics.grid, batteryDevice.device) : 0,
+          gridDown: batteryDevice ? deriveGridDown(getMetricForDevice(metrics.gridStatus, batteryDevice.device)) : false,
         }
       : {
           batteryPercent: 0,
@@ -76,6 +79,7 @@ export function buildDeviceGroups(devices: Device[], metrics: MetricResponses): 
           solarWatts: 0,
           homeLoadWatts: 0,
           gridWatts: 0,
+          gridDown: false,
         };
 
     return {
@@ -111,7 +115,7 @@ export function CurrentReadings() {
     setRetryAttempt(0);
 
     try {
-      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored] = await withRetry(
+      const [deviceList, batterySOC, batteryPower, solar, grid, homeLoad, batteryStored, gridStatus] = await withRetry(
         () => Promise.all([
           fetchDevices(),
           fetchCurrentReadings('battery_state_of_capacity_percent'),
@@ -120,13 +124,14 @@ export function CurrentReadings() {
           fetchCurrentReadings('grid_power_watts'),
           fetchCurrentReadings('home_load_power_watts'),
           fetchCurrentReadings('battery_stored_kwh'),
+          fetchCurrentReadings('grid_status_code'),
         ]),
         { maxRetries: 10, onRetry: setRetryAttempt },
       );
 
       // Group devices by base alias
       const deviceGroups = buildDeviceGroups(deviceList.devices, {
-        batterySOC, batteryPower, batteryStored, solar, grid, homeLoad,
+        batterySOC, batteryPower, batteryStored, solar, grid, homeLoad, gridStatus,
       });
 
       setGroups(deviceGroups);
@@ -135,7 +140,7 @@ export function CurrentReadings() {
       try {
         const removedList = await fetchDevicesByStatus('removed');
         const removedDeviceGroups = buildDeviceGroups(removedList.devices, {
-          batterySOC, batteryPower, batteryStored, solar, grid, homeLoad,
+          batterySOC, batteryPower, batteryStored, solar, grid, homeLoad, gridStatus,
         });
         setRemovedGroups(removedDeviceGroups);
       } catch {

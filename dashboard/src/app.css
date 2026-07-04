@@ -473,6 +473,11 @@ section > h2 {
   fill: var(--text-muted);
 }
 
+.grid-down-label {
+  font-weight: 700;
+  fill: #ef4444;
+}
+
 .flow-battery-label {
   font-size: 0.55rem;
   font-weight: 600;

@@ -31,7 +31,7 @@
 
 **Purpose**: Establish a clean, green baseline so Red is meaningful before TDD.
 
-- [ ] T001 Run baseline suites and record green before any change: `cd local/epcube-exporter && python -m unittest test_exporter -v`; `cd dashboard && npm run typecheck && npm run test:coverage`; `cd api && dotnet test EpCubeGraph.sln`.
+- [X] T001 Run baseline suites and record green before any change: `cd local/epcube-exporter && python -m unittest test_exporter -v`; `cd dashboard && npm run typecheck && npm run test:coverage`; `cd api && dotnet test EpCubeGraph.sln`.
 
 **Checkpoint**: All existing suites green → safe to write failing tests.
 
@@ -43,7 +43,7 @@
 
 **⚠️ CRITICAL**: US1/US2 dashboard tasks cannot compile until this is complete.
 
-- [ ] T002 Add the shared grid-down type plumbing (compiles green, no behavior yet): add `gridDown: boolean` to the `DeviceCardMetrics` interface in `dashboard/src/components/DeviceCard.tsx`; add `gridStatus: CurrentReadingsResponse` to the `MetricResponses` interface and set `gridDown: false` in BOTH the online and offline branches of `buildDeviceGroups` in `dashboard/src/components/CurrentReadings.tsx`. (depends on T001)
+- [X] T002 Add the shared grid-down type plumbing (compiles green, no behavior yet): add `gridDown: boolean` to the `DeviceCardMetrics` interface in `dashboard/src/components/DeviceCard.tsx`; add `gridStatus: CurrentReadingsResponse` to the `MetricResponses` interface and set `gridDown: false` in BOTH the online and offline branches of `buildDeviceGroups` in `dashboard/src/components/CurrentReadings.tsx`. (depends on T001)
 
 **Checkpoint**: `npm run typecheck` clean; `gridDown` field exists everywhere, always `false` → foundation ready.
 
@@ -57,10 +57,10 @@
 
 ### Tests for User Story 1 (write FIRST, verify RED) ⚠️
 
-- [ ] T003 [P] [US1] Exporter Red — in `local/epcube-exporter/test_exporter.py` add AAA tests asserting `build_postgres_readings` yields `(f"{dev}_battery", "grid_status_code", ts, 2.0)` for `system_status_raw = 2` (and `3.0`, `4.0` for 3/4), and yields **no** `grid_status_code` tuple when `system_status_raw` is `"?"` / missing / non-integer. Run → FAIL. (depends on T001)
-- [ ] T004 [P] [US1] Dashboard unit Red — create `dashboard/tests/unit/grid.test.ts` asserting `deriveGridDown` returns `true` for 2 and 3, and `false` for 0, 1, 4, 5, 6, an unknown code, and `undefined`/`NaN`. Run → FAIL (helper not created). (depends on T001)
-- [ ] T005 [P] [US1] Dashboard unit Red — in `dashboard/tests/unit/buildDeviceGroups.test.ts` assert `buildDeviceGroups` sets `metrics.gridDown` from each device's latest `grid_status_code` (2/3 → true; 0/1/4/5/6 → false) and forces `gridDown === false` for offline groups. Run → FAIL. (depends on T002)
-- [ ] T006 [P] [US1] Component Red — in `dashboard/tests/component/` add an `EnergyFlowDiagram` test: when `gridDown` is true the Grid icon stroke is `#ef4444` AND a **prohibition overlay (a `<circle>` + diagonal `<line>`, ⊘) centered on the Grid node** is rendered AND the text **"Grid Down"** renders on the sublabel line (`y+44`, in place of importing/exporting/idle); when false the stroke uses the existing flow color, **no** prohibition overlay is present, and no "Grid Down" text appears. Run → FAIL. (depends on T002)
+- [X] T003 [P] [US1] Exporter Red — in `local/epcube-exporter/test_exporter.py` add AAA tests asserting `build_postgres_readings` yields `(f"{dev}_battery", "grid_status_code", ts, 2.0)` for `system_status_raw = 2` (and `3.0`, `4.0` for 3/4), and yields **no** `grid_status_code` tuple when `system_status_raw` is `"?"` / missing / non-integer. Run → FAIL. (depends on T001)
+- [X] T004 [P] [US1] Dashboard unit Red — create `dashboard/tests/unit/grid.test.ts` asserting `deriveGridDown` returns `true` for 2 and 3, and `false` for 0, 1, 4, 5, 6, an unknown code, and `undefined`/`NaN`. Run → FAIL (helper not created). (depends on T001)
+- [X] T005 [P] [US1] Dashboard unit Red — in `dashboard/tests/unit/buildDeviceGroups.test.ts` assert `buildDeviceGroups` sets `metrics.gridDown` from each device's latest `grid_status_code` (2/3 → true; 0/1/4/5/6 → false) and forces `gridDown === false` for offline groups. Run → FAIL. (depends on T002)
+- [X] T006 [P] [US1] Component Red — in `dashboard/tests/component/` add an `EnergyFlowDiagram` test: when `gridDown` is true the Grid icon stroke is `#ef4444` AND a **prohibition overlay (a `<circle>` + diagonal `<line>`, ⊘) centered on the Grid node** is rendered AND the text **"Grid Down"** renders on the sublabel line (`y+44`, in place of importing/exporting/idle); when false the stroke uses the existing flow color, **no** prohibition overlay is present, and no "Grid Down" text appears. Run → FAIL. (depends on T002)
 
 ### Implementation for User Story 1 (make tests GREEN)
 

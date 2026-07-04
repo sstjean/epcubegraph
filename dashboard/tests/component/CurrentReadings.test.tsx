@@ -128,8 +128,8 @@ describe('CurrentReadings', () => {
     // Assert
     await waitFor(() => {
       expect(mockFetchDevices).toHaveBeenCalledTimes(1);
-      // 6 metric queries: battery SOC, battery power, solar, grid, home load, battery stored kWh
-      expect(mockFetchCurrentReadings).toHaveBeenCalledTimes(6);
+      // 7 metric queries: battery SOC, battery power, solar, grid, home load, battery stored kWh, grid status code
+      expect(mockFetchCurrentReadings).toHaveBeenCalledTimes(7);
     });
   });
 

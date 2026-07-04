@@ -188,13 +188,21 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
           {/* --- Grid node (left) --- */}
           <g class="flow-node">
             <g transform={`translate(${GRID.x - 14}, ${GRID.y - 14})`}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={gridActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563'} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg class="grid-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={m.gridDown ? '#ef4444' : (gridActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563')} stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2v6M12 18v4M4.93 4.93l4.24 4.24M14.83 14.83l4.24 4.24M2 12h6M18 12h4M4.93 19.07l4.24-4.24M14.83 9.17l4.24-4.24" />
               </svg>
             </g>
+            {/* Grid-down (feature 181): prohibition (⊘) overlay disambiguates
+                grid-down from the normal importing-red flow color. */}
+            {m.gridDown && (
+              <g class="grid-down-symbol">
+                <circle cx={GRID.x} cy={GRID.y} r={17} fill="none" stroke="#ef4444" stroke-width={2} />
+                <line x1={GRID.x - 12} y1={GRID.y - 12} x2={GRID.x + 12} y2={GRID.y + 12} stroke="#ef4444" stroke-width={2} />
+              </g>
+            )}
             <text x={GRID.x} y={GRID.y + 30} text-anchor="middle" class="flow-node-label">Grid</text>
-            <text x={GRID.x} y={GRID.y + 44} text-anchor="middle" class="flow-node-sublabel">
-              {gridActive ? (gridImporting ? 'importing' : 'exporting') : 'idle'}
+            <text x={GRID.x} y={GRID.y + 44} text-anchor="middle" class={m.gridDown ? 'flow-node-sublabel grid-down-label' : 'flow-node-sublabel'}>
+              {m.gridDown ? 'Grid Down' : (gridActive ? (gridImporting ? 'importing' : 'exporting') : 'idle')}
             </text>
           </g>
 
