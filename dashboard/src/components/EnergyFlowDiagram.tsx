@@ -101,6 +101,9 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
 
   const solarActive = Math.abs(m.solarWatts) > THRESHOLD;
   const gridActive = Math.abs(m.gridWatts) > THRESHOLD;
+  // When the grid is down no power crosses the grid boundary, so the flow line
+  // renders idle regardless of any residual reported watts (feature 181).
+  const gridLineActive = gridActive && !m.gridDown;
   const gridImporting = m.gridWatts > 0;
   const batteryActive = Math.abs(m.batteryWatts) > THRESHOLD;
   const batteryCharging = m.batteryWatts > 0;
@@ -152,9 +155,9 @@ function SystemFlowDiagram({ group, index, circuits }: { group: DeviceGroup; ind
           <FlowLine
             x1={GRID.x + 20} y1={GRID.y}
             x2={GATEWAY.x - 28} y2={GATEWAY.y}
-            watts={Math.abs(m.gridWatts)} active={gridActive}
+            watts={Math.abs(m.gridWatts)} active={gridLineActive}
             reverse={!gridImporting}
-            color={gridActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563'}
+            color={gridLineActive ? (gridImporting ? '#ef4444' : '#10b981') : '#4b5563'}
             id={`${prefix}-grid`}
           />
           {/* Gateway ↔ Battery */}

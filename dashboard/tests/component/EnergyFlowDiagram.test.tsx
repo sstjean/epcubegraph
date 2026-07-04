@@ -181,6 +181,27 @@ describe('EnergyFlowDiagram', () => {
     expect(gridDownLabels.length).toBe(1);
   });
 
+  it('renders the grid flow line as idle when gridDown, ignoring grid watts (US1)', () => {
+    // Arrange — grid-down but grid watts above threshold; normally this would
+    // animate an active red importing flow. With the grid down, no power crosses
+    // the grid boundary, so the line must render idle.
+    const { container } = render(
+      <EnergyFlowDiagram groups={[makeGroup({ gridDown: true, gridWatts: 1500 })]} />
+    );
+
+    // Act — locate the Grid ↔ Gateway flow line group via its path id
+    const gridGroup = container.querySelector('#flow-0-grid')!.parentElement!;
+
+    // Assert — idle appearance: grey stroke, no animated .flow-line class,
+    // no directional dot, dimmed opacity, and no power label
+    const line = gridGroup.querySelector('line')!;
+    expect(line.getAttribute('stroke')).toBe('#4b5563');
+    expect(line.classList.contains('flow-line')).toBe(false);
+    expect(gridGroup.querySelector('.flow-dot')).toBeNull();
+    expect(gridGroup.getAttribute('opacity')).toBe('0.3');
+    expect(gridGroup.querySelector('.flow-line-label')).toBeNull();
+  });
+
   // Battery direction
   it('shows "charging" label when battery watts is positive', () => {
     const { container } = render(

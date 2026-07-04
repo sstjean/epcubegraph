@@ -17,7 +17,7 @@ failing test, confirm Red, implement Green, refactor.
 | Dashboard | `dashboard/src/components/DeviceCard.tsx` | Add `gridDown: boolean` to `DeviceCardMetrics`. |
 | Dashboard | `dashboard/src/utils/grid.ts` (new) | Pure `deriveGridDown(code): boolean` = `code === 2 || code === 3`. |
 | Dashboard | `dashboard/src/components/CurrentReadings.tsx` | Fetch `grid_status_code`; set `gridDown` per device in `buildDeviceGroups`. |
-| Dashboard | `dashboard/src/components/EnergyFlowDiagram.tsx` | Red Grid symbol + "Grid Down" label when `gridDown`. |
+| Dashboard | `dashboard/src/components/EnergyFlowDiagram.tsx` | Red Grid symbol + "Grid Down" label when `gridDown`; Grid↔EP Cube flow line forced idle (grey, no animation/label) when `gridDown` (FR-005a). |
 | Dashboard | `dashboard/tests/**` | Unit `deriveGridDown` + `buildDeviceGroups`; component red-symbol/label test. |
 
 ## Build & test commands
