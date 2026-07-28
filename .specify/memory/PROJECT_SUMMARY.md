@@ -1,12 +1,30 @@
 # EpCubeGraph — Project Summary
 
-**Last Updated**: 2026-07-04
+**Last Updated**: 2026-07-28
 **Repository**: https://github.com/sstjean/epcubegraph (PUBLIC)
 **Branch**: `main` (green). No in-flight work.
-**Last merged**: PR #188 — grid-down indicator on the Current diagram (closes #181)
-**Active work**: None — Feature 181 shipped.
+**Last merged**: PR #190 — Dependabot NuGet bump on the API test project (`b5463e9`)
+**Active work**: None — repo at clean baseline (no open issues, no open PRs).
 
 > **⛔ LOCAL TESTING = REAL DATA.** Always use `docker-compose.prod-local.yml`. Never use `docker-compose.local.yml` (mock) for manual testing. Mocks are only for automated test suites.
+
+---
+
+## Recent sessions (2026-07-28)
+
+- **Dependabot PR #190 merged ✅** — "Bump the nuget group with 1 update" (single NuGet
+  bump on `api/tests/EpCubeGraph.Api.Tests/EpCubeGraph.Api.Tests.csproj`). Merged with a
+  merge commit (`b5463e9`), remote branch deleted, local `main` fast-forwarded.
+- **Investigated the PR's `deploy / deploy-staging` FAILURE before merging** — root cause
+  is environmental, not code: Dependabot-triggered runs execute with the restricted token
+  and the `dependabot` secrets context, so the repo's Azure OIDC secrets (`client-id` /
+  `tenant-id`) are not injected → `azure/login` fails at the first Azure step
+  (`Login failed ... Ensure 'client-id' and 'tenant-id' are supplied`). All real code gates
+  (build-and-test, dashboard, exporter-tests, docker-*, validate-infra/tools) passed.
+  Because login failed before any Terraform ran, **no staging env was created** → nothing
+  to clean up. Every Dependabot PR touching the deploy path fails this one job the same way.
+- **State at shutdown:** `main` green, working tree clean, no open issues, no open PRs.
+  The merge to `main` triggers the normal production CD deploy.
 
 ---
 
